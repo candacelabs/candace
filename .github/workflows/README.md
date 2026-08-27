@@ -22,7 +22,6 @@ change to this tree must satisfy before it can ever reach here:
 | `ci.yml` → `identifiers` | `.github/workflows/component-export-checks.yml` |
 | `ci.yml` → `candaceos` | `.github/workflows/candaceos-acceptance.yml` |
 | `ci.yml` → `go_toolchain` | **no single counterpart.** The monorepo splits the same packages across `candace-go-checks.yml`, `gotth-live-checks.yml` and `pgmem-checks.yml`, and none of them runs `go test ./...` over the whole module. `//app/warden/e2e:e2e_test` is `manual` in Bazel and is reached by this job and nothing else, in either repository |
-| `pages.yml` → `build` | `.github/workflows/blog-site-checks.yml` |
 
 ## What they are for
 
@@ -32,23 +31,27 @@ contribution gate. They answer a different question — *is this snapshot
 coherent on its own?* A snapshot can be green in the monorepo and still be
 broken here, because here it is a repository rather than a subdirectory: the
 module root moves, `candaceos/` sits at the top level, and consumers take this
-tree as a Bazel module. `pages.yml` additionally does real work, publishing
-blog.candace.cloud from `blog-site/`.
+tree as a Bazel module. Every job here asks that question and nothing else:
+`ci.yml` is the only workflow, and it deploys nothing.
 
 Three inert workflow copies that predate this directory were folded into it and
-deleted: `blog-site/.github/workflows/pages.yml` (now `pages.yml` here, adapted
-for a generator that is no longer the repository root), `pkg/pgmem/.github/
-workflows/ci.yml`, and `xetcas/.github/workflows/ci.yaml`. Each targeted a
-standalone repository that this monorepo export retires, and each was already
-inert in both repositories — nested `.github/` directories are read by nobody.
+deleted: `blog-site/.github/workflows/pages.yml`, `pkg/pgmem/.github/workflows/
+ci.yml`, and `xetcas/.github/workflows/ci.yaml`. Each targeted a standalone
+repository that this monorepo export retires, and each was already inert in
+both repositories — nested `.github/` directories are read by nobody. The
+blog-site copy briefly returned here as `pages.yml`, which published
+blog.candace.cloud out of the exported `blog-site/` generator; the operator
+retired that generator on 2026-08-27, so the workflow went with it. Nothing in
+this repository publishes a website any more.
 
 ## Conventions
 
 - **GitHub-hosted `ubuntu-24.04` runners.** The monorepo's workflows target a
   self-hosted fleet that does not exist here.
-- **Least privilege.** The workflow default is `contents: read`. Exactly one
-  job — `pages.yml`'s `deploy` — asks for more, and only `pages: write` and
-  `id-token: write`.
+- **Least privilege.** The workflow default is `contents: read`, and no job
+  asks for more. The export declaration still sets `requires_workflows_write`,
+  because that is the publisher's permission to write this directory, not a
+  permission any job in it holds.
 - **`actions/checkout` with `persist-credentials: false`.** No job in this
   repository writes to it.
 - **Bazel comes from the pinned container**, through `tools/bazel.sh`, rather
@@ -59,8 +62,7 @@ inert in both repositories — nested `.github/` directories are read by nobody.
 
 ## Operator prerequisites
 
-`pages.yml` needs the destination repository's **Settings → Pages → Source** set
-to *GitHub Actions*, and the custom domain `blog.candace.cloud` configured there
-with DNS pointed at GitHub Pages. Until that is done the `deploy` job fails
-while `build` still passes, which is the intended shape: the render and the
-privacy scan are useful on their own.
+None. Every job runs on a GitHub-hosted runner from a `contents: read` checkout
+and needs nothing configured in the destination's settings. The one prerequisite
+that used to live here — Pages source, custom domain, DNS — retired with
+`pages.yml` on 2026-08-27.

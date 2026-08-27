@@ -1,7 +1,0 @@
-# `go build` in this directory writes a binary named after the directory. It is
-# a build output — the generator is run with `go run .` — and an 18 MB ELF file
-# was committed here once already. Keep it out of the tree.
-/blog-site
-
-# The rendered site. Published from CI, never committed.
-/public/

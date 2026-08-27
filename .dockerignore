@@ -3,7 +3,6 @@
 # runtime state, or a tree no image copies; excluding it keeps the transferred
 # build context small.
 **/.git
-blog-site/
 examples/
 extensions/
 xetcas/

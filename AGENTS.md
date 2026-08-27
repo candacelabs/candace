@@ -61,7 +61,7 @@ naming what may not be changed casually.
 Around them: `proto/` (the `.proto` sources and their committed bindings),
 [`candaceos/`](candaceos) (the deployment kit — Compose, installer, fleet
 driver, updater), [`xetcas/`](xetcas) (a Rust workspace with Go bindings),
-`blog-site/`, `extensions/copilot-pair/`, [`examples/`](examples), and
+`extensions/copilot-pair/`, [`examples/`](examples), and
 [`bazel/`](bazel) (the legacy WORKSPACE shim).
 
 There is exactly one `go.mod`, at this root. A nested one is a defect, and

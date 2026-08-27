@@ -50,7 +50,6 @@ candace/
 ├── xetcas/       a Rust workspace (xetcasd) plus its generated Go bindings
 ├── examples/     one worked consumer per extension seam, each with its own suite
 ├── extensions/   copilot-pair, a GitHub Copilot CLI extension
-├── blog-site/    the Go program that renders blog.candace.cloud
 ├── docs/         extending.md — the four compile-time seams
 └── bazel/        the legacy WORKSPACE shim
 ```

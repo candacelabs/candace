@@ -50,16 +50,19 @@ jobs:
     name: Bazel build and test
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    env:
-      # tools/bazel.sh keeps Bazel's output base outside the checkout. Naming
-      # it explicitly puts it on the runner's work volume rather than /tmp.
-      CANDACE_BAZEL_CACHE: ${{ runner.temp }}/bazel
 
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      # tools/bazel.sh keeps Bazel's output base outside the checkout. Naming
+      # it explicitly puts it on the runner's work volume rather than /tmp.
+      # The runner context is unavailable in job-level env (GitHub rejects the
+      # whole workflow at validation time), so this must be a step.
+      - name: Point Bazel's output base at the runner work volume
+        run: echo "CANDACE_BAZEL_CACHE=${{ runner.temp }}/bazel" >>"$GITHUB_ENV"
 
       # There is no host Bazel and no host Go in this module's toolchain story:
       # tools/bazel.sh runs the Bazel release pinned by digest, and rules_go
@@ -147,14 +150,16 @@ jobs:
     # this repository and there is no warm cache to lean on; see the note in the
     # `go` job for why.
     timeout-minutes: 180
-    env:
-      CANDACE_BAZEL_CACHE: ${{ runner.temp }}/bazel
 
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      # See the note in the go job: runner.temp is only reachable from a step.
+      - name: Point Bazel's output base at the runner work volume
+        run: echo "CANDACE_BAZEL_CACHE=${{ runner.temp }}/bazel" >>"$GITHUB_ENV"
 
       - name: Build the Rust workspace and its Go bindings
         run: ./tools/bazel.sh build //xetcas/...

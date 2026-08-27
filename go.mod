@@ -3,7 +3,6 @@ module github.com/candacelabs/candace
 go 1.26.0
 
 require (
-	github.com/alecthomas/chroma/v2 v2.20.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/github/copilot-sdk/go v1.0.11
 	github.com/google/uuid v1.6.0
@@ -16,8 +15,6 @@ require (
 	github.com/rs/zerolog v1.33.0
 	github.com/soheilhy/cmux v0.1.5
 	github.com/sst/opencode-sdk-go v0.19.2
-	github.com/yuin/goldmark v1.7.13
-	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0
 	go.uber.org/mock v0.6.0
@@ -29,7 +26,6 @@ require (
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect

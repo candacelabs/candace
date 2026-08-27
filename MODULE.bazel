@@ -36,7 +36,6 @@ go_deps.from_file(go_mod = "//:go.mod")
 use_repo(
     go_deps,
     "com_github_a_h_templ",
-    "com_github_alecthomas_chroma_v2",
     "com_github_coder_websocket",
     "com_github_evanw_esbuild",
     "com_github_gin_gonic_gin",
@@ -52,8 +51,6 @@ use_repo(
     "com_github_rs_zerolog",
     "com_github_soheilhy_cmux",
     "com_github_sst_opencode_sdk_go",
-    "com_github_yuin_goldmark",
-    "com_github_yuin_goldmark_highlighting_v2",
     "in_gopkg_yaml_v3",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_metric",
