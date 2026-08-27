@@ -1108,6 +1108,7 @@ docker compose --project-directory "$script_dir/fleet" --env-file "$temporary/ol
 python3 - "$temporary/control.json" "$temporary/worker.json" \
   "$temporary/ollama-control.json" "$temporary/ollama-worker.json" "$state" <<'PY'
 import json
+import os
 import sys
 
 control = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -1164,7 +1165,9 @@ assert all("COPILOT" not in key and key not in ("GH_TOKEN", "GITHUB_TOKEN") for 
 ollama = ollama_worker["services"]["ollama"]
 assert ollama["image"] == "ollama/ollama:0.20.4@sha256:e771d18fe56724f01a6f691a5773df544f36f565fb37c93f0ddc5957007b7766"
 assert ollama["runtime"] == "nvidia"
-assert ollama["user"] == "1000:1000"
+# The env file binds CANDACEOS_UID/GID to the invoking user, so the rendered
+# service must too — whatever uid the suite happens to run as.
+assert ollama["user"] == f"{os.getuid()}:{os.getgid()}"
 assert ollama["ports"][0]["host_ip"] == "203.0.113.11"
 assert ollama["ports"][0]["published"] == "11434"
 assert ollama["environment"]["HOME"] == "/var/lib/ollama"
