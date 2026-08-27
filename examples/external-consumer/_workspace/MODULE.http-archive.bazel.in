@@ -2,12 +2,22 @@
 #
 # `http_archive` fetches the same tarball without treating it as a Bazel module.
 # That is occasionally what a consumer wants (an unregistered fork, a build that
-# predates the module, a vendored drop), and it costs one thing: a repository
-# fetched this way is not a module, so the labels in candace's BUILD files
-# resolve through *this* module's repository mapping rather than candace's own.
-# Every repository those BUILD files name therefore has to be visible here,
-# which is what the long `use_repo` list below is. Prefer
-# MODULE.archive-override.bazel.in, where that list is four entries.
+# predates the module, a vendored drop), and it costs the repository mapping: a
+# repository fetched this way is not a module, so the labels in candace's BUILD
+# files resolve through *this* module's mapping rather than candace's own.
+#
+# Both shapes end up carrying candace's whole `use_repo(go_deps, ...)` list,
+# because both read candace's go.mod. The difference is what the list does. In
+# MODULE.archive-override.bazel.in the entries this repository's own BUILD files
+# name are the ones that resolve anything and `bazel mod tidy` writes the rest;
+# here every entry is load-bearing, and a missing one is a build error inside
+# candace rather than a warning about this file.
+#
+# The repositories candace declares for *itself* cannot be supplied from that
+# block at all, which is the part that bites: `@candace//pkg/pgmem` names
+# `@pg_query_go`, a patched archive candace's own MODULE.bazel fetches, and in
+# this shape it does not resolve. A consumer whose targets reach such a package
+# copies that declaration too, or uses the module shape.
 #
 # The placeholders are filled in by tools/test_candace_external_consumer.sh in
 # the monorepo; @CANDACE_GO_REPOS@ is spliced from the archive's own

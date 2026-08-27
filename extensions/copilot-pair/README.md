@@ -88,6 +88,13 @@ copilot --experimental
 displayed origin when a reverse proxy already exists. The extension itself
 does not install or reconfigure a proxy.
 
+| Variable | Default | What it sets |
+|---|---|---|
+| `COPILOT_PAIR_LISTEN` | `0.0.0.0` | the bind address |
+| `COPILOT_PAIR_PORT` | `0` (an ephemeral port) | the listen port; a non-integer or out-of-range value fails at start |
+| `COPILOT_PAIR_PUBLIC_HOST` | when listening on `0.0.0.0`, the machine's routable IPv4 (else `127.0.0.1`); otherwise the listen address | the host in the printed link |
+| `COPILOT_PAIR_PUBLIC_URL` | *(unset)* | replaces the printed origin outright |
+
 To use the extension in every repository, copy or symlink this directory to:
 
 ```text
@@ -95,6 +102,22 @@ To use the extension in every repository, copy or symlink this directory to:
 ```
 
 ## Synchronization model
+
+Three channels, chosen per kind of traffic rather than uniformly:
+
+```mermaid
+flowchart LR
+  subgraph owner["owner's machine"]
+    copilot["Copilot CLI<br/>runtime + working directory"]
+    ext["copilot-pair<br/>grow-only event set,<br/>actions serialized in arrival order"]
+  end
+  browser["browser replica<br/>event set in local storage"]
+
+  copilot <--> ext
+  ext -- "SSE: snapshot, then token deltas and peer counts" --> browser
+  browser -- "POST /api/actions — prompt · abort · permission · model" --> ext
+  browser -- "POST /api/events/merge — offers back its replica" --> ext
+```
 
 Durable Copilot events form a grow-only-set CRDT keyed by the event UUID. The
 SDK already supplies each event's causal `parentId`. The owner and browser

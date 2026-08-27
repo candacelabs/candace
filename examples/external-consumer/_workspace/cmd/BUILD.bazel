@@ -4,8 +4,7 @@ go_binary(
     name = "custom-candaceos",
     srcs = ["main.go"],
     deps = [
-        "//customharness",
-        "//steering",
+        "//composition",
         "@candace//app/candaceos-core/bootstrap",
     ],
 )

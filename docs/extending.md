@@ -45,13 +45,18 @@ rather than of the machine that built it.
 
 [`examples/external-consumer`](../examples/external-consumer) is the worked
 consumer *and* the acceptance test every archive passes before it is published:
-a complete Bazel repository with a custom harness, two composed services, a
-Core binary, and its own suite, built both supported ways. Start there rather
-than from a snippet — its README explains the choice:
+a complete Bazel repository that chooses every seam at once — its own identity,
+its own overlay, its own sidebar entry and page, three components of its own,
+and a custom harness — links a Core binary from them, and runs its own suites.
+Every target in it is built and every suite in it is run both supported ways
+before an archive is kept. Start there rather than from a snippet — its README
+explains the choice:
 
 - **`bazel_dep` + `archive_override`** — the recommended shape. candace is a
-  real Bazel module, so its own `MODULE.bazel` supplies the dependency closure
-  and you declare only what your own targets use.
+  real Bazel module, so its own `MODULE.bazel` supplies its dependency
+  versions, registers the Go SDK, and declares the repositories it packages
+  itself; labels inside candace resolve through candace's mapping rather than
+  yours.
 
   ```python
   bazel_dep(name = "candace", version = "0.0.0")
@@ -67,9 +72,16 @@ than from a snippet — its README explains the choice:
 - **`use_repo_rule` `http_archive`** — the fallback, for a URL or a workflow
   that cannot treat the tarball as a module. A repository fetched this way is
   not a module, so the labels inside candace's BUILD files resolve through
-  *your* repository mapping and you have to mirror candace's own
-  `use_repo(go_deps, ...)` list. It also downloads the Go SDK itself, because
-  candace registers no toolchain when it is not a module.
+  *your* repository mapping: mirroring candace's `use_repo(go_deps, ...)` list
+  becomes load-bearing rather than advisory, and the repositories candace
+  declares for itself — `@pg_query_go`, which `pkg/pgmem` names — do not
+  resolve until you copy those declarations too. It also downloads the Go SDK
+  itself, because candace registers no toolchain when it is not a module.
+
+Either way you point `go_deps.from_file` at candace's `go.mod` if your
+repository has none of its own, and then `bazel mod tidy` writes candace's
+whole `use_repo` list into yours; with a `go.mod` of your own, the list stays
+your own direct dependencies.
 
 A repository still building from a `WORKSPACE` file has a documented
 second-class path in [`bazel/README.md`](../bazel/README.md). It is not tested
@@ -208,20 +220,19 @@ func ServiceComponent(storeComponent *component.Definition) (*component.Definiti
 ```
 
 The composition root builds both definitions, registers them in order, and
-hands the service value to its own harness factory:
+hands the service value to its own harness factory. In the example these lines
+sit among the presentation options rather than alone, but the component half of
+the list is exactly this:
 
 ```go
 steeringStore, err := steering.StoreComponent()
 // ...
 steeringService, err := steering.ServiceComponent(steeringStore)
 // ...
-if err := bootstrap.Run(
-	"external-consumer",
+options := []bootstrap.Option{
 	bootstrap.WithComponent(steeringStore),
 	bootstrap.WithComponent(steeringService),
 	bootstrap.WithHarnessFactory(customharness.NewFactory(steering.Instance())),
-); err != nil {
-	panic(err)
 }
 ```
 
@@ -239,9 +250,11 @@ go_library(
 )
 ```
 
-The example's own Bazel test resolves the same two definitions with
+The example's own Bazel test resolves the same definitions with
 `component.Order` and asserts the store precedes the service in either
-registration order.
+registration order. A third component of the example's own — its noteboard
+service — requires the steering service in turn, so the resolved order it
+asserts is a chain of three that Core never constructed a link of.
 
 ### Failure attribution
 

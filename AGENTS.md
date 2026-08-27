@@ -108,10 +108,17 @@ the guide that walks all four.
 
 | Seam | Option | Worked example |
 |---|---|---|
-| Ordered component graph | `bootstrap.WithComponent` | [`examples/external-consumer`](examples/external-consumer) — a two-component chain resolved by `component.Order` |
+| Ordered component graph | `bootstrap.WithComponent` | [`examples/external-consumer`](examples/external-consumer) — a three-component chain resolved by `component.Order` |
 | Agent harness | `bootstrap.WithHarnessFactory` | [`examples/external-consumer`](examples/external-consumer) — a full `harness.Factory` compiled outside this tree |
 | Identity: name, agent, wordmark, palette | `bootstrap.WithBrand` | [`examples/custom-brand`](examples/custom-brand) — a total rebrand with no Core edit |
 | Presentation: overlay, sidebar, routes | `WithUIOverlay`, `WithNavItem`, `WithHTTPService` | [`examples/custom-ui-page`](examples/custom-ui-page) for the smallest shape; `custom-brand` for all of it |
+
+Every row is also proven from *outside* this module.
+[`examples/external-consumer`](examples/external-consumer) composes every option
+named above into one binary and a service of its own, resolving each package
+through an `@candace//` label pointing at a downloaded archive rather than a
+relative one; its whole workspace is built and tested in both supported pinning
+shapes before an archive is kept.
 
 Two rules survive every seam, and both are enforced rather than advised. Core's
 routes — including the `/claws/...` paths — are unchanged by any of them; and

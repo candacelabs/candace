@@ -11,6 +11,41 @@ There is no central server: the same binary, with the same config, runs on all
 four nodes. Whichever node currently holds leadership does the watching; if it
 dies, the others elect a new leader and watching continues.
 
+## Try it in three terminals
+
+Three processes on one machine are a real three-node cluster — same binary,
+same peer list, different ports and data directories. Quorum is 2, so you can
+kill one and watch the remaining two carry on.
+
+```bash
+# from the Go module root
+PEERS="n1=127.0.0.1:7717,n2=127.0.0.1:7727,n3=127.0.0.1:7737"
+
+# terminal 1 — then repeat with n2/:7727 and n3/:7737
+WARDEN_LOG_FORMAT=console WARDEN_NODE_ID=n1 WARDEN_BIND=:7717 \
+  WARDEN_DATA_DIR=/tmp/warden-n1 WARDEN_PEERS="$PEERS" \
+  WARDEN_NOTIFY_MODE=log go run ./app/warden/cmd
+```
+
+Then ask any node what it thinks the cluster is. Every node answers, and — once
+a leader exists — every node answers the *same* thing, because followers serve
+the leader's view rather than their own:
+
+```bash
+curl -s localhost:7717/api/status | jq '{self,role,leader_id,authoritative}'
+curl -s localhost:7737/api/status | jq '{self,role,leader_id,authoritative}'
+curl -s localhost:7717/metrics | grep -E '^warden_(is_leader|term)'
+```
+
+Ctrl-C one of the three. Within `dead_after` (15s by default) the leader
+declares it dead and `WARDEN_NOTIFY_MODE=log` prints the incident it would have
+emailed; Ctrl-C the *leader* instead and the other two elect a new one and keep
+watching. Open <http://127.0.0.1:7717/> for the same state as a dashboard —
+its assets are embedded in the binary, so it works with no network at all.
+
+Swap `WARDEN_NOTIFY_MODE=file WARDEN_NOTIFY_FILE=/tmp/warden-incidents.jsonl`
+to `tail -f` incidents instead of reading them out of the log.
+
 ## Architecture
 
 ### Leader election (Raft-style, no log)
@@ -68,6 +103,22 @@ server-streaming `WatchCluster` — are gRPC methods on the
 (default `:7717`) with the HTTP surface: a [cmux](https://github.com/soheilhy/cmux)
 multiplexer routes HTTP/2 connections carrying `content-type: application/grpc`
 to the gRPC server and every other connection to the HTTP/1.1 dashboard engine.
+
+```mermaid
+flowchart LR
+  peers["peer nodes<br/><i>h2c, insecure creds</i>"]
+  operator["operator / Prometheus"]
+  listener(["one listener — :7717"])
+  cmux{{"cmux<br/><i>content-type: application/grpc?</i>"}}
+  grpc["grpcserver<br/>Vote · Heartbeat · Identify · WatchCluster"]
+  http["httpserver (gin)<br/>/ · /partials/cluster · /api/status · /metrics"]
+
+  peers --> listener
+  operator --> listener
+  listener --> cmux
+  cmux -- "yes" --> grpc
+  cmux -- "no" --> http
+```
 
 The transport is **h2c** (cleartext HTTP/2) with **insecure credentials**:
 warden speaks only over the tailnet (WireGuard), which already authenticates
@@ -281,6 +332,40 @@ Every node serves all of these on its `bind` address (default `:7717`):
 | `/api/status`         | JSON API         | Current `ClusterView` as JSON                       |
 | `/metrics`            | Prometheus       | Metrics (below)                                     |
 
+`/api/status` is a frozen shape, not an incidental serialization: pretty-printed
+with a two-space indent because operators `curl` it, and `incidents` is `[]`
+rather than `null` when the log is empty. This is the exact body
+`services/warden/dashboard/dashboard_contract_test.go` pins — a leader that has
+just declared one peer dead:
+
+```json
+{
+  "view": {
+    "self": "node-d",
+    "role": "leader",
+    "term": 7,
+    "leader_id": "node-d",
+    "source": "node-d",
+    "authoritative": true,
+    "updated_at": "2026-07-21T15:04:05Z",
+    "peers": [
+      {"node":{"id":"node-d","addr":"203.0.113.14:7717"},"status":"alive","last_seen":"2026-07-21T15:04:05Z","latency_ms":1.2},
+      {"node":{"id":"node-a","addr":"203.0.113.11:7717"},"status":"dead","last_seen":"0001-01-01T00:00:00Z","latency_ms":0}
+    ],
+    "elections_started": 2,
+    "membership": {"version":0,"created_in_term":0,"voters":null}
+  },
+  "incidents": [
+    {"id":"peer_dead/node-a/1784646245","type":"peer_dead","peer":{"id":"node-a","addr":"203.0.113.11:7717"},"term":7,"reported_by":"node-d","detected_at":"2026-07-21T15:04:05Z","last_seen":"2026-07-21T15:04:05Z","message":"peer node-a declared dead"}
+  ]
+}
+```
+
+`source` is the field worth reading first: it names the node whose observations
+produced `peers`. `source == leader_id` with `authoritative: true` is the
+leader's own liveness tracking; `source == self` with `authoritative: false` is
+this node guessing because no fresh leader view reached it.
+
 ## Metrics
 
 Exposed at `/metrics`:
@@ -370,6 +455,11 @@ re-evaluates liveness).
 ## Deployment quickstart
 
 ### Docker (single node)
+
+`docker-compose.warden.yaml` is a file of the canonical monorepo, which keeps
+it beside its other Compose stacks rather than inside this export root; the
+paths below are relative to that repository. To run warden from a clone of
+*this* repository instead, build the image directly (next block) and run it.
 
 ```bash
 cp candace/app/warden/.env.example .env      # then edit: WARDEN_NODE_ID, SMTP_*

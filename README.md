@@ -17,6 +17,74 @@ the pieces are usable on their own and the system is reproducible as a whole.
 
 Everything is Apache-2.0.
 
+## Run one of them
+
+Go 1.26 and a clone. There is no `npm install`, no bundler, and no code
+generation step to run first:
+
+```bash
+go run ./examples/gotth/counter
+```
+
+```text
+counter: http://127.0.0.1:8080
+counter: allowed origins [http://127.0.0.1:8080 http://localhost:8080]
+```
+
+Open that URL in two browser tabs. The number lives in the Go process and
+neither tab holds a copy of it: click in one and the other repaints, reload
+either and the count survives, and the client runtime that carried the patch
+was compiled into the binary and served by the same handler that serves the
+WebSocket. [`examples/gotth/counter/README.md`](examples/gotth/counter/README.md)
+follows one click all the way through and names the file each step lives in.
+
+## What is in here
+
+```text
+candace/
+├── pkg/          domain-neutral primitives — nothing in them knows what CandaceOS is
+├── services/     composable business logic — candaceos, warden
+├── app/          runnable compositions — candaceos-core, candaceos-agent, warden
+├── proto/        .proto sources and their committed Go bindings
+├── candaceos/    the deployment kit: Compose stack, installer, fleet driver, updater
+├── xetcas/       a Rust workspace (xetcasd) plus its generated Go bindings
+├── examples/     one worked consumer per extension seam, each with its own suite
+├── extensions/   copilot-pair, a GitHub Copilot CLI extension
+├── blog-site/    the Go program that renders blog.candace.cloud
+├── docs/         extending.md — the four compile-time seams
+└── bazel/        the legacy WORKSPACE shim
+```
+
+The three Go trees are separated by one rule, about who may import whom:
+
+```mermaid
+flowchart LR
+  app["<b>app/</b><br/>runnable compositions<br/>each owns a cmd/"]
+  services["<b>services/</b><br/>composable business logic"]
+  pkg["<b>pkg/</b><br/>domain-neutral primitives"]
+  app --> services --> pkg
+  app --> pkg
+```
+
+Nothing in `pkg/` imports `services/` or `app/`, which is what makes the
+primitives usable on their own:
+
+| Package | What it is |
+|---|---|
+| [`gotth`](pkg/gotth) | Server-driven live UI. Large enough to have its own documentation set. |
+| [`pgmem`](pkg/pgmem) | A process-local PostgreSQL emulator for fast tests — real PostgreSQL AST, no server. |
+| [`cron`](pkg/cron) | Durable in-process scheduling with human-readable declarations and an explicit state store. |
+| [`liquidproto`](pkg/liquidproto) | The runtime for Liquid Proto: protobuf with refinement predicates compiled into the generated Go. |
+| [`telemetry`](pkg/telemetry) | Trace propagation and structured JSONL over the `candace.telemetry.v1` contracts, with no observability SDK. |
+| [`config`](pkg/config) | Configuration-boundary parsing: environment lookup, private-origin validation, `provider/model` strings. |
+| [`mailbox`](pkg/mailbox) | Serializes ownership of a mutable value onto one goroutine — commands run in turn, so no field needs a lock. |
+| [`boundedbuffer`](pkg/boundedbuffer) | An `io.Writer` that retains at most a fixed number of bytes while still reporting the true write lengths. |
+| [`redact`](pkg/redact) | Removes caller-declared sensitive values, and their URL-userinfo spellings, from log-bound text. |
+| [`labels`](pkg/labels) | Canonicalizes case-insensitive label lists so services compare and deduplicate them one way. |
+| [`core`](pkg/core) | The zerolog logger the Go trees log through, plus the few formatters operator pages share. |
+
+`pkg/proto` and `pkg/scripts` hold tooling rather than a package.
+
 ## This repository is generated
 
 It is a **one-way snapshot** of a private monorepo's `candace/` folder at one
@@ -68,7 +136,7 @@ these fail if it stops being true.
 
 | Example | Shows |
 |---|---|
-| [`external-consumer`](examples/external-consumer) | A complete outside repository: a custom agent harness, two composed services, its own Core binary, built both supported Bazel ways. This is also the acceptance test every release archive passes. |
+| [`external-consumer`](examples/external-consumer) | A complete outside repository choosing every seam at once: its own identity and overlay, its own sidebar entry and page, three composed services, a custom agent harness, and the Core binary linked from them — built and tested both supported Bazel ways. This is also the acceptance test every release archive passes. |
 | [`custom-brand`](examples/custom-brand) | Core wearing another product's identity — name, agent, wordmark, palette, an overlay asset, an extra sidebar entry and page — with no edit to Core. |
 | [`custom-ui-page`](examples/custom-ui-page) | The smallest useful UI extension: stock identity, one sidebar entry, one page of your own. |
 | [`gotth/counter`](examples/gotth/counter) | gotth-live at its smallest: a number that lives in Go, four buttons, and every open tab kept in step by the server. |

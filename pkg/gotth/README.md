@@ -102,6 +102,37 @@ The line half and what remains of it:
 
 ---
 
+## One interaction, end to end
+
+That `+1` button carries a `data-gotth-on` attribute, and one delegated
+listener in the client runtime turns a click on it into an event frame. Nothing
+after that point runs in the browser:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as browser — one delegated listener
+    participant S as session goroutine — sole owner of this tab's state
+    participant A as your code
+
+    B->>S: event frame naming the event and its fragment
+    S->>S: Config.Events allowlist — an unregistered name never reaches the reducer
+    S->>A: Authorize(session, event)
+    S->>A: Reduce(state, event) → (state, effects)
+    A-->>S: effects, which the session performs at the actor boundary
+    S->>A: Fragment.Dirty(prev, next) — which regions actually moved
+    S->>S: render the dirty fragments, hash, drop the ones whose bytes did not change
+    S-->>B: patch frame — only the markup that moved
+    B->>B: morph the fragment into the DOM in place
+```
+
+`Authenticate` runs once per connection, at the upgrade; `Authorize` runs
+before the reducer for every event. `Reduce` is pure and cannot reach your
+stores — it returns effects and finds out the result the same way every other
+connected tab does, which is what makes two tabs unable to disagree.
+
+---
+
 ## What it costs
 
 The trade, from PRD §1.3: **spend server RAM, server CPU and one network round

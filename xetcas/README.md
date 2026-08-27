@@ -34,6 +34,28 @@ cd xetcas          # this directory, from the repository root
 bash demo/demo.sh
 ```
 
+It ends by measuring the server's data directory with `du` before and after
+each push, and printing what actually landed there:
+
+```text
+────────────────────────────────────────────────────────────
+  What the server actually stored
+────────────────────────────────────────────────────────────
+  push 1: 48.00 MiB    of model  ->  ~32 MiB      of data (… in xorbs)  in … s
+  push 2: 48.50 MiB    of model  ->  ~1-2 MiB     of data (… in xorbs)  in … s
+  dedup on the first push (the file repeats its own blocks): ~33%
+  dedup on the second push (~2% of the file changed)      : ~97%
+
+  PASS second push grew the store by …, under the 24.25 MiB budget
+
+  DEMO PASSED
+```
+
+Exact byte counts move with chunk boundaries and compression, so read that as
+the shape of the result rather than as constants. The two things the script
+*enforces* are the ones worth trusting: both versions clone back byte-for-byte
+identical, and the second push does not cost another whole file.
+
 It needs Docker and nothing else — no Rust, no Go, no git-lfs on the host. The
 first run compiles `xetcasd` and `git-xet`, so give it a few minutes; afterwards
 `SKIP_BUILD=1 bash demo/demo.sh` re-runs in seconds. The stack stays up when it

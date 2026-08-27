@@ -29,11 +29,31 @@ go test ./examples/custom-ui-page
 
 ## The two options
 
+Three declarations are the whole extension. This is
+[`main.go`](main.go) and the two halves of [`runbooks.go`](runbooks.go) it
+names, with the comments trimmed:
+
 ```go
-bootstrap.Run(version,
-    bootstrap.WithNavItem(entry),
-    bootstrap.WithHTTPService(runbooks{}),
-)
+// the sidebar entry
+var entry = webui.NavItem{Label: "Runbooks", Href: runbookPath, Glyph: "▤"}
+
+// the service behind it: no fields, because it keeps no state
+type runbooks struct{}
+
+func (runbooks) Register(router gin.IRouter) {
+	router.GET(runbookPath, func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", runbookPage)
+	})
+}
+
+// the composition root
+func main() {
+	err := bootstrap.Run(version,
+		bootstrap.WithNavItem(entry),
+		bootstrap.WithHTTPService(runbooks{}),
+	)
+	...
+}
 ```
 
 **`WithNavItem`** appends one entry to the operator sidebar, after Core's Home,

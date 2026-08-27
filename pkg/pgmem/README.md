@@ -70,6 +70,69 @@ validated public and named-schema swap runs to completion without cancellation.
 Exceptional engine failures during that internal multi-schema swap are not a
 transactional rollback boundary.
 
+## The shape a test takes
+
+Those three pieces — `New`, your real schema, `Backup`/`Restore` — compose into
+the pattern the suites here use. The schema comes from the migration files the
+service actually ships, because a hand-written `CREATE TABLE` in a `_test.go`
+is a second schema that drifts from the first one:
+
+```go
+//go:embed migrations/*.up.sql
+var migrations embed.FS
+
+var (
+	database *pgmem.DB
+	clean    *pgmem.Backup
+)
+
+var _ = BeforeSuite(func() {
+	database = pgmem.MustNew()
+
+	entries, err := fs.Glob(migrations, "migrations/*.up.sql")
+	Expect(err).NotTo(HaveOccurred())
+	sort.Strings(entries)
+	for _, entry := range entries {
+		statement, err := migrations.ReadFile(entry)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(database.Public().None(string(statement))).To(Succeed())
+	}
+
+	clean, err = database.Backup()
+	Expect(err).NotTo(HaveOccurred())
+})
+
+var _ = AfterSuite(func() { Expect(database.Close()).To(Succeed()) })
+
+// Every spec starts from the same empty tables, with no container to wait
+// for, no port to allocate, and nothing to tear down between cases.
+var _ = BeforeEach(func() { Expect(clean.Restore()).To(Succeed()) })
+```
+
+`Restore` is data-only by contract: it returns `ErrSchemaChanged` — without
+touching the current data — if DDL or the named-schema topology moved after the
+backup was taken, so a spec that quietly adds a table fails loudly rather than
+poisoning the ones after it.
+
+## Errors
+
+Typed and comparable with `errors.Is`, so a test asserts the condition rather
+than a message:
+
+| Sentinel | Returned when |
+|---|---|
+| `ErrNoRows` | `One` expected a row and received none |
+| `ErrTooManyRows` | `One` received more than one |
+| `ErrRelationNotFound` | the requested table or view is not in the schema |
+| `ErrInvalidSchema` | the schema name is invalid or unknown |
+| `ErrUnsupported` | valid PostgreSQL syntax outside the documented compatibility surface |
+| `ErrSchemaChanged` | a backup was restored after DDL or the schema topology changed |
+| `ErrClosed` | the database was already closed |
+
+Execution failures additionally arrive as `*pgmem.Error`, which carries a
+PostgreSQL-style `Code` (SQLSTATE) and the `Statement` that produced it, with
+the underlying cause still reachable through `errors.Is`/`errors.As`.
+
 Schema-local interceptors can supply ad-hoc results before parsing or
 execution:
 

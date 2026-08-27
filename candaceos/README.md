@@ -6,6 +6,43 @@ runs the demo harness and makes the node executor run Compose's
 read-only configuration preflight, then return the exact mutation plan without
 executing it.
 
+## The one-box shape
+
+Three Compose networks, declared in [`compose.yaml`](compose.yaml) rather than
+argued for here. The `control` network is `internal: true` — no internet route,
+no published port — and Core is its only user-facing mediator:
+
+```mermaid
+flowchart TB
+  browser["browser<br/><i>published 0.0.0.0:7780</i>"]
+  core["<b>core</b><br/>approves and fences every mutation<br/>workspace mounted read-only<br/><i>no Docker socket, ever</i>"]
+
+  subgraph harnessnet["copilot / opencode networks — outbound only"]
+    harness["agent harness sidecar<br/>Copilot CLI or OpenCode<br/>writable workspace, unpublished port<br/><i>no DB, no Warden, no agent, no socket</i>"]
+  end
+
+  subgraph control["control network — internal: true"]
+    postgres[("postgres<br/>durable state")]
+    warden["warden<br/>leader id + term"]
+    agent["node agent<br/><b>dry-run</b> profile: no socket<br/><b>live</b> profile: sole socket holder"]
+  end
+
+  socket[["/var/run/docker.sock"]]
+
+  browser --> core
+  core <--> harness
+  core --> postgres
+  core --> warden
+  core --> agent
+  agent -. "live profile only" .-> socket
+```
+
+The default `./install.sh` starts the `dry-run` profile, so the socket edge in
+that diagram does not exist in the running project at all — not mounted
+read-only, not mounted at a different path, absent. Turning it on takes two
+flags and a typed confirmation phrase, and even then it lands on the node agent
+and nowhere else.
+
 ## Quick start
 
 Requirements: Linux, Git, Docker Engine with Compose v2.20 or newer, and
@@ -241,7 +278,33 @@ acceptance.
 
 Each app is a directory below `apps/` containing a Compose file. The checked-in
 `hello` example has service name `hello`, project name
-`candaceos-hello`, and path `hello`. A live assignment runs only:
+`candaceos-hello`, and path `hello` — and it is the whole app, two files:
+
+```text
+apps/hello/
+├── compose.yaml
+└── index.html
+```
+
+```yaml
+# apps/hello/compose.yaml
+services:
+  hello:
+    image: busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [httpd, -f, -p, "8080", -h, /www]
+    volumes:
+      - ./index.html:/www/index.html:ro
+    ports:
+      - 127.0.0.1:18080:8080
+```
+
+Nothing in it is CandaceOS-specific: it is an ordinary Compose file, and a live
+assignment runs only:
 
 ```text
 docker compose ... config --quiet

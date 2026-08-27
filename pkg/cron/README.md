@@ -62,6 +62,55 @@ func buildDailyRollup(ctx context.Context, invocation cron.Invocation) error {
 }
 ```
 
+## Declaring a schedule
+
+Schedules are typed builders rather than strings. Each one normalizes to a
+canonical five-field cron form, and that string — not the builder call — is
+what a `JobDefinition` persists and the status route reports. These pairs are
+pinned by `schedule_test.go`:
+
+| Declaration | `Canonical()` |
+|---|---|
+| `cron.Spec(cron.Daily(cron.At(3).PM()))` | `0 15 * * *` |
+| `cron.Spec(cron.Weekly(time.Monday, cron.At(8, 30).AM()))` | `30 8 * * 1` |
+| `cron.Spec(cron.Monthly(1, cron.Noon()))` | `0 12 1 * *` |
+| `cron.Spec(cron.LastDayOfMonth(cron.Midnight()))` | `0 0 L * *` |
+| `cron.Spec(cron.Every(15 * time.Minute))` | `@every 15m0s` |
+| `cron.Spec(cron.Raw("*/15 2-3 * * 1,3"))` | `*/15 2-3 * * 1,3` |
+
+`Schedule.String()` is the human rendering of the same declaration: the first
+row reads `daily at 3:00 PM (UTC)`.
+
+`At` returns a `MeridiemTime`, not a `TimeOfDay`, so a twelve-hour clock
+declaration cannot reach a schedule until it says which half of the day it
+means — the ambiguous spelling is a compile error rather than a job that fires
+twelve hours off:
+
+```go
+cron.Daily(cron.At(3))        // does not compile: MeridiemTime is not a TimeOfDay
+cron.Daily(cron.At(3).PM())   // 15:00
+cron.Daily(cron.At24(15))     // the same instant on a 24-hour clock
+```
+
+`Spec` schedules in UTC. `Schedule.In(location)` returns a copy in another
+location, and neither builder panics: an invalid declaration is carried until
+`Validate`, `Canonical`, or `Next` reports it.
+
+## Policies and their defaults
+
+Both defaults are the conservative choice, and both are per job:
+
+| Job option | Values | Default | Effect |
+|---|---|---|---|
+| `WithCatchUp` | `CatchUpNone` · `CatchUpLatest` · `CatchUpAll` | `CatchUpNone` | What to do with occurrences missed while the process was down: skip past all of them (traditional cron), run only the most recent, or run every one up to the catch-up limit. |
+| `WithOverlap` | `OverlapSkip` · `OverlapAllow` | `OverlapSkip` | Whether a second occurrence may run while another holds a live lease. Enforced by the `Store`, so it holds across processes sharing one database, not just within one. |
+
+Service-wide options: `WithStore` (required, no implicit default),
+`WithLeaseDuration` (30s; active jobs renew three times per duration),
+`WithCatchUpLimit` (1,000 due occurrences per job per cycle), and
+`WithLeaseOwner` for callers that already have a stable replica identity —
+`New` generates a random one otherwise.
+
 Apply the relational migration in
 `postgres/migrations/000001_create_cron_jobs_and_runs.up.sql` through the
 owning service's normal migration runner. Queries are generated and checked in
