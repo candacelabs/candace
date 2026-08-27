@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "blog_head" .}}
+</head>
+<body>
+{{template "blog_header" .}}
+<main id="main" class="interior-shell">
+  <article>
+    <header class="article-header">
+      <a class="back-link" href="/posts/"><span aria-hidden="true">&#8592;</span> All notes</a>
+      <h1>{{.Post.Title}}</h1>
+      <div class="article-meta">
+        <time datetime="{{.Post.DateISO}}">{{.Post.DateHuman}}</time>
+        {{with .Post.LastmodHuman}}<span>updated {{.}}</span>{{end}}
+      </div>
+      {{if .Post.Tags}}
+      <ul class="tag-list">
+        {{range .Post.Tags}}<li>{{.}}</li>{{end}}
+      </ul>
+      {{end}}
+    </header>
+    <div class="prose">{{.Post.Content}}</div>
+    <footer class="article-footer">
+      <a class="back-link" href="/posts/"><span aria-hidden="true">&#8592;</span> All notes</a>
+      <p><a href="/index.xml">Subscribe via RSS</a></p>
+    </footer>
+  </article>
+</main>
+{{template "blog_footer" .}}
+</body>
+</html>

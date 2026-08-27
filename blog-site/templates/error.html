@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "blog_head" .}}
+</head>
+<body>
+{{template "blog_header" .}}
+<main id="main" class="interior-shell">
+  <section class="not-found">
+    <p class="eyebrow">404</p>
+    <h1>There is no page here.</h1>
+    <p class="page-summary">The address may have moved when a note was renamed, or it never existed.</p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="/">Back to the front page <span aria-hidden="true">&#8594;</span></a>
+      <a class="button button-secondary" href="/posts/">Browse the notes <span aria-hidden="true">&#8594;</span></a>
+    </div>
+  </section>
+</main>
+{{template "blog_footer" .}}
+</body>
+</html>

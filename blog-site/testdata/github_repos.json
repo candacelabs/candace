@@ -1,0 +1,82 @@
+[
+  {
+    "name": "hfs3",
+    "description": "A streaming CLI for mirroring Hugging Face repositories to S3.",
+    "html_url": "https://github.com/candacelabs/hfs3",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2026-05-01T12:00:00Z"
+  },
+  {
+    "name": "copilot-pair",
+    "description": "Share one Copilot CLI session with every connected browser.",
+    "html_url": "https://github.com/candacelabs/copilot-pair",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2026-07-01T12:00:00Z"
+  },
+  {
+    "name": "candid",
+    "description": "A privacy-minded browser extension that rewrites email drafts locally.",
+    "html_url": "https://github.com/candacelabs/candid",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2026-03-01T12:00:00Z"
+  },
+  {
+    "name": "desponsorize",
+    "description": "Make sponsored search results easier to distinguish.",
+    "html_url": "https://github.com/candacelabs/desponsorize",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2025-12-01T12:00:00Z"
+  },
+  {
+    "name": "blog-site",
+    "description": "The blog itself; must never appear in its own grid.",
+    "html_url": "https://github.com/candacelabs/blog-site",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2026-08-01T12:00:00Z"
+  },
+  {
+    "name": "some-fork",
+    "description": "A fork that must be excluded.",
+    "html_url": "https://github.com/candacelabs/some-fork",
+    "fork": true,
+    "archived": false,
+    "pushed_at": "2026-06-01T12:00:00Z"
+  },
+  {
+    "name": "old-experiment",
+    "description": "An archived repo that must be excluded.",
+    "html_url": "https://github.com/candacelabs/old-experiment",
+    "fork": false,
+    "archived": true,
+    "pushed_at": "2026-04-01T12:00:00Z"
+  },
+  {
+    "name": "no-description",
+    "description": "",
+    "html_url": "https://github.com/candacelabs/no-description",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2024-01-01T12:00:00Z"
+  },
+  {
+    "name": "older-a",
+    "description": "Older project A.",
+    "html_url": "https://github.com/candacelabs/older-a",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2023-01-01T12:00:00Z"
+  },
+  {
+    "name": "older-b",
+    "description": "Older project B, beyond the grid cap.",
+    "html_url": "https://github.com/candacelabs/older-b",
+    "fork": false,
+    "archived": false,
+    "pushed_at": "2022-01-01T12:00:00Z"
+  }
+]

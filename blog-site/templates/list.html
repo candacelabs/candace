@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "blog_head" .}}
+</head>
+<body>
+{{template "blog_header" .}}
+<main id="main" class="interior-shell">
+  <header class="page-header">
+    <p class="eyebrow">field notes</p>
+    <h1>Notes</h1>
+    <p class="page-summary">{{.Site.Description}}</p>
+  </header>
+  {{if .Posts}}
+  <div class="notes-list notes-list-large">
+    {{range .Posts}}
+    <a class="note-row" href="{{.Permalink}}">
+      <time datetime="{{.DateISO}}">{{.DateHuman}}</time>
+      <div>
+        <h2>{{.Title}}</h2>
+        {{if .Description}}<p>{{.Description}}</p>{{end}}
+      </div>
+      <span class="note-arrow" aria-hidden="true">&#8594;</span>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="empty-state">No notes published yet.</p>
+  {{end}}
+</main>
+{{template "blog_footer" .}}
+</body>
+</html>

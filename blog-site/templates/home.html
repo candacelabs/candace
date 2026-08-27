@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "blog_head" .}}
+</head>
+<body>
+{{template "blog_header" .}}
+<main id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <p class="eyebrow">{{.Site.Eyebrow}}</p>
+    <h1 id="hero-title">Small systems.<br>Useful tools.<br>Fewer moving parts.</h1>
+    <p class="hero-summary">{{.Site.Description}}</p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="/posts/">Read the notes <span aria-hidden="true">&#8594;</span></a>
+      <a class="button button-secondary" href="{{.Site.GitHubURL}}">Explore GitHub <span aria-hidden="true">&#8599;</span></a>
+    </div>
+    <ul class="status-row" aria-label="Site properties">
+      <li><span class="status-dot" aria-hidden="true"></span> static pages</li>
+      <li><span class="status-dot" aria-hidden="true"></span> tracker-free</li>
+      <li><span class="status-dot" aria-hidden="true"></span> no client-side scripts</li>
+    </ul>
+  </section>
+
+  {{if .Site.Projects}}
+  <section class="section" aria-labelledby="projects-title">
+    <div class="section-heading">
+      <h2 id="projects-title">Current projects</h2>
+      <a class="text-link" href="{{.Site.GitHubURL}}">All repositories <span aria-hidden="true">&#8599;</span></a>
+    </div>
+    <div class="project-grid">
+      {{range .Site.Projects}}
+      <article class="project-card">
+        <p class="card-kicker">{{$.Site.Org}} · public</p>
+        <h3><a href="{{.URL}}">{{.Name}}</a></h3>
+        <p>{{.Description}}</p>
+        <a class="card-link" href="{{.URL}}" aria-label="View {{.Name}} on GitHub">View repository <span aria-hidden="true">&#8599;</span></a>
+      </article>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Posts}}
+  <section class="section" aria-labelledby="notes-title">
+    <div class="section-heading">
+      <h2 id="notes-title">Recent notes</h2>
+      <a class="text-link" href="/posts/">All notes <span aria-hidden="true">&#8594;</span></a>
+    </div>
+    <div class="notes-list">
+      {{range .Posts}}
+      <a class="note-row" href="{{.Permalink}}">
+        <time datetime="{{.DateISO}}">{{.DateHuman}}</time>
+        <h3>{{.Title}}</h3>
+        <span class="note-arrow" aria-hidden="true">&#8594;</span>
+      </a>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section class="section about-panel">
+    <p class="eyebrow">about</p>
+    <div class="prose">{{.Home}}</div>
+  </section>
+</main>
+{{template "blog_footer" .}}
+</body>
+</html>

@@ -1,0 +1,30 @@
+// Refinement annotations shared by Liquid Proto contracts.
+//
+// protoc-gen-liquidproto compiles these predicates into native Go checks and
+// emits direct message validation boundaries.
+syntax = "proto3";
+
+package candace.liquid.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/candacelabs/candace/pkg/liquidproto/v1;liquidv1";
+
+// FieldRefinement attaches predicates to a singular protobuf scalar or enum,
+// or independently to the keys and values of a string-keyed scalar map.
+message FieldRefinement {
+  // Boolean expression over `this`, using comparisons, &&, ||, !, len(), and
+  // matches().
+  string expr = 1;
+  // Boolean expression applied to every key in a string-keyed scalar map.
+  string map_key_expr = 2;
+  // Boolean expression applied to every value in a string-keyed scalar map.
+  string map_value_expr = 3;
+}
+
+extend google.protobuf.FieldOptions {
+  // 51234 is retained from the research implementation. Changing it would
+  // silently reinterpret existing descriptors, so it is part of the wire
+  // contract.
+  FieldRefinement field = 51234;
+}

@@ -1,0 +1,38 @@
+{{define "blog_head"}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08090d">
+<meta name="description" content="{{.PageDescription}}">
+{{if .Site.ReleaseSHA}}<meta name="candace-release" content="{{.Site.ReleaseSHA}}">
+{{end}}<title>{{.PageTitle}}</title>
+<link rel="stylesheet" href="/assets/blog.css">
+<link rel="alternate" type="application/rss+xml" title="{{.Site.Title}}" href="/index.xml">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2314161e'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-size='20' fill='%23f3c96b'%3EC%3C/text%3E%3C/svg%3E">
+{{end}}
+
+{{define "blog_header"}}
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="ambient ambient-one" aria-hidden="true"></div>
+<div class="ambient ambient-two" aria-hidden="true"></div>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="{{.Site.Title}} home">
+    <span class="brand-mark" aria-hidden="true">C</span>
+    <span>{{.Site.Title}}</span>
+  </a>
+  <nav class="site-nav" aria-label="Main">
+    <ul>
+      <li><a href="/"{{if eq .Nav "home"}} class="active" aria-current="page"{{end}}>Home</a></li>
+      <li><a href="/posts/"{{if eq .Nav "posts"}} class="active"{{end}}>Notes</a></li>
+      <li><a href="{{.Site.GitHubURL}}">GitHub <span aria-hidden="true">&#8599;</span></a></li>
+    </ul>
+  </nav>
+</header>
+{{end}}
+
+{{define "blog_footer"}}
+<footer class="site-footer">
+  <p>{{.Site.Title}} · part of Candace Cloud</p>
+  <p>No trackers · no client-side scripts · <a href="/index.xml">RSS</a></p>
+</footer>
+{{end}}
