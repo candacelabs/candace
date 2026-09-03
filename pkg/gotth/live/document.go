@@ -143,7 +143,7 @@ const NoRuntime = "no-runtime"
 // Pass [NoRuntime] as mountPath for a page in a live application that is
 // deliberately not live, such as a login page: it emits no runtime tag, no
 // inspector and no dev-reload tag, and it is the only spelling that does.
-func (a *App[S]) Document(
+func (a *App[S, I]) Document(
 	mountPath, title string,
 	htmlAttrs templ.Attributes,
 	head ...templ.Component,

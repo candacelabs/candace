@@ -53,32 +53,15 @@ const maxRefusals = 20
 // session with the room's own log.
 const backlogDepth = 128
 
-// SubscribeEffect asks the room to push this session every update until the
-// session ends.
+// Post is one message on its way into the room: the body, and the event that
+// asked for it.
 //
-// It exists because Config.Execute is the only place an application is handed
-// a live.Emitter, so a subscription that wants to inject events has to be
-// expressed as a long-running effect. Config.Init registers the session; this
-// pumps what the registration collects.
-//
-// It carries nothing, and that is the point of the live.Session parameter
-// Config.Execute takes. A subscription's address is the session it belongs to,
-// which the library already knows.
-type SubscribeEffect struct{}
-
-// EffectSource names the subscription for provenance and metrics. Every patch
-// another member's message causes in this session carries
-// "effect:chat.subscribe" as its origin.
-func (SubscribeEffect) EffectSource() string { return SourceSubscribe }
-
-// PostEffect asks the room to record one message.
-//
-// It carries the body and nothing else. In particular it does NOT carry the
-// author: the executor takes that from the live.Session it is handed, which is
-// the identity Authorize permitted the event under. A reducer cannot name a
-// different one, so a message cannot be attributed to somebody who did not
-// send it even if the reducer is wrong.
-type PostEffect struct {
+// It carries the body and nothing else about who sent it. The author is read
+// from the live.Session[Member] the effect's Run is handed, which is the identity
+// Authorize permitted the event under. A reducer cannot name a different one,
+// so a message cannot be attributed to somebody who did not send it even if
+// the reducer is wrong.
+type Post struct {
 	Body string
 	// Cause is the identifier of the event that asked for this message. It
 	// rides through the room so that the push which finally shows the message
@@ -88,15 +71,59 @@ type PostEffect struct {
 	Cause uint64
 }
 
-// EffectSource names the effect for provenance and metrics.
-func (PostEffect) EffectSource() string { return SourcePost }
+// Purge is a request to clear the room's log. Like [Post] it names no actor:
+// who cleared the room is the session's identity, read at the boundary.
+type Purge struct{ Cause uint64 }
 
-// PurgeEffect asks the room to clear its log. Like PostEffect it names no
-// actor: who cleared the room is the session's identity, read at the boundary.
-type PurgeEffect struct{ Cause uint64 }
+// SubscribeEffect is the effect that pushes this session every room update
+// until the session ends.
+//
+// It exists because an effect's Run is the only place an application is handed
+// a live.Emitter, so a subscription that wants to inject events has to be
+// expressed as a long-running effect. Config.Init registers the session; this
+// pumps what the registration collects.
+//
+// It captures nothing, and that is the point of the live.Session[Member] parameter Run
+// takes. A subscription's address is the session it belongs to, which the
+// library already knows. Every patch another member's message causes in this
+// session carries "effect:chat.subscribe" as its origin.
+func (r *Room) SubscribeEffect() live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourceSubscribe,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			return r.pump(ctx, sess.ID(), emit)
+		},
+	}
+}
 
-// EffectSource names the effect for provenance and metrics.
-func (PurgeEffect) EffectSource() string { return SourcePurge }
+// PostEffect is the effect that records one message.
+//
+// The author is resolved inside Run, from the session, for the reason [Post]
+// gives: an effect's identity is an input to what the effect does, and it is
+// the one the handshake bound rather than the one a reducer named.
+func (r *Room) PostEffect(post Post) live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourcePost,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			// No lookup and no assertion: the session is typed by the identity
+			// the handshake bound, so the author is read straight off it.
+			r.Post(sess.Identity().Name, post, sess.ID())
+			return nil
+		},
+	}
+}
+
+// PurgeEffect is the effect that clears the room's log, attributed to the
+// session that asked.
+func (r *Room) PurgeEffect(purge Purge) live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourcePurge,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			r.Purge(sess.Identity().Name, purge, sess.ID())
+			return nil
+		},
+	}
+}
 
 // PanicEffect is FR-23's second site: an effect that panics on purpose.
 //
@@ -104,12 +131,21 @@ func (PurgeEffect) EffectSource() string { return SourcePurge }
 // frame, and the asymmetry is the requirement rather than an implementation
 // detail. A panicking effect leaves state consistent — the reducer never ran
 // on a bad value — so the only party who can say whether the failure is
-// user-visible is this application, and the reducer is where it says so.
-type PanicEffect struct{ Cause uint64 }
-
-// EffectSource names the effect for provenance and metrics. The patch the
-// failure event produces carries it as "effect:chat.panic".
-func (PanicEffect) EffectSource() string { return SourcePanic }
+// user-visible is this application, and the reducer is where it says so. The
+// patch the failure event produces carries "effect:chat.panic".
+func (r *Room) PanicEffect() live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourcePanic,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			// The library recovers it, contains it to this session, counts it
+			// against gotthlive_panics_total{site}, logs it with the causal
+			// identifiers — and does NOT send an Error frame. It arrives at
+			// the reducer as gotth.effect_failed with retryable="false",
+			// because re-running a panicking effect re-runs the bug.
+			panic("chat: the injected effect panic (" + CmdPanicEffect + ")")
+		},
+	}
+}
 
 // update is one thing that happened to the room, on its way to one session.
 //
@@ -291,7 +327,7 @@ func (r *Room) Leave(id live.ID) {
 // Post records one message and pushes it to every session, the sender
 // included. The author is a parameter rather than a field of the effect
 // because the executor reads it from the session; see PostEffect.
-func (r *Room) Post(author string, e PostEffect, from live.ID) Message {
+func (r *Room) Post(author string, e Post, from live.ID) Message {
 	r.mu.Lock()
 	r.seq++
 	r.version++
@@ -320,7 +356,7 @@ func (r *Room) Post(author string, e PostEffect, from live.ID) Message {
 }
 
 // Purge clears the log and tells everybody who did it.
-func (r *Room) Purge(by string, e PurgeEffect, from live.ID) {
+func (r *Room) Purge(by string, e Purge, from live.ID) {
 	r.mu.Lock()
 	r.messages = nil
 	r.version++
@@ -354,62 +390,6 @@ func broadcast(subs []*subscriber, u update) {
 	for _, sub := range subs {
 		sub.offer(u)
 	}
-}
-
-// Execute performs one effect at the actor boundary. It is Config.Execute.
-//
-// The effect values arrive exactly as the reducer declared them; nothing here
-// runs inside a reducer, and nothing here can reach a session's state except
-// by emitting an event the reducer folds in.
-//
-// The live.Session parameter is doing real work in two of these arms. An
-// effect's identity is an input to what the effect does — a message posted to
-// a room has an author, and the identity Authorize permitted the event under
-// is the identity the effect it scheduled must still act as — so the author
-// and the purger are read from here rather than from the effect value. A
-// reducer that got it wrong cannot make this get it wrong.
-func (r *Room) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch e := effect.(type) {
-	case SubscribeEffect:
-		return r.pump(ctx, sess.ID(), emit)
-
-	case PostEffect:
-		member, err := memberOf(sess)
-		if err != nil {
-			return err
-		}
-		r.Post(member.Name, e, sess.ID())
-		return nil
-
-	case PurgeEffect:
-		member, err := memberOf(sess)
-		if err != nil {
-			return err
-		}
-		r.Purge(member.Name, e, sess.ID())
-		return nil
-
-	case PanicEffect:
-		// FR-23's second site, on purpose. The library recovers it, contains
-		// it to this session, counts it against gotthlive_panics_total{site},
-		// logs it with the causal identifiers — and does NOT send an Error
-		// frame. It arrives at the reducer as gotth.effect_failed with
-		// retryable="false", because re-running a panicking effect re-runs the
-		// bug.
-		panic("chat: the injected effect panic (" + CmdPanicEffect + ")")
-
-	default:
-		return fmt.Errorf("chat: no executor for effect %T", effect)
-	}
-}
-
-// memberOf recovers the identity bound at the handshake.
-func memberOf(sess live.Session) (Member, error) {
-	member, ok := sess.Identity().(Member)
-	if !ok {
-		return Member{}, fmt.Errorf("chat: session %s has identity %T, not a Member", sess.ID(), sess.Identity())
-	}
-	return member, nil
 }
 
 // pump delivers room updates to one session until its context is cancelled.

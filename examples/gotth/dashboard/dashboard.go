@@ -214,71 +214,79 @@ func (s State) StatusLabel() string {
 	return "keeping up"
 }
 
-// Reduce is the pure state transition.
+// Reducer returns the pure state transition, bound to the feed its effects act
+// on.
 //
-// It reads no clock, performs no I/O, and cannot reach the feed. Asking for a
-// reading does not take one: it returns a ProbeEffect, the library performs it
+// It is a constructor because a live.Effect[live.AnonymousIdentity] carries its own behaviour since the
+// 2026-09-03 ruling, so a reducer scheduling one has to hold what that effect
+// closes over.
+//
+// It reads no clock, performs no I/O, and reaches the feed not at all. Asking
+// for a reading does not take one: it returns the feed's probe effect, the
+// library performs it
 // at the actor boundary, the feed samples and broadcasts, and this session
 // learns the result the same way every other session does — through an event
 // the feed pushed. That is what makes two tabs unable to disagree about what
 // the server measured.
-func Reduce(state State, ev live.Event) (State, []live.IEffect) {
-	switch ev.Name {
-	case EventPause:
-		state.Paused = true
+func Reducer(feed *Feed) live.Reducer[State, live.AnonymousIdentity] {
+	return func(state State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		switch ev.Name {
+		case EventPause:
+			state.Paused = true
+			return state, nil
+
+		case EventResume:
+			state.Paused = false
+			return state, nil
+
+		case EventProbe:
+			// The event identifier rides into the effect and back out of the feed
+			// on the emitted event's contributing list. Without it the patch that
+			// finally shows the reading names only "effect:dashboard.subscribe",
+			// and an operator holding that frame cannot reach the click.
+			return state, []live.Effect[live.AnonymousIdentity]{feed.ProbeEffect(ev.ID)}
+
+		case EventClear:
+			return state, []live.Effect[live.AnonymousIdentity]{feed.ClearEffect(ev.ID)}
+
+		case EventSample:
+			return applySample(state, ev), nil
+
+		case EventAlert:
+			return applyAlert(state, ev), nil
+
+		case EventCleared:
+			return applyCleared(state, ev), nil
+
+		case live.SlowClientEvent:
+			// FR-51's degradation, as the application sees it. The library
+			// synthesizes this into the session's own mailbox when the outbound
+			// window fills, and it is named by an exported constant rather than
+			// spelled out here — which it was, until FRICTION.md F-1 argued that
+			// every application implementing a defined degradation should not have
+			// to copy the library's private vocabulary and get it right by luck.
+			//
+			// The library has already stopped emitting by the time this arrives, so
+			// the notice this sets will reach the browser only once the window
+			// re-opens — which is the honest behaviour and is asserted as such in
+			// wire_test.go.
+			state.Degraded = true
+			return state, nil
+
+		case live.ClientRecoveredEvent:
+			state.Degraded = false
+			return state, nil
+
+		case live.EffectFailedEvent:
+			return applyFailure(feed, state, ev)
+		}
+
+		// An unregistered name cannot reach here from a browser — the library
+		// refuses one before the reducer runs — so anything arriving here is
+		// something the library synthesised that this application has no answer
+		// for. Ignoring it is correct.
 		return state, nil
-
-	case EventResume:
-		state.Paused = false
-		return state, nil
-
-	case EventProbe:
-		// The event identifier rides into the effect and back out of the feed
-		// on the emitted event's contributing list. Without it the patch that
-		// finally shows the reading names only "effect:dashboard.subscribe",
-		// and an operator holding that frame cannot reach the click.
-		return state, []live.IEffect{ProbeEffect{Cause: ev.ID}}
-
-	case EventClear:
-		return state, []live.IEffect{ClearEffect{Cause: ev.ID}}
-
-	case EventSample:
-		return applySample(state, ev), nil
-
-	case EventAlert:
-		return applyAlert(state, ev), nil
-
-	case EventCleared:
-		return applyCleared(state, ev), nil
-
-	case live.SlowClientEvent:
-		// FR-51's degradation, as the application sees it. The library
-		// synthesizes this into the session's own mailbox when the outbound
-		// window fills, and it is named by an exported constant rather than
-		// spelled out here — which it was, until FRICTION.md F-1 argued that
-		// every application implementing a defined degradation should not have
-		// to copy the library's private vocabulary and get it right by luck.
-		//
-		// The library has already stopped emitting by the time this arrives, so
-		// the notice this sets will reach the browser only once the window
-		// re-opens — which is the honest behaviour and is asserted as such in
-		// wire_test.go.
-		state.Degraded = true
-		return state, nil
-
-	case live.ClientRecoveredEvent:
-		state.Degraded = false
-		return state, nil
-
-	case live.EffectFailedEvent:
-		return applyFailure(state, ev)
 	}
-
-	// An unregistered name cannot reach here from a browser — the library
-	// refuses one before the reducer runs — so anything arriving here is
-	// something the library synthesised that this application has no answer
-	// for. Ignoring it is correct.
-	return state, nil
 }
 
 // applySample folds one reading.
@@ -379,13 +387,13 @@ func applyCleared(state State, ev live.Event) State {
 // without one keeps rendering the last reading it saw and stops learning
 // anything — a dashboard that looks right while being wrong, which is the worst
 // failure a dashboard has.
-func applyFailure(state State, ev live.Event) (State, []live.IEffect) {
+func applyFailure(feed *Feed, state State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
 	source := ev.Fields.Get(live.EffectFailedSourceField)
 	state.Notice = "the server could not complete an operation: " + source
 
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && source == SourceSubscribe {
-		return state, []live.IEffect{SubscribeEffect{}}
+		return state, []live.Effect[live.AnonymousIdentity]{feed.SubscribeEffect()}
 	}
 	return state, nil
 }
@@ -405,23 +413,23 @@ func newerVersion(state State, ev live.Event) (uint64, bool) {
 // Everything security-relevant is set here and nothing is left to a default,
 // because live.New refuses a Config with a hole in it rather than starting with
 // one.
-func Config(feed *Feed, origins []string) live.Config[State] {
-	return live.Config[State]{
+func Config(feed *Feed, origins []string) live.Config[State, live.AnonymousIdentity] {
+	return live.Config[State, live.AnonymousIdentity]{
 		// Init is the mount hook, and it is where FR-56's subscribe-on-mount
 		// happens. Join registers this session for pushes and reads the feed
 		// under one lock — split in two, a sample landing between them is
 		// either shown twice or missed entirely, and the window is exactly as
 		// wide as a page load.
-		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
+		Init: func(ctx context.Context, s live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 			reading, alerts := feed.Join(s.ID())
 			state := State{Self: s.ID(), Meters: reading, Alerts: alerts}
 			if len(reading.Values) > 0 {
 				state.Window = (&History{}).with(reading.Values[0])
 			}
-			return state, []live.IEffect{SubscribeEffect{}}, nil
+			return state, []live.Effect[live.AnonymousIdentity]{feed.SubscribeEffect()}, nil
 		},
 
-		Reduce: Reduce,
+		Reduce: Reducer(feed),
 
 		Fragments: []live.Fragment[State]{
 			{
@@ -469,8 +477,7 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 		// to make.
 		Events: []string{EventProbe, EventPause, EventResume, EventClear},
 
-		Execute:  feed.Execute,
-		Teardown: func(_ context.Context, s live.Session, _ State) { feed.Leave(s.ID()) },
+		Teardown: func(_ context.Context, s live.Session[live.AnonymousIdentity], _ State) { feed.Leave(s.ID()) },
 
 		// A real allowlist, not live.AnyOrigin. main.go derives it from the
 		// listen address; production lists the scheme and host the app is
@@ -489,7 +496,7 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 		// same. NoCSRFCheck is only safe because Origins above is a real
 		// allowlist, which is the library's own stated condition.
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	}
 }

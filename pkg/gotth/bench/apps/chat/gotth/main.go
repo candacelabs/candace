@@ -162,7 +162,7 @@ func run() error {
 }
 
 // NewMux routes the whole app.
-func NewMux(app *live.App[State], rooms *Rooms, shim []byte) *http.ServeMux {
+func NewMux(app *live.App[State, Member], rooms *Rooms, shim []byte) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// WithRoom is how Config.Init learns which room the page was served for.

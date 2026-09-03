@@ -80,7 +80,7 @@ import (
 //
 // It answers any method, as a page handler mounted on a catch-all must, and
 // writes no body for HEAD.
-func (a *App[S]) PageHandler(page func(state S) templ.Component) http.Handler {
+func (a *App[S, I]) PageHandler(page func(state S) templ.Component) http.Handler {
 	if page == nil {
 		panic("gotth-live: (*live.App).PageHandler was given a nil page: pass the function that " +
 			"renders the whole document from state, such as Page")
@@ -88,10 +88,11 @@ func (a *App[S]) PageHandler(page func(state S) templ.Component) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		// No nil test on the identity: the hook's result type is the
+		// application's own since 2026-09-03, so "no identity and no error" is
+		// not a value it can return. See wsx's upgrade path, which lost the same
+		// check for the same reason.
 		identity, err := a.cfg.Authenticate(r)
-		if err == nil && identity == nil {
-			err = errNoIdentity
-		}
 		if err != nil {
 			a.logger.Warn(ctx, "gotth-live: refused a page render because Config.Authenticate refused the request: "+
 				"the upgrade from this visitor would be refused too", obs.Err(err))
@@ -102,7 +103,7 @@ func (a *App[S]) PageHandler(page func(state S) templ.Component) http.Handler {
 		// The effects are discarded deliberately: they belong to the session,
 		// and the session's own Init call is what schedules them. See this
 		// method's godoc.
-		state, _, err := a.cfg.Init(ctx, Session{identity: identity})
+		state, _, err := a.cfg.Init(ctx, Session[I]{identity: identity})
 		if err != nil {
 			a.logger.Error(ctx, "gotth-live: Config.Init failed on a page render, so no page was served",
 				obs.Err(err))
@@ -140,21 +141,23 @@ func (a *App[S]) PageHandler(page func(state S) templ.Component) http.Handler {
 	})
 }
 
-// errNoIdentity and errNilPage are the two failures of a page render the
-// library authors itself rather than receiving from application code. They are
-// package-level values so that the log line and the dev-mode body say the same
-// sentence, and ordinary errors.New so that FR-58's census counts them: a
-// message a human wrote is a message the audit grades.
+// errNilPage is the one failure of a page render the library authors itself
+// rather than receiving from application code. It is a package-level value so
+// that the log line and the dev-mode body say the same sentence, and an ordinary
+// errors.New so that FR-58's census counts it: a message a human wrote is a
+// message the audit grades.
 //
-// Neither names a session, because none exists on a page request — that is what
-// PageHandler's zero session id is about — and neither names a causal
-// identifier for the same reason. Both name the next step.
-var (
-	errNoIdentity = errors.New("gotth-live: Config.Authenticate returned no identity and no error " +
-		"on a page request: return one or the other")
-	errNilPage = errors.New("gotth-live: the page function returned no component on a page request: " +
-		"return a templ component rather than nil — an empty one for the state that has nothing to show")
-)
+// It names no session, because none exists on a page request — that is what
+// PageHandler's zero session id is about — and no causal identifier for the
+// same reason. It names the next step.
+//
+// It had a sibling, errNoIdentity, until 2026-09-03: "Config.Authenticate
+// returned no identity and no error". Config.Authenticate returns the
+// application's OWN identity type now, so `nil, nil` is not a result it can
+// produce and the branch that error answered is unreachable. internal/arch's
+// census records the removal.
+var errNilPage = errors.New("gotth-live: the page function returned no component on a page request: " +
+	"return a templ component rather than nil — an empty one for the state that has nothing to show")
 
 // pageError answers a failed page render.
 //
@@ -163,7 +166,7 @@ var (
 // loader error may carry a connection string, a query or an internal hostname,
 // and the page request is not where an operator reads a server-side failure.
 // Production gets the generic message and the log line gets the error.
-func (a *App[S]) pageError(w http.ResponseWriter, status int, generic string, err error) {
+func (a *App[S, I]) pageError(w http.ResponseWriter, status int, generic string, err error) {
 	if a.cfg.Dev && err != nil {
 		http.Error(w, generic+": "+err.Error(), status)
 		return
@@ -205,7 +208,7 @@ func (a *App[S]) pageError(w http.ResponseWriter, status int, generic string, er
 // "/", or containing "//" anywhere, "\", "?", "#", or a control byte — and when
 // mountPath is "/", which would put the upgrade and the page on one pattern and
 // leave no route for either.
-func (a *App[S]) Mux(mountPath string, page http.Handler) http.Handler {
+func (a *App[S, I]) Mux(mountPath string, page http.Handler) http.Handler {
 	if page == nil {
 		panic("gotth-live: (*live.App).Mux was given a nil page handler: pass the handler that serves " +
 			"your page, such as app.PageHandler(Page)")

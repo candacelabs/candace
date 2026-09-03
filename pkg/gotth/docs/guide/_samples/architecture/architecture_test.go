@@ -96,12 +96,12 @@ var _ = Describe("where the hooks run", func() {
 		// measures the application on the page and not a fixture that
 		// resembles it.
 		init := cfg.Init
-		cfg.Init = func(ctx context.Context, sess live.Session) (architecture.State, []live.IEffect, error) {
+		cfg.Init = func(ctx context.Context, sess live.Session[live.AnonymousIdentity]) (architecture.State, []live.Effect[live.AnonymousIdentity], error) {
 			obs.record(&obs.init)
 			return init(ctx, sess)
 		}
 		authorize := cfg.Authorize
-		cfg.Authorize = func(ctx context.Context, sess live.Session, ev live.Event) error {
+		cfg.Authorize = func(ctx context.Context, sess live.Session[live.AnonymousIdentity], ev live.Event) error {
 			obs.recordAuthorize()
 			return authorize(ctx, sess, ev)
 		}

@@ -83,7 +83,7 @@ func OnePalette(names ...string) (widget.Palette, error) {
 // it already has: no flash, no placeholder, and a page that is meaningful with
 // JavaScript disabled — it simply stops updating.
 func Regions(
-	config live.Config[widget.HostState], state widget.HostState,
+	config live.Config[widget.HostState, live.AnonymousIdentity], state widget.HostState,
 ) []templ.Component {
 	rendered := make([]templ.Component, 0, len(config.Fragments))
 	for _, fragment := range config.Fragments {
@@ -152,7 +152,7 @@ func serveStylesheet(css []byte) http.HandlerFunc {
 // do with it is what this function already does.
 func Serve(
 	ctx context.Context, address string,
-	app *live.App[widget.HostState], site Site,
+	app *live.App[widget.HostState, live.AnonymousIdentity], site Site,
 ) error {
 	pages := http.NewServeMux()
 	pages.HandleFunc(StylesheetPath, serveStylesheet(stylesheet(site.Palette, site.Chrome)))
@@ -168,7 +168,7 @@ func Serve(
 // eviction.
 func listen(
 	ctx context.Context, address string,
-	app *live.App[widget.HostState], handler http.Handler,
+	app *live.App[widget.HostState, live.AnonymousIdentity], handler http.Handler,
 ) error {
 	server := &http.Server{
 		Addr:              address,

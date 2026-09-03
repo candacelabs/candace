@@ -41,7 +41,7 @@ var ErrSessionClosing = errors.New(
 // that FR-58's three clauses are satisfied in one place rather than twice: the
 // session, the causal edge the emission descends from, and — carried by the
 // sentinel — what the effect should do next.
-func (a *Actor) emissionRefused(source string, scheduledBy uint64, why error) error {
+func (a *Actor[I]) emissionRefused(source string, scheduledBy uint64, why error) error {
 	return fmt.Errorf("gotth-live: session %s: the event emitted by effect %q (%s) was dropped: %w",
 		a.idStr, source, causalClause(scheduledBy), why)
 }
@@ -108,7 +108,7 @@ func causalClause(scheduledBy uint64) string {
 // helper — whose whole job is to bound that wait — would be waiting for the
 // wait it bounds. Three of the four are also in wsx, which would have to hold
 // an Actor to reach this method at all.
-func (a *Actor) spawn(ctx context.Context, site string, fn func(ctx context.Context)) {
+func (a *Actor[I]) spawn(ctx context.Context, site string, fn func(ctx context.Context)) {
 	a.effects.Add(1)
 	a.m.Goroutines(ctx, 1)
 	go func() {
@@ -138,30 +138,44 @@ func (a *Actor) spawn(ctx context.Context, site string, fn func(ctx context.Cont
 // patch that names only the effect leaves an operator able to reach
 // "effect:counter.watch" and unable to reach the click that scheduled it —
 // which is the causal edge the whole provenance story is about.
-func (a *Actor) runEffects(ctx context.Context, effects []IEffect, scheduledBy uint64) {
+func (a *Actor[I]) runEffects(ctx context.Context, effects []Effect[I], scheduledBy uint64) {
 	for _, e := range effects {
-		if e == nil {
+		// The zero Effect is inert, which is the concrete struct's answer to
+		// the nil element the old interface slice could hold: a conditional
+		// effect that did not apply costs nothing. An Effect that named itself
+		// and forgot its behaviour is NOT this case and is refused below.
+		if e.Source == "" && e.Run == nil {
 			continue
 		}
 		a.execute(ctx, e, scheduledBy)
 	}
 }
 
-// effectSourceRefused is what an effect whose EffectSource() cannot be
-// namespaced is told, as the error text on its own failure event.
+// effectSourceRefused is what an effect whose Source cannot be namespaced is
+// told, as the error text on its own failure event.
 //
 // The budget is derived rather than typed: it is the schema's bound on
 // Origin.source less the prefix this library prepends, and a message that
 // states a number the code does not compute is the kind of number that is
 // wrong one edit later.
 var effectSourceRefused = fmt.Sprintf(
-	"gotth-live: EffectSource() is not usable as an origin source: it must be at most %d bytes "+
+	"gotth-live: Effect.Source is not usable as an origin source: it must be at most %d bytes "+
 		"and match ^[a-z][a-z0-9_.:/-]*$, because the library namespaces it as %q + source onto "+
 		"the origin of every patch the effect causes",
 	protocol.MaxOriginSource-len(protocol.SourceEffectPrefix), protocol.SourceEffectPrefix)
 
-func (a *Actor) execute(ctx context.Context, e IEffect, scheduledBy uint64) {
-	source := e.EffectSource()
+// effectRunMissing is what an effect that named itself and carried no behaviour
+// is told, as the error text on its own failure event.
+//
+// It is a failure rather than a silent success for the reason this package
+// keeps restating: an effect that never runs is a change that never happens,
+// and a reducer that learns nothing about it is a session that quietly stops
+// updating. The zero Effect is the deliberate no-op and never reaches here.
+const effectRunMissing = "gotth-live: Effect.Run is nil: an effect that names itself and carries no " +
+	"behaviour is a change that never happens — set Run, or return no effect at all"
+
+func (a *Actor[I]) execute(ctx context.Context, e Effect[I], scheduledBy uint64) {
+	source := e.Source
 
 	// BR-2. The source is application input with no registration step
 	// (protocol.md §3.3), and it is one half of an Origin.source that
@@ -192,6 +206,21 @@ func (a *Actor) execute(ctx context.Context, e IEffect, scheduledBy uint64) {
 		return
 	}
 
+	// The other half of the concrete struct's two ways of being unusable, and
+	// it is refused on exactly the terms above: deterministically, before a
+	// goroutine is spawned for it, in a failure event the reducer handles.
+	// Counted as an error under the effect's own source, because unlike a
+	// malformed source this one is a name an operator can grep for.
+	if e.Run == nil {
+		a.m.Effect(ctx, source, "error")
+		a.log.Error(ctx, "gotth-live: refused an effect with no behaviour: an effect that never runs is a change that never happens",
+			obs.Str("session_id", a.idStr),
+			obs.Str("effect_source", source),
+			obs.U64("scheduled_by", scheduledBy))
+		a.emitFailure(source, effectRunMissing, false, scheduledBy)
+		return
+	}
+
 	a.spawn(ctx, "effect", func(ctx context.Context) {
 		var span obs.Span
 		if a.tr.Enabled() {
@@ -209,7 +238,7 @@ func (a *Actor) execute(ctx context.Context, e IEffect, scheduledBy uint64) {
 
 // runOne performs one effect under the guard that turns any failure into a
 // deterministic event the reducer can handle, rather than into silence.
-func (a *Actor) runOne(ctx context.Context, e IEffect, source string, scheduledBy uint64) (result string) {
+func (a *Actor[I]) runOne(ctx context.Context, e Effect[I], source string, scheduledBy uint64) (result string) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = "panicked"
@@ -239,7 +268,12 @@ func (a *Actor) runOne(ctx context.Context, e IEffect, source string, scheduledB
 		}
 	}()
 
-	err := a.app.Execute(ctx, a.peer, e, scheduledBy, a.emitter(source, scheduledBy))
+	// Called directly rather than through IApp. The effect carries its own
+	// behaviour now, so the seam that used to type-assert one back out of an
+	// interface has nothing left to do: the application's function is a field
+	// on the value the reducer returned, already re-expressed in this package's
+	// vocabulary by live's single adapter.
+	err := e.Run(ctx, a.peer, scheduledBy, a.emitter(source, scheduledBy))
 	switch {
 	case err == nil:
 		return "ok"
@@ -256,7 +290,7 @@ func (a *Actor) runOne(ctx context.Context, e IEffect, source string, scheduledB
 }
 
 // emitter returns the injection function handed to an effect.
-func (a *Actor) emitter(source string, scheduledBy uint64) Emit {
+func (a *Actor[I]) emitter(source string, scheduledBy uint64) Emit {
 	return func(ev Event) error {
 		if a.closing.Load() {
 			return a.emissionRefused(source, scheduledBy, ErrSessionClosing)
@@ -325,7 +359,7 @@ func scheduledEdge(scheduledBy uint64) []uint64 {
 // reducer that does not care matches one name; a reducer that does reads one
 // field, and one that reads it wrongly reads a value that is not "true", which
 // is the terminal answer and the safe one.
-func (a *Actor) emitFailure(source, detail string, retryable bool, scheduledBy uint64) {
+func (a *Actor[I]) emitFailure(source, detail string, retryable bool, scheduledBy uint64) {
 	if a.closing.Load() {
 		return
 	}

@@ -67,7 +67,7 @@ var _ = Describe("A legitimate client refused by the resync budget, with the lan
 			grace  = 5 * time.Second
 			window = 15 * time.Second
 		)
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			// The DEFAULT resync budget, deliberately. c3a91af8's claim is
 			// stated at the defaults — "the first retry lands in [500, 1000) ms
@@ -332,7 +332,7 @@ var _ = Describe("The heartbeat pair, each inside its range and fatal together (
 					"intervals, so either the relational check has become unsatisfiable or the "+
 					"interval itself is being refused")
 
-			s := serve(func(cfg *live.Config[board]) {
+			s := serve(func(cfg *live.Config[board, chaosUser]) {
 				cfg.Logger = nil
 				cfg.Limits.HeartbeatInterval = interval
 				cfg.Limits.HeartbeatTimeout = tightest

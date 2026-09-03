@@ -79,11 +79,16 @@ func feedTick(t Tick) live.Event {
 	return ev
 }
 
+// reduce is the reducer under test, bound to a feed the pure specs never reach:
+// the transition builds effects that close over it, and a spec that cares about
+// what an effect DOES builds its own feed and runs the effect.
+var reduce = Reducer(testFeed())
+
 var _ = Describe("§2.4 the five regions", func() {
 	Describe("region A — the KPI strip", func() {
 		It("derives the delta from two SERVER samples, not from the client", func() {
 			state := mounted()
-			state, _ = Reduce(state, feedTick(Tick{N: 0, E: []DashEvent{{Kind: FixtureKPI, V: []int{110, 180}}}}))
+			state, _ = reduce(state, feedTick(Tick{N: 0, E: []DashEvent{{Kind: FixtureKPI, V: []int{110, 180}}}}))
 
 			kpis := state.KPIs()
 			Expect(kpis).To(HaveLen(2))
@@ -102,7 +107,7 @@ var _ = Describe("§2.4 the five regions", func() {
 		It("renders one element per sparkline point", func() {
 			state := mounted()
 			for n := 0; n < 3; n++ {
-				state, _ = Reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureKPI, V: []int{110, 180}}}}))
+				state, _ = reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureKPI, V: []int{110, 180}}}}))
 			}
 			Expect(state.KPIs()[0].Bars()).To(HaveLen(4), "one seed plus three samples")
 			Expect(strings.Count(render(KPIRegion(state)), "<rect")).To(Equal(8))
@@ -111,7 +116,7 @@ var _ = Describe("§2.4 the five regions", func() {
 		It("keeps the sparkline history at §2.4's 60 points", func() {
 			state := mounted()
 			for n := 0; n < SparkPoints+20; n++ {
-				state, _ = Reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureKPI, V: []int{n, n}}}}))
+				state, _ = reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureKPI, V: []int{n, n}}}}))
 			}
 			Expect(state.KPIs()[0].Bars()).To(HaveLen(SparkPoints))
 		})
@@ -164,7 +169,7 @@ var _ = Describe("§2.4 the five regions", func() {
 		DescribeTable("the status filter (DSH-1)",
 			func(filter string, wantIDs []int) {
 				state := mounted()
-				state, _ = Reduce(state, control(EventFilter, map[string]string{fieldValue: filter}, 1))
+				state, _ = reduce(state, control(EventFilter, map[string]string{fieldValue: filter}, 1))
 				Expect(idsOf(state.TableView().Rows)).To(Equal(wantIDs))
 			},
 			Entry("all", "all", []int{1, 2, 3, 4}),
@@ -175,13 +180,13 @@ var _ = Describe("§2.4 the five regions", func() {
 
 		It("refuses a filter that is not one of the four", func() {
 			state := mounted()
-			next, _ := Reduce(state, control(EventFilter, map[string]string{fieldValue: "'; drop table"}, 1))
+			next, _ := reduce(state, control(EventFilter, map[string]string{fieldValue: "'; drop table"}, 1))
 			Expect(next.Controls.Filter).To(Equal("all"))
 		})
 
 		It("searches the name column, case-insensitively (DSH-2)", func() {
 			state := mounted()
-			state, _ = Reduce(state, control(EventSearch, map[string]string{fieldQuery: "SHARD"}, 1))
+			state, _ = reduce(state, control(EventSearch, map[string]string{fieldQuery: "SHARD"}, 1))
 			Expect(idsOf(state.TableView().Rows)).To(Equal([]int{3}))
 		})
 
@@ -191,11 +196,11 @@ var _ = Describe("§2.4 the five regions", func() {
 		// comparator, asserted here where it is cheap.
 		It("sorts by metric_1 with id as the tie-break (DSH-3)", func() {
 			state := mounted()
-			state, _ = Reduce(state, control(EventSort, nil, 1))
+			state, _ = reduce(state, control(EventSort, nil, 1))
 			Expect(state.SortMode()).To(Equal("asc"))
 			Expect(idsOf(state.TableView().Rows)).To(Equal([]int{1, 3, 4, 2}))
 
-			state, _ = Reduce(state, control(EventSort, nil, 2))
+			state, _ = reduce(state, control(EventSort, nil, 2))
 			Expect(state.SortMode()).To(Equal("desc"))
 			Expect(idsOf(state.TableView().Rows)).To(Equal([]int{2, 3, 4, 1}),
 				"descending by metric_1, and the id tie-break stays ascending in both directions")
@@ -210,7 +215,7 @@ var _ = Describe("§2.4 the five regions", func() {
 		DescribeTable("rows per page (DSH-4)",
 			func(n int, want int) {
 				state := mounted()
-				state, _ = Reduce(state, control(EventPerPage, map[string]string{fieldValue: strconv.Itoa(n)}, 1))
+				state, _ = reduce(state, control(EventPerPage, map[string]string{fieldValue: strconv.Itoa(n)}, 1))
 				Expect(state.Controls.PerPage).To(Equal(want))
 			},
 			Entry("50", 50, 50),
@@ -220,7 +225,7 @@ var _ = Describe("§2.4 the five regions", func() {
 
 		It("refuses a page size that is not one of the three", func() {
 			state := mounted()
-			next, _ := Reduce(state, control(EventPerPage, map[string]string{fieldValue: "1000000"}, 1))
+			next, _ := reduce(state, control(EventPerPage, map[string]string{fieldValue: "1000000"}, 1))
 			Expect(next.Controls.PerPage).To(Equal(DefaultControls.PerPage),
 				"a client-chosen page size is a client choosing how much work the server does")
 		})
@@ -229,7 +234,7 @@ var _ = Describe("§2.4 the five regions", func() {
 			state := mounted()
 			before := state.Shown.Table.Rows
 
-			state, _ = Reduce(state, feedTick(Tick{N: 0, E: []DashEvent{{Kind: FixtureRows, R: []RowUpdate{
+			state, _ = reduce(state, feedTick(Tick{N: 0, E: []DashEvent{{Kind: FixtureRows, R: []RowUpdate{
 				{ID: 2, Status: "ok", M1: 999, M2: 9, M3: 9, TS: 1000},
 			}}}}))
 
@@ -247,7 +252,7 @@ var _ = Describe("§2.4 the five regions", func() {
 		It("shifts one point per series and drops the oldest", func() {
 			state := mounted()
 			for n := 0; n < SeriesPoints+5; n++ {
-				state, _ = Reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureSeries, V: []int{n, n}}}}))
+				state, _ = reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureSeries, V: []int{n, n}}}}))
 			}
 			Expect(state.Shown.Series.Points[0]).To(HaveLen(SeriesPoints))
 			Expect(state.SeriesLast()).To(Equal(strconv.Itoa(SeriesPoints + 4)))
@@ -255,7 +260,7 @@ var _ = Describe("§2.4 the five regions", func() {
 
 		It("renders one element per point, per series (R-4)", func() {
 			state := mounted()
-			state, _ = Reduce(state, feedTick(Tick{N: 0, E: []DashEvent{{Kind: FixtureSeries, V: []int{500, 600}}}}))
+			state, _ = reduce(state, feedTick(Tick{N: 0, E: []DashEvent{{Kind: FixtureSeries, V: []int{500, 600}}}}))
 			Expect(strings.Count(render(SeriesRegion(state)), "<circle")).To(Equal(4),
 				"one seed plus one sample, two series")
 		})
@@ -265,7 +270,7 @@ var _ = Describe("§2.4 the five regions", func() {
 		It("appends and caps at 50", func() {
 			state := mounted()
 			for n := 1; n <= LogCap+10; n++ {
-				state, _ = Reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureLog, Seq: n, Text: "row " + strconv.Itoa(n)}}}))
+				state, _ = reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureLog, Seq: n, Text: "row " + strconv.Itoa(n)}}}))
 			}
 			entries := state.LogEntries()
 			Expect(entries).To(HaveLen(LogCap))
@@ -332,14 +337,14 @@ var _ = Describe("§2.4 pause and resume (DSH-5)", func() {
 	// there — the category error §2.2 exists to keep out of the tables.
 	It("freezes what is shown while the feed keeps moving", func() {
 		state := mounted()
-		state, _ = Reduce(state, feedTick(Tick{N: 1, E: []DashEvent{{Kind: FixtureLog, Seq: 1, Text: "before"}}}))
+		state, _ = reduce(state, feedTick(Tick{N: 1, E: []DashEvent{{Kind: FixtureLog, Seq: 1, Text: "before"}}}))
 		Expect(state.Tick()).To(Equal("1"))
 
-		state, _ = Reduce(state, control(EventPause, nil, 1))
+		state, _ = reduce(state, control(EventPause, nil, 1))
 		Expect(state.Paused()).To(Equal("paused"))
 
 		for n := 2; n <= 6; n++ {
-			state, _ = Reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureLog, Seq: n, Text: "during"}}}))
+			state, _ = reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureLog, Seq: n, Text: "during"}}}))
 		}
 		Expect(state.Tick()).To(Equal("1"), "a pause that lets the tick move is not a pause")
 		Expect(state.Live.Tick).To(Equal(6), "the stream continues server-side")
@@ -348,12 +353,12 @@ var _ = Describe("§2.4 pause and resume (DSH-5)", func() {
 
 	It("resumes to the CURRENT tick rather than replaying what was missed", func() {
 		state := mounted()
-		state, _ = Reduce(state, control(EventPause, nil, 1))
+		state, _ = reduce(state, control(EventPause, nil, 1))
 		for n := 1; n <= 6; n++ {
-			state, _ = Reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureLog, Seq: n, Text: "missed"}}}))
+			state, _ = reduce(state, feedTick(Tick{N: n, E: []DashEvent{{Kind: FixtureLog, Seq: n, Text: "missed"}}}))
 		}
 
-		state, _ = Reduce(state, control(EventPause, nil, 2))
+		state, _ = reduce(state, control(EventPause, nil, 2))
 		Expect(state.Paused()).To(Equal("running"))
 		Expect(state.Tick()).To(Equal("6"))
 		Expect(state.LogEntries()).To(HaveLen(6),
@@ -446,7 +451,7 @@ var _ = Describe("§2.5 the committed fixture", func() {
 		feed.applyTick(tick)
 
 		state := mounted()
-		state, _ = Reduce(state, feedTick(tick))
+		state, _ = reduce(state, feedTick(tick))
 
 		Expect(state.Shown.Table.Rows[0].Status).To(Equal(feed.Frame().Table.Rows[0].Status))
 		Expect(state.KPIs()[0].Value).To(Equal(111))
@@ -455,8 +460,8 @@ var _ = Describe("§2.5 the committed fixture", func() {
 
 	It("ignores a tick it has already folded", func() {
 		state := mounted()
-		state, _ = Reduce(state, feedTick(Tick{N: 5, E: []DashEvent{{Kind: FixtureLog, Seq: 1, Text: "once"}}}))
-		state, _ = Reduce(state, feedTick(Tick{N: 5, E: []DashEvent{{Kind: FixtureLog, Seq: 1, Text: "once"}}}))
+		state, _ = reduce(state, feedTick(Tick{N: 5, E: []DashEvent{{Kind: FixtureLog, Seq: 1, Text: "once"}}}))
+		state, _ = reduce(state, feedTick(Tick{N: 5, E: []DashEvent{{Kind: FixtureLog, Seq: 1, Text: "once"}}}))
 		Expect(state.LogEntries()).To(HaveLen(1),
 			"emitted events are best-effort; region C shifts a point per tick and a double fold is not stale, it is wrong")
 	})
@@ -493,7 +498,7 @@ var _ = Describe("§2.0 the markup hooks the harness drives", func() {
 
 	BeforeEach(func() {
 		state := mounted()
-		state, _ = Reduce(state, feedTick(Tick{N: 0, E: []DashEvent{
+		state, _ = reduce(state, feedTick(Tick{N: 0, E: []DashEvent{
 			{Kind: FixtureKPI, V: []int{110, 180}},
 			{Kind: FixtureSeries, V: []int{310, 410}},
 			{Kind: FixtureLog, Seq: 1, Text: "ingest-001 scaled"},
@@ -646,13 +651,13 @@ var _ = Describe("Determinism (FR-15)", func() {
 	// rests on: both servers must emit the same logical state for tick N, and a
 	// reducer whose output depended on when it ran could not.
 	It("replays the whole session to the same state and the same effects", func() {
-		livetest.ReplayN(GinkgoTB(), Reduce, mounted(), mixedLog(), 25)
+		livetest.ReplayN(GinkgoTB(), reduce, mounted(), mixedLog(), 25)
 	})
 
 	It("replays to the dashboard the log describes", func() {
 		state := mounted()
 		for _, ev := range mixedLog() {
-			state, _ = Reduce(state, ev)
+			state, _ = reduce(state, ev)
 		}
 		Expect(state.Controls.Filter).To(Equal("warn"))
 		Expect(state.Controls.Sort).To(Equal("asc"))
@@ -675,7 +680,7 @@ var _ = Describe("Determinism (FR-15)", func() {
 			Expect(fragment.ID).To(Equal(id))
 
 			prev := mounted()
-			next, _ := Reduce(prev, feedTick(tick))
+			next, _ := reduce(prev, feedTick(tick))
 			Expect(fragment.Dirty(prev, next)).To(BeFalse())
 		},
 		Entry("the KPI strip ignores a row churn", 0, FragmentKPIs,
@@ -694,7 +699,7 @@ var _ = Describe("Determinism (FR-15)", func() {
 		Expect(table.ID).To(Equal(FragmentTable))
 
 		prev := mounted()
-		next, _ := Reduce(prev, control(EventFilter, map[string]string{fieldValue: "warn"}, 1))
+		next, _ := reduce(prev, control(EventFilter, map[string]string{fieldValue: "warn"}, 1))
 		Expect(table.Dirty(prev, next)).To(BeTrue(),
 			"the filter is applied server-side, so the rows it removes are removed by a patch")
 	})
@@ -717,13 +722,14 @@ var _ = Describe("The subscription, and losing it", func() {
 	// rendering the last frame it saw and stops learning about any other, which
 	// looks right while being wrong.
 	It("re-subscribes when the library says the failure was transient", func() {
-		_, effects := Reduce(mounted(), effectFailed(SourceSubscribe, "true"))
-		Expect(effects).To(Equal([]live.IEffect{SubscribeEffect{}}))
+		_, effects := reduce(mounted(), effectFailed(SourceSubscribe, "true"))
+		Expect(effects).To(HaveLen(1))
+		Expect(effects[0].Source).To(Equal(SourceSubscribe))
 	})
 
 	DescribeTable("and does not otherwise",
 		func(source, retryable string) {
-			_, effects := Reduce(mounted(), effectFailed(source, retryable))
+			_, effects := reduce(mounted(), effectFailed(source, retryable))
 			Expect(effects).To(BeEmpty())
 		},
 		Entry("a terminal failure re-runs whatever made it terminal", SourceSubscribe, "false"),
@@ -750,35 +756,27 @@ var _ = Describe("The subscription, and losing it", func() {
 	})
 
 	It("refuses to pump a session that never joined", func() {
-		err := testFeed().Execute(context.Background(), specSession(),
-			SubscribeEffect{}, func(live.Event) error { return nil })
+		err := testFeed().SubscribeEffect().
+			Run(context.Background(), specSession(), func(live.Event) error { return nil })
 		Expect(err).To(MatchError(ContainSubstring("not subscribed")),
-			"Config.Init must Join before it returns a SubscribeEffect, and saying so is cheaper than a silent no-op")
+			"Config.Init must Join before it returns a subscribe effect, and saying so is cheaper than a silent no-op")
 	})
 
-	It("refuses an effect it has no executor for", func() {
-		err := testFeed().Execute(context.Background(), specSession(),
-			strayEffect{}, func(live.Event) error { return nil })
-		Expect(err).To(MatchError(ContainSubstring("no executor")))
-	})
+	// "refuses an effect it has no executor for" is gone with the executor: an
+	// effect this feed does not own is one it cannot be handed, now that a
+	// live.Effect[live.AnonymousIdentity] carries its own Run.
 })
 
 // specSession is a session as this application's own Authenticate would build
 // one: live.Anonymous, because a read-only operator dashboard has no accounts
-// and nothing in the executor reads an identity. livetest refuses a nil one,
-// which is the trap live.Session{} already sets.
-func specSession() live.Session {
+// and nothing in an effect reads an identity. livetest refuses a nil one,
+// which is the trap live.Session[live.AnonymousIdentity]{} already sets.
+func specSession() live.Session[live.AnonymousIdentity] {
 	GinkgoHelper()
 	identity, err := live.Anonymous(&http.Request{})
 	Expect(err).NotTo(HaveOccurred())
 	return livetest.NewSession(GinkgoTB(), tabA, identity)
 }
-
-// strayEffect is an effect no reducer of this application returns, for the
-// executor's default branch.
-type strayEffect struct{}
-
-func (strayEffect) EffectSource() string { return "dash.stray" }
 
 func effectFailed(source, retryable string) live.Event {
 	return live.Event{

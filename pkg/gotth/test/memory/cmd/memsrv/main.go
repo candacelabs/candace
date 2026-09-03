@@ -129,15 +129,15 @@ func run() error {
 	// whole point is that the configuration is the shipped one.
 	var subjects atomic.Uint64
 
-	cfg := live.Config[State]{
-		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
+	cfg := live.Config[State, subject]{
+		Init: func(ctx context.Context, s live.Session[subject]) (State, []live.Effect[subject], error) {
 			// The shallowest probe point on the session actor's goroutine:
 			// Run → mount → Init. It anchors the high end of that goroutine's
 			// observed stack extent.
 			probe.note("app.Init", stackAddr())
 			return State{Self: s.ID()}, nil, nil
 		},
-		Reduce: func(st State, ev live.Event) (State, []live.IEffect) {
+		Reduce: func(st State, ev live.Event) (State, []live.Effect[subject]) {
 			if ev.Name == eventIncrement {
 				st.Value++
 			}
@@ -156,21 +156,18 @@ func run() error {
 				})
 			},
 		}},
-		Events: []string{eventIncrement},
-		Execute: func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-			return errors.New("memsrv returns no effects")
-		},
+		Events:  []string{eventIncrement},
 		Origins: strings.Split(*origins, ","),
-		Authenticate: func(request *http.Request) (live.IIdentity, error) {
+		Authenticate: func(request *http.Request) (subject, error) {
 			return subject(fmt.Sprintf("session-%d", subjects.Add(1))), nil
 		},
-		Authorize: func(ctx context.Context, s live.Session, ev live.Event) error {
+		Authorize: func(ctx context.Context, s live.Session[subject], ev live.Event) error {
 			// The connection read pump's goroutine, below the ingress and the
 			// authorize span. It is only reached when a client sends an event;
 			// on the Idle workload the read pump's probe points come from the
 			// parse span's sampler call instead.
 			probe.note("app.Authorize", stackAddr())
-			return live.AllowAll(ctx, s, ev)
+			return live.AllowAll[subject](ctx, s, ev)
 		},
 		CSRF:   live.NoCSRFCheck,
 		Limits: live.DefaultLimits(),

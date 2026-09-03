@@ -72,16 +72,15 @@ func probeFleet() *running {
 // probeApp is this host's own widgets and this host's own effects, wired the way
 // run wires them — the same registration set, the same six sources, the same
 // command wrapper.
-func probeApp(fleet *running) *live.App[widget.HostState] {
+func probeApp(fleet *running) *live.App[widget.HostState, live.AnonymousIdentity] {
 	GinkgoHelper()
 
-	config, configError := hostWidgets().LiveConfig(widget.MountOptions{
+	config, configError := hostWidgets().LiveConfig(widget.MountOptions[live.AnonymousIdentity]{
 		Origins:      []string{probeOrigin},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 		Init:         fleet.sources,
-		Execute:      fleet.execute,
 	})
 	Expect(configError).ToNot(HaveOccurred())
 	config.Reduce = fleet.commands(config.Reduce)
@@ -97,7 +96,7 @@ func probeApp(fleet *running) *live.App[widget.HostState] {
 }
 
 // dialProbe opens one session against the handler, exactly as a browser does.
-func dialProbe(app *live.App[widget.HostState]) *livetest.Client {
+func dialProbe(app *live.App[widget.HostState, live.AnonymousIdentity]) *livetest.Client {
 	GinkgoHelper()
 	return livetest.NewClient(GinkgoTB(), app.Handler(), livetest.ClientOptions{
 		Path:    probePath,

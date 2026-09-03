@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/candacelabs/candace/pkg/gotth/live"
 	"github.com/candacelabs/candace/pkg/widget/widgettest"
 )
 
@@ -18,7 +19,7 @@ import (
 func card(view StoreView) widgettest.Rendered {
 	GinkgoHelper()
 
-	mounted, mountError := widgettest.Mount(context.Background(), NewBlobfish())
+	mounted, mountError := widgettest.Mount(context.Background(), NewBlobfish[live.AnonymousIdentity]())
 	Expect(mountError).ToNot(HaveOccurred())
 	Expect(mounted.Apply(
 		widgettest.Deliver(BlobfishEventReplicaReport, ReportFields(view)),
@@ -39,7 +40,7 @@ func durable(sequence uint64) StoreView {
 
 var _ = Describe("The Blobfish card", func() {
 	It("declares one stream and no browser-sendable event", func() {
-		registration := NewBlobfish().Register()
+		registration := NewBlobfish[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Events).To(BeEmpty())
 		Expect(registration.Internal).To(ConsistOf(BlobfishEventReplicaReport))

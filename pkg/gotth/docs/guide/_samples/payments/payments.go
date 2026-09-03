@@ -62,20 +62,18 @@ type State struct {
 	ChargeID    string
 }
 
-// ChargeEffect moves money.
+// ChargeIntent is one request to move money, as the reducer decides it.
 //
-// Key is the whole point. It is carried on the effect value rather than minted
-// inside Execute, because an effect is a plain value that a test can compare:
-// livetest.ReplayN's deep comparison of emitted effects can then assert that
-// two runs of the same reducer asked for the same key, which is a property no
-// test could see if the key were minted at the actor boundary.
-type ChargeEffect struct {
+// Key is the whole point. It is decided by the REDUCER rather than minted
+// inside the effect's Run, because the reducer is the deterministic half: the
+// same state and the same event produce the same key on every replay, where a
+// key minted at the actor boundary would be a fresh one per attempt and the
+// retry it exists to make safe would charge twice.
+type ChargeIntent struct {
 	OrderID     string
 	AmountCents int64
 	Key         string
 }
-
-func (ChargeEffect) EffectSource() string { return SourceCharge }
 
 // IdempotencyKey is this package's one load-bearing function.
 //
@@ -86,7 +84,7 @@ func (ChargeEffect) EffectSource() string { return SourceCharge }
 //     different live.Event.ID values, so a key built from one charges twice for
 //     the double-click it was supposed to stop.
 //   - the session. A session dies with its connection (RFC-0001 §7.1) and a
-//     reconnect gets a fresh one, so a key built from live.Session.ID differs
+//     reconnect gets a fresh one, so a key built from live.Session[live.AnonymousIdentity].ID differs
 //     across exactly the retry it was supposed to stop.
 //   - a clock or a random source. Either makes the key unreproducible, which is
 //     the same as having no key, and neither is available to a reducer anyway.
@@ -98,17 +96,18 @@ func IdempotencyKey(orderID string, amountCents int64) string {
 	return "checkout-" + hex.EncodeToString(sum[:16])
 }
 
-// charge is the effect this state would schedule, and it is a method so that
+// charge is the request this state would schedule, and it is a method so that
 // every site that schedules one mints the key the same way.
-func (s State) charge() ChargeEffect {
-	return ChargeEffect{
+func (s State) charge() ChargeIntent {
+	return ChargeIntent{
 		OrderID:     s.OrderID,
 		AmountCents: s.AmountCents,
 		Key:         IdempotencyKey(s.OrderID, s.AmountCents),
 	}
 }
 
-// Reduce is pure, and it does two separate things about double execution.
+// Reducer returns a pure transition that does two separate things about double
+// execution.
 //
 // The Status guard is the cheap one: within one live session, transitions are
 // serialised on the session's goroutine, so the second click of a double-click
@@ -116,24 +115,26 @@ func (s State) charge() ChargeEffect {
 // having, and it is NOT the mechanism — it is in-process state, and a customer
 // who reconnects gets a fresh session whose Init rebuilds this struct from the
 // order. The key is what survives that; the guard is what saves a round trip.
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	switch ev.Name {
-	case EventPay:
-		if s.Status != StatusOpen {
+func Reducer(gateway *Gateway) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		switch ev.Name {
+		case EventPay:
+			if s.Status != StatusOpen {
+				return s, nil
+			}
+			s.Status = StatusCharging
+			return s, []live.Effect[live.AnonymousIdentity]{gateway.ChargeEffect(s.charge())}
+
+		case EventCharged:
+			s.Status = StatusCharged
+			s.ChargeID = ev.Fields.Get(FieldChargeID)
 			return s, nil
+
+		case live.EffectFailedEvent:
+			return failedCharge(gateway, s, ev)
 		}
-		s.Status = StatusCharging
-		return s, []live.IEffect{s.charge()}
-
-	case EventCharged:
-		s.Status = StatusCharged
-		s.ChargeID = ev.Fields.Get(FieldChargeID)
 		return s, nil
-
-	case live.EffectFailedEvent:
-		return failedCharge(s, ev)
 	}
-	return s, nil
 }
 
 // failedCharge decides what a failed charge does to the checkout.
@@ -144,12 +145,12 @@ func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 // customer press Pay again — same key, same answer. Both branches are only
 // honest because of IdempotencyKey; without it this reducer would be a
 // double-charge generator with good manners.
-func failedCharge(s State, ev live.Event) (State, []live.IEffect) {
+func failedCharge(gateway *Gateway, s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
 	if ev.Fields.Get(live.EffectFailedSourceField) != SourceCharge {
 		return s, nil
 	}
 	if retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField)); retryable {
-		return s, []live.IEffect{s.charge()}
+		return s, []live.Effect[live.AnonymousIdentity]{gateway.ChargeEffect(s.charge())}
 	}
 	s.Status = StatusOpen
 	return s, nil
@@ -160,40 +161,40 @@ type Gateway struct {
 	Provider Provider
 }
 
-// Execute performs the charge at the actor boundary.
+// ChargeEffect performs the charge at the actor boundary.
 //
-// The failure to notice here is the emit: the money has moved by the time this
+// The failure to notice here is the emit: the money has moved by the time that
 // line runs, so an emit that fails is the second double-execution path
 // happening inside one process — committed externally, and the session never
-// learned. Marking it retryable is a claim about idempotence, and this executor
-// is entitled to make it because it passed a key it derived from the order.
-// Without the key the honest classification would be terminal, and the customer
-// would be looking at a checkout that had already taken their money.
-func (g *Gateway) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch e := effect.(type) {
-	case ChargeEffect:
-		charge, err := g.Provider.Charge(ctx, ChargeRequest{
-			IdempotencyKey: e.Key,
-			OrderID:        e.OrderID,
-			AmountCents:    e.AmountCents,
-		})
-		if err != nil {
-			return fmt.Errorf("payments: charging order %s: %w", e.OrderID, err)
-		}
-		if err := emit(live.Event{
-			Name: EventCharged,
-			Fields: live.NewFields(map[string]string{
-				FieldChargeID: charge.ID,
-				FieldOrderID:  e.OrderID,
-			}),
-		}); err != nil {
-			return live.Retryable(fmt.Errorf(
-				"payments: order %s was charged as %s and the session did not learn: %w",
-				e.OrderID, charge.ID, err))
-		}
-		return nil
-	default:
-		return fmt.Errorf("payments: no executor for %T", effect)
+// learned. Marking it retryable is a claim about idempotence, and this effect
+// is entitled to make it because it passed a key the reducer derived from the
+// order. Without the key the honest classification would be terminal, and the
+// customer would be looking at a checkout that had already taken their money.
+func (g *Gateway) ChargeEffect(request ChargeIntent) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceCharge,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			charge, err := g.Provider.Charge(ctx, ChargeRequest{
+				IdempotencyKey: request.Key,
+				OrderID:        request.OrderID,
+				AmountCents:    request.AmountCents,
+			})
+			if err != nil {
+				return fmt.Errorf("payments: charging order %s: %w", request.OrderID, err)
+			}
+			if err := emit(live.Event{
+				Name: EventCharged,
+				Fields: live.NewFields(map[string]string{
+					FieldChargeID: charge.ID,
+					FieldOrderID:  request.OrderID,
+				}),
+			}); err != nil {
+				return live.Retryable(fmt.Errorf(
+					"payments: order %s was charged as %s and the session did not learn: %w",
+					request.OrderID, charge.ID, err))
+			}
+			return nil
+		},
 	}
 }
 

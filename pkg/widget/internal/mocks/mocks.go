@@ -20,76 +20,62 @@ import (
 )
 
 // MockIWidget is a mock of IWidget interface.
-type MockIWidget[S any] struct {
+type MockIWidget[S any, I live.IIdentity] struct {
 	ctrl     *gomock.Controller
-	recorder *MockIWidgetMockRecorder[S]
+	recorder *MockIWidgetMockRecorder[S, I]
 	isgomock struct{}
 }
 
 // MockIWidgetMockRecorder is the mock recorder for MockIWidget.
-type MockIWidgetMockRecorder[S any] struct {
-	mock *MockIWidget[S]
+type MockIWidgetMockRecorder[S any, I live.IIdentity] struct {
+	mock *MockIWidget[S, I]
 }
 
 // NewMockIWidget creates a new mock instance.
-func NewMockIWidget[S any](ctrl *gomock.Controller) *MockIWidget[S] {
-	mock := &MockIWidget[S]{ctrl: ctrl}
-	mock.recorder = &MockIWidgetMockRecorder[S]{mock}
+func NewMockIWidget[S any, I live.IIdentity](ctrl *gomock.Controller) *MockIWidget[S, I] {
+	mock := &MockIWidget[S, I]{ctrl: ctrl}
+	mock.recorder = &MockIWidgetMockRecorder[S, I]{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockIWidget[S]) EXPECT() *MockIWidgetMockRecorder[S] {
+func (m *MockIWidget[S, I]) EXPECT() *MockIWidgetMockRecorder[S, I] {
 	return m.recorder
 }
 
-// Effect mocks base method.
-func (m *MockIWidget[S]) Effect(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Effect", ctx, session, effect, emit)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Effect indicates an expected call of Effect.
-func (mr *MockIWidgetMockRecorder[S]) Effect(ctx, session, effect, emit any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Effect", reflect.TypeOf((*MockIWidget[S])(nil).Effect), ctx, session, effect, emit)
-}
-
 // Mount mocks base method.
-func (m *MockIWidget[S]) Mount(ctx context.Context, session live.Session) (S, []live.IEffect, error) {
+func (m *MockIWidget[S, I]) Mount(ctx context.Context, session live.Session[I]) (S, []live.Effect[I], error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Mount", ctx, session)
 	ret0, _ := ret[0].(S)
-	ret1, _ := ret[1].([]live.IEffect)
+	ret1, _ := ret[1].([]live.Effect[I])
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
 // Mount indicates an expected call of Mount.
-func (mr *MockIWidgetMockRecorder[S]) Mount(ctx, session any) *gomock.Call {
+func (mr *MockIWidgetMockRecorder[S, I]) Mount(ctx, session any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Mount", reflect.TypeOf((*MockIWidget[S])(nil).Mount), ctx, session)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Mount", reflect.TypeOf((*MockIWidget[S, I])(nil).Mount), ctx, session)
 }
 
 // Reduce mocks base method.
-func (m *MockIWidget[S]) Reduce(state S, event live.Event) (S, []live.IEffect) {
+func (m *MockIWidget[S, I]) Reduce(state S, event live.Event) (S, []live.Effect[I]) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Reduce", state, event)
 	ret0, _ := ret[0].(S)
-	ret1, _ := ret[1].([]live.IEffect)
+	ret1, _ := ret[1].([]live.Effect[I])
 	return ret0, ret1
 }
 
 // Reduce indicates an expected call of Reduce.
-func (mr *MockIWidgetMockRecorder[S]) Reduce(state, event any) *gomock.Call {
+func (mr *MockIWidgetMockRecorder[S, I]) Reduce(state, event any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reduce", reflect.TypeOf((*MockIWidget[S])(nil).Reduce), state, event)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reduce", reflect.TypeOf((*MockIWidget[S, I])(nil).Reduce), state, event)
 }
 
 // Register mocks base method.
-func (m *MockIWidget[S]) Register() widget.Registration {
+func (m *MockIWidget[S, I]) Register() widget.Registration {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Register")
 	ret0, _ := ret[0].(widget.Registration)
@@ -97,13 +83,13 @@ func (m *MockIWidget[S]) Register() widget.Registration {
 }
 
 // Register indicates an expected call of Register.
-func (mr *MockIWidgetMockRecorder[S]) Register() *gomock.Call {
+func (mr *MockIWidgetMockRecorder[S, I]) Register() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockIWidget[S])(nil).Register))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockIWidget[S, I])(nil).Register))
 }
 
 // Render mocks base method.
-func (m *MockIWidget[S]) Render(state S) templ.Component {
+func (m *MockIWidget[S, I]) Render(state S) templ.Component {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Render", state)
 	ret0, _ := ret[0].(templ.Component)
@@ -111,13 +97,13 @@ func (m *MockIWidget[S]) Render(state S) templ.Component {
 }
 
 // Render indicates an expected call of Render.
-func (mr *MockIWidgetMockRecorder[S]) Render(state any) *gomock.Call {
+func (mr *MockIWidgetMockRecorder[S, I]) Render(state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Render", reflect.TypeOf((*MockIWidget[S])(nil).Render), state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Render", reflect.TypeOf((*MockIWidget[S, I])(nil).Render), state)
 }
 
 // Snapshot mocks base method.
-func (m *MockIWidget[S]) Snapshot(state S) widget.Snapshot {
+func (m *MockIWidget[S, I]) Snapshot(state S) widget.Snapshot {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Snapshot", state)
 	ret0, _ := ret[0].(widget.Snapshot)
@@ -125,19 +111,19 @@ func (m *MockIWidget[S]) Snapshot(state S) widget.Snapshot {
 }
 
 // Snapshot indicates an expected call of Snapshot.
-func (mr *MockIWidgetMockRecorder[S]) Snapshot(state any) *gomock.Call {
+func (mr *MockIWidgetMockRecorder[S, I]) Snapshot(state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockIWidget[S])(nil).Snapshot), state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockIWidget[S, I])(nil).Snapshot), state)
 }
 
 // Unmount mocks base method.
-func (m *MockIWidget[S]) Unmount(ctx context.Context, session live.Session, state S) {
+func (m *MockIWidget[S, I]) Unmount(ctx context.Context, session live.Session[I], state S) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Unmount", ctx, session, state)
 }
 
 // Unmount indicates an expected call of Unmount.
-func (mr *MockIWidgetMockRecorder[S]) Unmount(ctx, session, state any) *gomock.Call {
+func (mr *MockIWidgetMockRecorder[S, I]) Unmount(ctx, session, state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unmount", reflect.TypeOf((*MockIWidget[S])(nil).Unmount), ctx, session, state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unmount", reflect.TypeOf((*MockIWidget[S, I])(nil).Unmount), ctx, session, state)
 }

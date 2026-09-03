@@ -1,5 +1,16 @@
 // Command ifacereturn reports every function and method result in a Go module
-// whose declared type is an interface.
+// through which an interface reaches a caller — the result's own type, or an
+// interface-typed field of a struct it hands back.
+//
+// # Running it
+//
+// In this monorepo, through the CLI:
+//
+//	candace style ifacereturn
+//
+// That wraps tools/check-ifacereturn.sh, which knows where the modules are and
+// runs this command in the pinned toolchain container. It is the invocation an
+// operator here should use; the raw one below exists for the other audience.
 //
 // It is the flagging lane of house rule CS-8. The blocking lane is a separate
 // lexical gate, narrow by design, that fails CI. This one is type-aware and as
@@ -9,7 +20,8 @@
 // ruled correct and a gate whose findings have no fix is one people learn to
 // route around.
 //
-// Usage, from a module root:
+// For consumers of the published candacelabs/candace module, who have no
+// private CLI, the portable invocation is a go run from a module root:
 //
 //	go run github.com/candacelabs/candace/tools/ifacereturn/cmd/ifacereturn ./...
 //
@@ -142,7 +154,12 @@ func scan(patterns []string) ([]report, error) {
 		if loadedPackage.Fset == nil || loadedPackage.TypesInfo == nil {
 			continue
 		}
-		for _, finding := range ifacereturn.Inspect(loadedPackage.Syntax, loadedPackage.TypesInfo) {
+		// InspectIn rather than Inspect: the package is what decides whether an
+		// unexported field of a returned struct is reachable by the caller, and
+		// this command must report exactly what the analyzer does.
+		for _, finding := range ifacereturn.InspectIn(
+			loadedPackage.Syntax, loadedPackage.TypesInfo, loadedPackage.Types,
+		) {
 			position := loadedPackage.Fset.Position(finding.Pos)
 			line := fmt.Sprintf("%s:%d:%d: %s", position.Filename, position.Line, position.Column, finding.Message())
 			if _, repeated := seen[line]; repeated {

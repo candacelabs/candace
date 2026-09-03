@@ -32,6 +32,7 @@ go_test(
     ],
     embed = [":yakshave"],
     deps = [
+        "//pkg/gotth/live",
         "//pkg/widget",
         "//pkg/widget/widgettest",
         "@com_github_onsi_ginkgo_v2//:ginkgo",

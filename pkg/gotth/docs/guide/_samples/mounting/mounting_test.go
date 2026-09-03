@@ -140,7 +140,7 @@ var _ = Describe("the first paint", func() {
 	It("agrees with Init, which is the only reason the first patch changes nothing", func() {
 		store := mounting.NewStore(41)
 
-		s, _, err := store.Init(context.Background(), live.Session{})
+		s, _, err := store.Init(context.Background(), live.Session[live.AnonymousIdentity]{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(get(store.FirstPaint(), "/").Body.String()).
 			To(ContainSubstring("<output>" + strconv.Itoa(s.N) + "</output>"))

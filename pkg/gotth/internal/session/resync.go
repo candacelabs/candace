@@ -28,7 +28,7 @@ const (
 // second from one authenticated client would be a self-service denial of
 // service, and sharing a budget with ordinary events is what would have
 // allowed it.
-func (a *Actor) resync(ctx context.Context, m *inbound) {
+func (a *Actor[I]) resync(ctx context.Context, m *inbound) {
 	// A child of the span authorization ran under, for FR-36 clause 4's reason
 	// and by its mechanism. A resync is authorized as a distinguished event
 	// kind on the read pump, so its origin span had exactly the defect C-30
@@ -183,7 +183,7 @@ func (a *Actor) resync(ctx context.Context, m *inbound) {
 // this session actually sent and that is still inside the window; anything
 // else is either a forgery or a stale echo, and is dropped and counted rather
 // than used to fabricate a span.
-func (a *Actor) telemetry(ctx context.Context, m *inbound) {
+func (a *Actor[I]) telemetry(ctx context.Context, m *inbound) {
 	sent, ok := a.win.slotFor(m.patchID)
 	if !ok {
 		a.m.ClientTelemetryDropped(ctx, "unknown_patch")

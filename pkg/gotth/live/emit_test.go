@@ -56,7 +56,8 @@ func ids(n int) []uint64 {
 //
 // The reducer folds both outcomes into the label, so one patch says which
 // happened: an accepted emission relabels, a rejected one arrives as
-// EffectFailedEvent because Execute returns the Emitter's error unchanged.
+// EffectFailedEvent because the effect's Run returns the Emitter's error
+// unchanged.
 // That is the contract this rejection is supposed to join, and reading it off
 // the rendered fragment is how a spec sees the application's side of it.
 func emitting(ev live.Event) (*mounted, *obstest.Metrics, chan error) {
@@ -65,23 +66,24 @@ func emitting(ev live.Event) (*mounted, *obstest.Metrics, chan error) {
 	metrics := obstest.NewMetrics()
 	returned := make(chan error, 1)
 
-	app := mount(func(c *live.Config[counter]) {
+	inject := func(_ context.Context, _ live.Session[user], emit live.Emitter) error {
+		err := emit(ev)
+		returned <- err
+		return err
+	}
+
+	app := mount(func(c *live.Config[counter, user]) {
 		c.Metrics = metrics
-		c.Reduce = func(state counter, e live.Event) (counter, []live.IEffect) {
+		c.Reduce = func(state counter, e live.Event) (counter, []live.Effect[user]) {
 			switch e.Name {
 			case "counter.increment":
-				return state, []live.IEffect{logEffect{Message: "emit"}}
+				return state, []live.Effect[user]{logEffect(inject)}
 			case "counter.relabel":
 				state.Label = "emitted"
 			case live.EffectFailedEvent:
 				state.Label = "refused"
 			}
 			return state, nil
-		}
-		c.Execute = func(_ context.Context, _ live.Session, _ live.IEffect, emit live.Emitter) error {
-			err := emit(ev)
-			returned <- err
-			return err
 		}
 	})
 	app.send("counter.increment", nil)

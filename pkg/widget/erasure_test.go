@@ -45,24 +45,19 @@ func (widgetUnderTest hostile[S]) Register() widget.Registration {
 }
 
 func (widgetUnderTest hostile[S]) Mount(
-	_ context.Context, _ live.Session,
-) (S, []live.IEffect, error) {
+	_ context.Context, _ live.Session[live.AnonymousIdentity],
+) (S, []live.Effect[live.AnonymousIdentity], error) {
 	return widgetUnderTest.mounted, nil, nil
 }
 
-func (widgetUnderTest hostile[S]) Reduce(_ S, _ live.Event) (S, []live.IEffect) {
+func (widgetUnderTest hostile[S]) Reduce(_ S, _ live.Event) (S, []live.Effect[live.AnonymousIdentity]) {
 	return widgetUnderTest.reduced, nil
 }
 
 func (widgetUnderTest hostile[S]) Render(_ S) templ.Component { return templ.NopComponent }
 
-func (widgetUnderTest hostile[S]) Effect(
-	_ context.Context, _ live.Session, _ live.IEffect, _ live.Emitter,
-) error {
-	return nil
+func (widgetUnderTest hostile[S]) Unmount(_ context.Context, _ live.Session[live.AnonymousIdentity], _ S) {
 }
-
-func (widgetUnderTest hostile[S]) Unmount(_ context.Context, _ live.Session, _ S) {}
 
 func (widgetUnderTest hostile[S]) Snapshot(_ S) widget.Snapshot {
 	return widget.Snapshot{Widget: widgetUnderTest.registration.Name}
@@ -70,11 +65,11 @@ func (widgetUnderTest hostile[S]) Snapshot(_ S) widget.Snapshot {
 
 // hostileOptions is the minimum posture LiveConfig accepts. None of these specs
 // reaches a security hook; they exist because a nil one is refused.
-func hostileOptions() widget.MountOptions {
-	return widget.MountOptions{
+func hostileOptions() widget.MountOptions[live.AnonymousIdentity] {
+	return widget.MountOptions[live.AnonymousIdentity]{
 		Origins:      []string{"http://127.0.0.1"},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	}
 }
@@ -93,15 +88,15 @@ type mounted struct {
 }
 
 // mountOne registers one widget, builds its configuration and runs its mount.
-func mountOne[S any](instance widget.IWidget[S]) mounted {
+func mountOne[S any](instance widget.IWidget[S, live.AnonymousIdentity]) mounted {
 	GinkgoHelper()
 
-	registry := widget.NewRegistry()
+	registry := widget.NewRegistry[live.AnonymousIdentity]()
 	Expect(widget.Register(registry, instance)).To(Succeed())
 	config, configError := registry.LiveConfig(hostileOptions())
 	Expect(configError).ToNot(HaveOccurred())
 
-	state, _, mountError := config.Init(context.Background(), live.Session{})
+	state, _, mountError := config.Init(context.Background(), live.Session[live.AnonymousIdentity]{})
 	Expect(mountError).ToNot(HaveOccurred())
 	return mounted{
 		fragment: config.Fragments[0],
@@ -244,7 +239,7 @@ var _ = Describe("A registry holding two widgets of one state type", func() {
 	// are two packages with two identical-looking state structs — and nothing
 	// asserted that the registry keeps them apart, which it does by index
 	// rather than by type.
-	twins := func() (*widget.Registry, hostile[int], hostile[int]) {
+	twins := func() (*widget.Registry[live.AnonymousIdentity], hostile[int], hostile[int]) {
 		GinkgoHelper()
 		first := hostile[int]{
 			registration: widget.Registration{
@@ -258,9 +253,9 @@ var _ = Describe("A registry holding two widgets of one state type", func() {
 			},
 			mounted: 21, reduced: 22,
 		}
-		registry := widget.NewRegistry()
-		Expect(widget.Register[int](registry, first)).To(Succeed())
-		Expect(widget.Register[int](registry, second)).To(Succeed())
+		registry := widget.NewRegistry[live.AnonymousIdentity]()
+		Expect(widget.Register[int, live.AnonymousIdentity](registry, first)).To(Succeed())
+		Expect(widget.Register[int, live.AnonymousIdentity](registry, second)).To(Succeed())
 		return registry, first, second
 	}
 
@@ -278,7 +273,7 @@ var _ = Describe("A registry holding two widgets of one state type", func() {
 		registry, _, _ := twins()
 		config, configError := registry.LiveConfig(hostileOptions())
 		Expect(configError).ToNot(HaveOccurred())
-		mounted, _, mountError := config.Init(context.Background(), live.Session{})
+		mounted, _, mountError := config.Init(context.Background(), live.Session[live.AnonymousIdentity]{})
 		Expect(mountError).ToNot(HaveOccurred())
 
 		moved, _ := config.Reduce(mounted, live.Event{Name: "widget.second.ping"})
@@ -291,7 +286,7 @@ var _ = Describe("A registry holding two widgets of one state type", func() {
 	It("hands a typed lookup the entry filed under the name it asked for", func() {
 		registry, first, second := twins()
 
-		found, matches := widget.LookupWidget[int](registry, "Second")
+		found, matches := widget.LookupWidget[int, live.AnonymousIdentity](registry, "Second")
 		Expect(matches).To(BeTrue())
 		Expect(found.Register().Name).To(Equal(second.Register().Name))
 		Expect(found.Register().Name).ToNot(Equal(first.Register().Name))
@@ -306,12 +301,12 @@ var _ = Describe("Wire-name collisions across two widgets", func() {
 	// that one loop covers the pairs.
 	collide := func(firstEvents, firstInternal, secondEvents, secondInternal []string) error {
 		GinkgoHelper()
-		registry := widget.NewRegistry()
-		Expect(widget.Register[int](registry, hostile[int]{registration: widget.Registration{
+		registry := widget.NewRegistry[live.AnonymousIdentity]()
+		Expect(widget.Register[int, live.AnonymousIdentity](registry, hostile[int]{registration: widget.Registration{
 			Name: "First", Region: "widget.first",
 			Events: firstEvents, Internal: firstInternal,
 		}})).To(Succeed())
-		return widget.Register[int](registry, hostile[int]{registration: widget.Registration{
+		return widget.Register[int, live.AnonymousIdentity](registry, hostile[int]{registration: widget.Registration{
 			Name: "Second", Region: "widget.second",
 			Events: secondEvents, Internal: secondInternal,
 		}})

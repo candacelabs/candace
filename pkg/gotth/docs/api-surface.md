@@ -30,8 +30,8 @@ measured surface.
 
 | | `live` (exact) | `live/livetest` (ceiling) |
 |---|---:|---:|
-| Exported identifiers (types, funcs, methods, consts, vars) | **56** | 37 |
-| Exported struct fields | **53** | 33 |
+| Exported identifiers (types, funcs, methods, consts, vars) | **59** | 37 |
+| Exported struct fields | **54** | 33 |
 
 *The `live` split was corrected from 41/48 to 40/49 when `tools/apisurface`
 first measured it: one struct field had been counted in the identifier column
@@ -108,15 +108,14 @@ and was wrong twice over (REV-DEL finding 8, ruled at
 
 | Field | Type | Summary | Status |
 |---|---|---|---|
-| `Init` | `func(ctx context.Context, session Session) (S, []IEffect, error)` | Mount hook: produces the session's initial state and any startup effects (e.g. a pubsub subscription). Runs once per session, before the first `Snapshot`, **and once per request through `(*App).PageHandler`**. **Optional since 2026-08-05**: nil means the zero value of `S`, no effects, no error — the only total, side-effect-free reading of an unwritten mount hook, and `Teardown`'s long-standing shape at the other end of the same session. It is the one field of the eight `New` fills in; the rest cannot be guessed. | stable |
+| `Init` | `func(ctx context.Context, session Session[I]) (S, []Effect[I], error)` | Mount hook: produces the session's initial state and any startup effects (e.g. a pubsub subscription). Runs once per session, before the first `Snapshot`, **and once per request through `(*App).PageHandler`**. **Optional since 2026-08-05**: nil means the zero value of `S`, no effects, no error — the only total, side-effect-free reading of an unwritten mount hook, and `Teardown`'s long-standing shape at the other end of the same session. It is the one field of the eight `New` fills in; the rest cannot be guessed. | stable |
 | `Reduce` | `Reducer[S]` | The pure state transition. Required. | stable |
 | `Fragments` | `[]Fragment[S]` | The server-owned live regions. Required, non-empty. | stable |
 | `Events` | `[]string` | The event names this application accepts. Required. An unregistered name is refused with `UNKNOWN_EVENT` and counted, never dispatched and never ignored. | stable |
-| `Execute` | `func(ctx context.Context, session Session, effect IEffect, emit Emitter) error` | Performs one effect at the actor boundary, for the session whose transition returned it. Required if any code path returns an `IEffect`. | stable |
-| `Teardown` | `func(ctx context.Context, session Session, state S)` | Runs after the session actor exits, with final state, for unsubscribing. Optional. | stable |
+| `Teardown` | `func(ctx context.Context, session Session[I], state S)` | Runs after the session actor exits, with final state, for unsubscribing. Optional. | stable |
 | `Origins` | `[]string` | Allowed `Origin` values. Required unless it contains `AnyOrigin`. | stable |
-| `Authenticate` | `func(request *http.Request) (IIdentity, error)` | Derives the session identity from the upgrade request. Required; use `Anonymous` to opt out. | stable |
-| `Authorize` | `func(ctx context.Context, session Session, event Event) error` | Runs before the reducer for every event. Required; use `AllowAll` to opt out. | stable |
+| `Authenticate` | `func(request *http.Request) (I, error)` | Derives the session identity from the upgrade request, as the application's own type. Required; use `Anonymous` (which produces `AnonymousIdentity`) to opt out. | stable |
+| `Authorize` | `func(ctx context.Context, session Session[I], event Event) error` | Runs before the reducer for every event. Required; use `AllowAll` to opt out. | stable |
 | `CSRF` | `func(request *http.Request) error` | Validates a token bound to the authenticated application session. Required; use `NoCSRFCheck` to opt out. | stable |
 | `Limits` | `Limits` | Resource bounds. Zero fields take documented defaults. | stable |
 | `Logger` | `*slog.Logger` | Structured log sink. Nil disables library logging **and the provenance log with it**, which makes FR-41's reverse lookup unavailable (instrumentation §4A.3). | stable *(L9-1 D2 settled)* |
@@ -145,7 +144,7 @@ trigger has a visible blast radius.
 
 | Symbol | Kind | Summary | Status | Req'd by |
 |---|---|---|---|---|
-| `Reducer[S]` | func type | `func(state S, ev Event) (S, []IEffect)` — the pure state transition. Must not perform I/O, read clocks or randomness, mutate its input, or start goroutines. | stable | FR-14 |
+| `Reducer[S, I]` | func type | `func(state S, ev Event) (S, []Effect[I])` — the pure state transition. Must not perform I/O, read clocks or randomness, mutate its input, or start goroutines. | stable | FR-14 |
 | `Fragment[S]` | struct | Declares one server-owned live region and how to render it. | stable | FR-18, FR-21 |
 | `Event` | struct | One inbound interaction, already past the refinement boundary. | stable | FR-39 |
 | `Fields` | struct | The form values carried by an event. Read-only; holds no alias into wire data. | stable | FR-55 |
@@ -154,10 +153,10 @@ trigger has a visible blast radius.
 | `(Fields).Lookup(string) (string, bool)` | method | Returns the value and whether the key was present — the distinction matters for unchecked checkboxes. | stable | FR-55 |
 | `(Fields).Len() int` | method | Number of fields. | stable | FR-55 |
 | `(Fields).All(func(k, v string) bool)` | method | Iterates fields in wire order. | stable | FR-55 |
-| `IEffect` | interface | A value describing I/O for the actor to perform. One method, `EffectSource() string`, which names the effect for provenance and metrics. Implementations must be plain values: no channels, connections, or other live handles. | stable | FR-16, FR-42 |
-| `Emitter` | func type | `func(event Event) error` — injects an event into the session that spawned the effect. Passed to `Config.Execute`. | experimental | FR-42, FR-61 |
+| `Effect` | struct | One unit of I/O the library performs at the actor boundary, on a goroutine of its own. Two fields and no methods. `Source string` names it for provenance and metrics, in the form `package.action`; it becomes the origin source `effect:<name>` on every patch the effect causes and is the value `EffectFailedSourceField` carries. `Run func(ctx context.Context, session Session[I], emit Emitter) error` performs it, closing over whatever the application owns. A zero `Effect` is inert and is dropped; an `Effect` with a `Source` and no `Run` fails deterministically, because an effect that never runs is a change that never happens. | stable | FR-16, FR-42 |
+| `Emitter` | func type | `func(event Event) error` — injects an event into the session that spawned the effect. Passed to `Effect.Run`. | experimental | FR-42, FR-61 |
 | `EffectFailedEvent` | const `string` | The name of the event a failed or panicking effect becomes. Not in `Config.Events` and must not be: the library mints it. | stable | FR-16, FR-58 |
-| `EffectFailedSourceField` | const `string` | Field key: the `EffectSource` of the effect that failed. | stable | FR-16 |
+| `EffectFailedSourceField` | const `string` | Field key: the `Source` of the effect that failed. | stable | FR-16 |
 | `EffectFailedErrorField` | const `string` | Field key: the error's message, or the panic value. | stable | FR-16, FR-58 |
 | `EffectFailedRetryableField` | const `string` | Field key: the transient-or-terminal classification, `"true"` only when the effect claimed it with `Retryable`. Read with `strconv.ParseBool`; an unreadable value is terminal. | stable | FR-16 |
 | `SlowClientEvent` | const `string` | `"timer:slow_client"` — the name of the event the library synthesizes into a session's own mailbox when the outbound window fills. Not in `Config.Events` and never accepted from a client. | stable | **FR-51**, FR-62 |
@@ -216,12 +215,13 @@ application can create and cannot inspect. The measured cost of the cut is in
 
 | Symbol | Kind | Summary | Status | Req'd by |
 |---|---|---|---|---|
-| `Session` | struct | Identifies one live connection. Passed to `Init`, `Authorize`, and `Teardown`. | stable | FR-46 |
-| `(Session).ID() ID` | method | The session's 16-byte identifier. | stable | FR-41 |
-| `(Session).Identity() IIdentity` | method | The identity bound at handshake, immutable for the connection's life. | stable | FR-46 |
+| `Session[I]` | struct | Identifies one live connection, typed by the application's own identity type. Passed to `Init`, `Authorize`, `Teardown` and every `Effect.Run`. | stable | FR-46 |
+| `(Session[I]).ID() ID` | method | The session's 16-byte identifier. | stable | FR-41 |
+| `(Session[I]).Identity() I` | method | The identity bound at handshake, immutable for the connection's life, **as the application's own type**. No assertion, and none possible. | stable | FR-46 |
 | `ID` | `[16]byte` | The session identifier carried in every frame. | stable | FR-40, FR-41 |
 | `(ID).String() string` | method | Lower-case hex. | stable | FR-58 |
-| `IIdentity` | interface | The application's identity for a session. One method, `Subject() string`, returning a stable non-secret identifier used for logging and per-identity session limits. | stable | FR-46, FR-51 |
+| `NewSessionFor[I](livebridge.Token, ID, I) Session[I]` | func | Builds a `Session[I]`, and refuses a Token nobody granted. **Not reachable by a consumer**: the only source of a Token is `internal/livebridge`, whose importers `internal/arch` asserts are exactly `live` and `live/livetest`, so a handler cannot obtain the argument. It exists because a package-level variable cannot be generic and the old bridge was one; see §10's 2026-09-03 identity entry. | stable | **C-25** §6.3, FR-46 |
+| `IIdentity` | interface | The CONSTRAINT every generic declaration here carries: one method, `Subject() string`, returning a stable non-secret identifier used for logging and per-identity session limits. It is never a result type and never a field a getter hands back. | stable | FR-46, FR-51 |
 
 **Deliberately absent: `Session.Request()`.** Retaining the upgrade request for a
 connection's lifetime is a footgun (and a memory line item against RFC §6).
@@ -239,8 +239,10 @@ if the corresponding `Config` field is unset and no escape hatch is used
 | Symbol | Kind | Summary | Status | Req'd by |
 |---|---|---|---|---|
 | `AnyOrigin` | const `string` | Sentinel for `Config.Origins` disabling origin validation. Never use outside local development. | stable | FR-45 |
-| `Anonymous` | func | `func(request *http.Request) (IIdentity, error)` — an `Authenticate` implementation binding every session to an anonymous identity. | stable | FR-46 |
-| `AllowAll` | func | `func(ctx context.Context, session Session, event Event) error` — an `Authorize` implementation permitting every event. | stable | FR-47 |
+| `Anonymous` | func | `func(request *http.Request) (AnonymousIdentity, error)` — an `Authenticate` implementation binding every session to an anonymous identity. | stable | FR-46 |
+| `AnonymousIdentity` | struct | The concrete identity `Anonymous` produces, and the type an application with no accounts instantiates its `Config` on. Exported because a Config must NAME an identity type, and naming the interface there is the erasure the 2026-09-03 ruling removed. | stable | FR-46 |
+| `(AnonymousIdentity).Subject() string` | method | The one subject every anonymous session shares. | stable | FR-46 |
+| `AllowAll[I]` | func | `func(ctx context.Context, session Session[I], event Event) error` — an `Authorize` implementation permitting every event. **Instantiate it**: `live.AllowAll[Member]`, because Go infers a generic function's type arguments on assignment to a variable but not to a composite literal's field. | stable | FR-47 |
 | `NoCSRFCheck` | func | `func(request *http.Request) error` — a `CSRF` implementation performing no check. | stable | FR-48 |
 
 ---
@@ -413,7 +415,7 @@ all. 50 → **51** identifiers, 50 → **51** fields.
 | `Origin` | struct | What caused a patch: `Kind int32`, `EventID`, `ClientRef`, `Source string`, `Contributing []uint64`. | experimental | FR-58, FR-62 |
 | `Update` | struct | One fragment update: `FragmentID string`, `HTML string`. | experimental | FR-63 |
 | `Error` | struct | A decoded Error frame: `Code int32`, `Message`, `EventID`, `ClientRef`, `Fatal bool`. | experimental | FR-49 |
-| `NewSession(testing.TB, live.ID, live.IIdentity) live.Session` | func | Builds the `live.Session` a spec needs to call an application's own `Init`, `Authorize`, `Teardown` or `Execute` directly. Both values are the caller's; a nil identity is `tb.Fatalf`. | stable | **FR-15**, FR-45–48 |
+| `NewSession[I](testing.TB, live.ID, I) live.Session[I]` | func | Builds the `live.Session[I]` a spec needs to call an application's own `Init`, `Authorize`, `Teardown` or an `Effect.Run` directly. Both values are the caller's. The nil-identity guard is gone with the interface: an identity is the application's own type now. | stable | **FR-15**, FR-45–48 |
 | `Audit(testing.TB, http.Handler, func(*Client)) Report` | func | Runs a scripted workload and cross-checks every self-reported metric against an independent, out-of-process measurement. | experimental | checklist §4.5, instrumentation.md §5.2 |
 | `Report` | struct | The audit result: per-signal reported value, externally observed value, and whether they agree. | experimental | checklist §4.5 |
 
@@ -583,6 +585,59 @@ patches from its own code rather than from telemetry, the hook lands in Phase 2
 ---
 
 ## 10. Changelog
+
+### The identity stops being erased — 2026-09-03: `Session` is generic, `Identity()` returns the application's own type
+
+**The framework stopped erasing the two types the application owns.** The state
+type had been a type parameter since the first commit; the identity had not, and
+`Session.Identity()` returned the `IIdentity` interface every application then
+asserted back with `sess.Identity().(Member)`. Operator ruling, 2026-09-03, in
+full:
+
+> `func (s Session) Identity() IIdentity { return s.identity }`
+> RETURN TYPE IS IIDENTITY FUCK YOU
+
+This was the LAST exemption CS-8 had left standing in the public surface, and it
+was the genuine one — the concrete type lives in the caller's package and this
+library cannot name it, which is the existential case. Go has no existential
+types; it has type parameters, and that is the answer.
+
+| Change | Source |
+|---|---|
+| **`Session` → `Session[I IIdentity]`, and `(Session[I]).Identity() I`.** No assertion at any call site, in this repository or a consumer's, and none possible: an identity of another shape is a compile error where it used to be a runtime deny somebody had to remember to write | operator ruling 2026-09-03 |
+| **The parameterization is minimal but wide, because `Effect.Run` takes a `Session`.** `Effect[I]`, `Reducer[S, I]`, `Config[S, I]` and `App[S, I]` all carry it. Dropping the session from `Run` would have kept them all non-generic and is the option NOT taken: an effect acts on a session's behalf and its identity is an input to what it does, which is the property `Config.Execute` gained a `Session` for in Phase 1 | §10, Phase 1's effect-boundary entry |
+| **`Config.Authenticate` returns `I`.** So does `livetest.NewSession`, which is now `NewSession[I]` | — |
+| **`Anonymous` returns the new exported `AnonymousIdentity`**, a small concrete struct. An application with no accounts must still NAME an identity type, and the type it names must not be the interface — that would be the erasure the ruling removed, moved to the instantiation | — |
+| **`AllowAll[I]` must be instantiated at the call site.** Go infers a generic function's type arguments on assignment to a variable of func type but not on assignment to a composite literal's field, and a `Config` is a composite literal | Go 1.21 inference rules |
+| **`livebridge` inverted.** It was a function VARIABLE `live` assigned at init; a package-level variable cannot be generic, so it is now a capability `Token` that `live.NewSessionFor[I]` demands. The containment property is unchanged and better stated: the token is obtainable only from an `internal/` package whose importers `internal/arch` asserts are exactly `live` and `live/livetest`, so a consumer's handler cannot call the constructor because it cannot obtain the argument | **C-25** §6.3, restated |
+| **`internal/session` and `internal/wsx` carry `I` too** — `Peer[I]`, `IApp[I]`, `Effect[I]`, `Actor[I]`, `Handler[I]`, `Options[I]` — rather than the adapter asserting the identity back at one erasure site. `IIdentity` survives ONLY as a constraint and as the parameter type of the admission bookkeeping that calls `Subject()` | operator acceptance criterion |
+| **Two library errors and four specifications were DELETED as unreachable.** "The authentication hook returned no identity and no error" cannot happen when the hook returns the application's own type; nor can "denies an identity it does not recognise", "refuses an effect for a session whose identity is not a member", "closes the session for an identity that is not a member", or livetest's nil-identity guard. `internal/arch`'s FR-58 census moves 39 → 37 and `docs/error-audit.md` gains revision 7 | FR-58 |
+| **A generated widget is generic in its host's identity type** and reads it never: `NewNodeStatus[I]()`. A widget document names no host, no address and no credential, so there is nothing for it to look at — the parameter exists to fit whatever host registers it | `pkg/widget/docs/ontology.md` |
+
+### Effects become concrete — 2026-09-03: `IEffect` dies, `Effect` is a struct, `Config.Execute` is deleted. 56/53 → 56/54
+
+**The framework that taught the rule was the last to obey it.** CS-8 — *return
+concrete implementations; interfaces belong in parameters* — was minted, gated
+and flipped to blocking on 2026-09-02, in this repository, by the same programme
+that owns this library. It read 0 the whole time, because its detector looked at
+BARE result types and this library's reducers hand back `[]IEffect`. The
+operator's ruling of 2026-09-03, in full:
+
+> `func retryWatch(ev live.Event) []live.IEffect { holy shit i hate you`
+
+and with it the revocation of the shelter the interface had been sitting under:
+CS-8's pass-through exemption covers **third-party** contracts only. A framework
+this repository owns has a contract this repository chooses.
+
+| Change | Source |
+|---|---|
+| **`IEffect` (interface) → `Effect` (struct).** Two fields, no methods: `Source string`, which is what `EffectSource()` returned, and `Run func(ctx context.Context, session Session, emit Emitter) error`, which is what `Config.Execute` did for that effect. Framework and application effects alike are now CONSTRUCTOR FUNCTIONS returning a value; a custom effect is a closure over whatever the application owns | operator ruling 2026-09-03 |
+| **`Config.Execute` is DELETED.** It took one `IEffect` and type-switched on its dynamic type; with the behaviour on the effect there is nothing left to dispatch on. Its guarantee — an effect that never runs is a change that never happens — moved into the library: an `Effect` with a `Source` and a nil `Run` is refused with an `EffectFailedEvent` before a goroutine is spawned for it. A zero `Effect` is inert and is dropped, exactly as a nil element of the old slice was | operator ruling 2026-09-03, CS-8 |
+| **`Reducer[S]` and `Config.Init` return `[]Effect`.** Both hook types change shape, and so does every assignment site in this repository | CS-8, CS-2 |
+| **`Emitter` is now passed to `Effect.Run` rather than to `Config.Execute`**; `EffectFailedSourceField` now carries `Effect.Source` rather than `EffectSource()`. Neither value changes | — |
+| **`livetest.ReplayN` compares effect SOURCES, not effect values.** `Run` is a function field and Go compares two function values only when both are nil, so a deep comparison would fail every determinism check rather than passing the honest ones. The narrowing is real and is stated at the function: the harness still catches a reducer that scheduled a different effect, a different number of them, or them in a different order — the shapes a clock, a random source or a map range produce — and no longer catches the same effect carrying a different argument. An effect worth telling apart is worth naming apart | FR-15 |
+| **The internal seam got smaller.** `internal/session.IEffect` becomes `internal/session.Effect` on the same two fields, and `IApp.Execute` is **removed**: the actor calls `effect.Run` directly, so the one place a `session.IEffect` was asserted back to a `live.IEffect` is gone. `live`'s `toInternalEffects` is the module's single translation between the two vocabularies | CS-7, CS-8 |
+| **`(Session).Identity() IIdentity` is untouched by this entry.** It was ruled on separately the same day; see the entry above | — |
 
 ### P3 style retrofit — 2026-09-02: every parameter in the surface is named. Surface unchanged at 56/53 and 37/33
 

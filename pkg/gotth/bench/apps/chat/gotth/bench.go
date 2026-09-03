@@ -10,8 +10,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/candacelabs/candace/pkg/gotth/live"
 )
 
 // The benchmark's own surface: the two scripts the harness needs in the page,
@@ -94,7 +92,7 @@ func NormalizeName(raw string) string {
 // check runs on the upgrade REQUEST, before any per-session memory is
 // allocated, so a rejection is an HTTP status on the handshake rather than a
 // close code.
-func DirectoryAuthenticate(r *http.Request) (live.IIdentity, error) {
+func DirectoryAuthenticate(r *http.Request) (Member, error) {
 	name := DefaultName
 	if c, err := r.Cookie(WhoCookie); err == nil {
 		name = NormalizeName(c.Value)

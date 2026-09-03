@@ -16,7 +16,7 @@ import (
 // handed already-rendered regions, in registration order, and puts them on the
 // page — which is the property that made the fifth service a registration rather
 // than a page edit.
-templ Page(app *live.App[widget.HostState], regions []templ.Component) {
+templ Page(app *live.App[widget.HostState, live.AnonymousIdentity], regions []templ.Component) {
 	@app.Document(mountPath, "CandaWS", templ.Attributes{"lang": "en"}, headExtras()) {
 		<main>
 			<h1>CandaWS</h1>

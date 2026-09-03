@@ -55,7 +55,7 @@
 //
 // # Security posture
 //
-// live.Anonymous, live.AllowAll and live.NoCSRFCheck, each because a
+// live.Anonymous, live.AllowAll[live.AnonymousIdentity] and live.NoCSRFCheck, each because a
 // single-page demo has no accounts to check against. Origins is a real allowlist
 // derived from the listen address rather than live.AnyOrigin.
 package main
@@ -142,13 +142,12 @@ func run() error {
 		return paletteError
 	}
 
-	config, configError := registry.LiveConfig(widget.MountOptions{
+	config, configError := registry.LiveConfig(widget.MountOptions[live.AnonymousIdentity]{
 		Origins:      hosting.BrowserOrigins(*address),
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 		Init:         fleet.sources,
-		Execute:      fleet.execute,
 		Dev:          true,
 	})
 	if configError != nil {
@@ -190,13 +189,13 @@ func run() error {
 // than a literal in run because a specification asserting on this host's live
 // path has to register the same set, and a second literal is a second set the
 // day one of them changes.
-func hostWidgets() *widget.Registry {
-	registry := widget.NewRegistry()
-	widget.MustRegister(registry, yakshave.NewYakshave())
-	widget.MustRegister(registry, queuecumber.NewQueuecumber())
-	widget.MustRegister(registry, blobfish.NewBlobfish())
-	widget.MustRegister(registry, coldstart.NewColdstart())
-	widget.MustRegister(registry, dashbored.NewDashbored())
+func hostWidgets() *widget.Registry[live.AnonymousIdentity] {
+	registry := widget.NewRegistry[live.AnonymousIdentity]()
+	widget.MustRegister(registry, yakshave.NewYakshave[live.AnonymousIdentity]())
+	widget.MustRegister(registry, queuecumber.NewQueuecumber[live.AnonymousIdentity]())
+	widget.MustRegister(registry, blobfish.NewBlobfish[live.AnonymousIdentity]())
+	widget.MustRegister(registry, coldstart.NewColdstart[live.AnonymousIdentity]())
+	widget.MustRegister(registry, dashbored.NewDashbored[live.AnonymousIdentity]())
 	return registry
 }
 

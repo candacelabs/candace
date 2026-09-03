@@ -24,7 +24,7 @@ import (
 // handed already-rendered regions, in registration order, and puts them on the
 // page — which is the property that made the fifth service a registration rather
 // than a page edit.
-func Page(app *live.App[widget.HostState], regions []templ.Component) templ.Component {
+func Page(app *live.App[widget.HostState, live.AnonymousIdentity], regions []templ.Component) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

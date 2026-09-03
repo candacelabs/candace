@@ -143,41 +143,59 @@ func (fleet *running) start(ctx context.Context) <-chan error {
 	return stopped
 }
 
-// The six sources this host resolves the five widgets' declared streams against.
-// Yakshave declares two, because its two tickers are two.
-type (
-	runSource      struct{ pipeline *yakshave.Pipeline }
-	quotaSource    struct{ pipeline *yakshave.Pipeline }
-	brokerSource   struct{ broker *queuecumber.Broker }
-	replicaSource  struct{ store *blobfish.Store }
-	poolSource     struct{ functions *coldstart.Runtime }
-	scrapeSource   struct{ metrics *dashbored.Telemetry }
-	redriveCommand struct{ broker *queuecumber.Broker }
-	prewarmCommand struct{ functions *coldstart.Runtime }
-)
+// The eight effects this host owns: six subscriptions resolving the five
+// widgets' declared streams, and two commands. Yakshave declares two streams,
+// because its two tickers are two.
+//
+// Each is a constructor returning a concrete live.Effect[live.AnonymousIdentity], and the source it
+// stamps becomes the origin "effect:candaws.<name>" on every patch that effect
+// causes. There is no host executor: an effect performs itself.
 
-// EffectSource names each effect for provenance: it becomes the origin source
-// "effect:candaws.<name>" on every patch that effect causes.
-func (source runSource) EffectSource() string      { return "candaws.yakshave_runs" }
-func (source quotaSource) EffectSource() string    { return "candaws.yakshave_quota" }
-func (source brokerSource) EffectSource() string   { return "candaws.queuecumber_broker" }
-func (source replicaSource) EffectSource() string  { return "candaws.blobfish_replicas" }
-func (source poolSource) EffectSource() string     { return "candaws.coldstart_pool" }
-func (source scrapeSource) EffectSource() string   { return "candaws.dashbored_scrapes" }
-func (source redriveCommand) EffectSource() string { return "candaws.queuecumber_redrive" }
-func (source prewarmCommand) EffectSource() string { return "candaws.coldstart_prewarm" }
+// streamEffect is the one shape all six subscriptions have — a source name and
+// an engine to forward from — written once because six copies of one closure is
+// six chances for one of them to name the wrong event.
+func streamEffect[V any](
+	source string,
+	subscribe func(ctx context.Context) (<-chan V, error),
+	event string,
+	fields func(view V) map[string]string,
+) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: source,
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return forward(ctx, subscribe, emit, event, fields)
+		},
+	}
+}
+
+// commandEffect is the shape both commands have: a source name and one call
+// into an engine.
+func commandEffect(source string, invoke func(ctx context.Context) error) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: source,
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return invoke(ctx)
+		},
+	}
+}
 
 // sources is what every session subscribes to. One engine per service, one
 // subscription per session, which is the right way round: every browser watching
 // is watching the same five services rather than five private copies.
-func (fleet *running) sources(ctx context.Context, session live.Session) ([]live.IEffect, error) {
-	return []live.IEffect{
-		runSource{pipeline: fleet.pipeline},
-		quotaSource{pipeline: fleet.pipeline},
-		brokerSource{broker: fleet.broker},
-		replicaSource{store: fleet.store},
-		poolSource{functions: fleet.functions},
-		scrapeSource{metrics: fleet.metrics},
+func (fleet *running) sources(ctx context.Context, session live.Session[live.AnonymousIdentity]) ([]live.Effect[live.AnonymousIdentity], error) {
+	return []live.Effect[live.AnonymousIdentity]{
+		streamEffect("candaws.yakshave_runs", fleet.pipeline.Runs,
+			yakshave.YakshaveEventRunAdvance, yakshave.RunFields),
+		streamEffect("candaws.yakshave_quota", fleet.pipeline.Quota,
+			yakshave.YakshaveEventQuotaUpdate, yakshave.QuotaFields),
+		streamEffect("candaws.queuecumber_broker", fleet.broker.Watch,
+			queuecumber.QueuecumberEventBrokerReport, queuecumber.ReportFields),
+		streamEffect("candaws.blobfish_replicas", fleet.store.Watch,
+			blobfish.BlobfishEventReplicaReport, blobfish.ReportFields),
+		streamEffect("candaws.coldstart_pool", fleet.functions.Watch,
+			coldstart.ColdstartEventPoolReport, coldstart.ReportFields),
+		streamEffect("candaws.dashbored_scrapes", fleet.metrics.Watch,
+			dashbored.DashboredEventScrapeReport, dashbored.ReportFields),
 	}, nil
 }
 
@@ -188,50 +206,16 @@ func (fleet *running) sources(ctx context.Context, session live.Session) ([]live
 // reads the event's name, hands the transition straight through, and appends an
 // effect of its own. A command is a declaration that a viewer can ask for
 // something; what it means is exactly this function.
-func (fleet *running) commands(inner live.Reducer[widget.HostState]) live.Reducer[widget.HostState] {
-	return func(state widget.HostState, event live.Event) (widget.HostState, []live.IEffect) {
+func (fleet *running) commands(inner live.Reducer[widget.HostState, live.AnonymousIdentity]) live.Reducer[widget.HostState, live.AnonymousIdentity] {
+	return func(state widget.HostState, event live.Event) (widget.HostState, []live.Effect[live.AnonymousIdentity]) {
 		next, effects := inner(state, event)
 		switch event.Name {
 		case queuecumber.QueuecumberEventRedriveDeadLetters:
-			effects = append(effects, redriveCommand{broker: fleet.broker})
+			effects = append(effects, commandEffect("candaws.queuecumber_redrive", fleet.broker.Redrive))
 		case coldstart.ColdstartEventPrewarm:
-			effects = append(effects, prewarmCommand{functions: fleet.functions})
+			effects = append(effects, commandEffect("candaws.coldstart_prewarm", fleet.functions.Prewarm))
 		}
 		return next, effects
-	}
-}
-
-// execute performs the effects this host owns. The registry never routes a
-// widget's own effect here, so anything arriving is the host's, and an effect the
-// host does not recognise is reported rather than silently succeeded at.
-func (fleet *running) execute(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	switch source := effect.(type) {
-	case runSource:
-		return forward(ctx, source.pipeline.Runs, emit,
-			yakshave.YakshaveEventRunAdvance, yakshave.RunFields)
-	case quotaSource:
-		return forward(ctx, source.pipeline.Quota, emit,
-			yakshave.YakshaveEventQuotaUpdate, yakshave.QuotaFields)
-	case brokerSource:
-		return forward(ctx, source.broker.Watch, emit,
-			queuecumber.QueuecumberEventBrokerReport, queuecumber.ReportFields)
-	case replicaSource:
-		return forward(ctx, source.store.Watch, emit,
-			blobfish.BlobfishEventReplicaReport, blobfish.ReportFields)
-	case poolSource:
-		return forward(ctx, source.functions.Watch, emit,
-			coldstart.ColdstartEventPoolReport, coldstart.ReportFields)
-	case scrapeSource:
-		return forward(ctx, source.metrics.Watch, emit,
-			dashbored.DashboredEventScrapeReport, dashbored.ReportFields)
-	case redriveCommand:
-		return source.broker.Redrive(ctx)
-	case prewarmCommand:
-		return source.functions.Prewarm(ctx)
-	default:
-		return fmt.Errorf("candaws: no executor for %s", effect.EffectSource())
 	}
 }
 

@@ -7,7 +7,6 @@ package queuecumber
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -78,21 +77,31 @@ type QueuecumberState struct {
 }
 
 // Queuecumber is the generated Queuecumber widget.
-type Queuecumber struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type Queuecumber[I live.IIdentity] struct{}
 
-// NewQueuecumber returns the widget a host registers.
-func NewQueuecumber() *Queuecumber { return &Queuecumber{} }
+// NewQueuecumber returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewQueuecumber[I live.IIdentity]() *Queuecumber[I] { return &Queuecumber[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[QueuecumberState]        = (*Queuecumber)(nil)
-	_ widget.IDirtyDeclarer[QueuecumberState] = (*Queuecumber)(nil)
+	_ widget.IWidget[QueuecumberState, live.AnonymousIdentity] = (*Queuecumber[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[QueuecumberState]                  = (*Queuecumber[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *Queuecumber) Register() widget.Registration {
+func (instance *Queuecumber[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     QueuecumberName,
 		Region:   QueuecumberRegion,
@@ -117,17 +126,17 @@ func (instance *Queuecumber) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *Queuecumber) Mount(
-	ctx context.Context, session live.Session,
-) (QueuecumberState, []live.IEffect, error) {
+func (instance *Queuecumber[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (QueuecumberState, []live.Effect[I], error) {
 	return QueuecumberState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *Queuecumber) Reduce(
+func (instance *Queuecumber[I]) Reduce(
 	state QueuecumberState, event live.Event,
-) (QueuecumberState, []live.IEffect) {
+) (QueuecumberState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case QueuecumberEventToggleIntake:
@@ -163,13 +172,13 @@ func (instance *Queuecumber) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *Queuecumber) Render(state QueuecumberState) templ.Component {
+func (instance *Queuecumber[I]) Render(state QueuecumberState) templ.Component {
 	return QueuecumberView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *Queuecumber) Dirty(previous QueuecumberState, next QueuecumberState) bool {
+func (instance *Queuecumber[I]) Dirty(previous QueuecumberState, next QueuecumberState) bool {
 	return previous.Sequence != next.Sequence ||
 		previous.Accepting != next.Accepting ||
 		previous.IntakePaused != next.IntakePaused ||
@@ -180,23 +189,13 @@ func (instance *Queuecumber) Dirty(previous QueuecumberState, next QueuecumberSt
 		previous.Behind != next.Behind
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *Queuecumber) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", QueuecumberName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *Queuecumber) Unmount(ctx context.Context, session live.Session, state QueuecumberState) {
+func (instance *Queuecumber[I]) Unmount(ctx context.Context, session live.Session[I], state QueuecumberState) {
 }
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *Queuecumber) Snapshot(state QueuecumberState) widget.Snapshot {
+func (instance *Queuecumber[I]) Snapshot(state QueuecumberState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: QueuecumberName,
 		Fields: []widget.SnapshotField{

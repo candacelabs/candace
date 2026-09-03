@@ -59,14 +59,14 @@ const (
 // the handler is reachable, not about what it computes.
 type state struct{ N int }
 
-func newApp() *live.App[state] {
+func newApp() *live.App[state, live.AnonymousIdentity] {
 	GinkgoHelper()
 
-	app, err := live.New(live.Config[state]{
-		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
+	app, err := live.New(live.Config[state, live.AnonymousIdentity]{
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (state, []live.Effect[live.AnonymousIdentity], error) {
 			return state{}, nil, nil
 		},
-		Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
+		Reduce: func(s state, ev live.Event) (state, []live.Effect[live.AnonymousIdentity]) {
 			if ev.Name == eventBump {
 				s.N++
 			}
@@ -87,7 +87,7 @@ func newApp() *live.App[state] {
 		// The three escape hatches, each because a mounting test has no
 		// accounts to check against and each named so that a grep finds them.
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 	Expect(err).NotTo(HaveOccurred())
@@ -167,7 +167,7 @@ var mounts = []mountSpec{
 // mounted is one live application behind one router behind a real HTTP server.
 type mounted struct {
 	spec   mountSpec
-	app    *live.App[state]
+	app    *live.App[state, live.AnonymousIdentity]
 	server *httptest.Server
 }
 

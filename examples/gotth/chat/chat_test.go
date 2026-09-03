@@ -45,7 +45,7 @@ var baseTime = time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 
 const testOrigin = "http://127.0.0.1:8081"
 
-// sessionFor builds the live.Session a Config hook is called with.
+// sessionFor builds the live.Session[Member] a Config hook is called with.
 //
 // This is what livetest.NewSession is for: Init, Authorize, Teardown and
 // Execute all take a Session, whose fields are unexported because identity is
@@ -54,9 +54,40 @@ const testOrigin = "http://127.0.0.1:8081"
 // cannot build a useful one, so every hook that reads an identity — which is
 // every hook this example has — would be reachable only through a running
 // server.
-func sessionFor(id live.ID, member Member) live.Session {
+func sessionFor(id live.ID, member Member) live.Session[Member] {
 	GinkgoHelper()
 	return livetest.NewSession(GinkgoTB(), id, member)
+}
+
+// reduce is the reducer under test, bound to a room the pure specs never reach:
+// the transition builds effects that close over it, and a spec that cares about
+// what an effect DOES builds its own room and runs the effect.
+var reduce = Reducer(NewRoom())
+
+// memberSession is sessionFor under the name the effect specs read better
+// with: an effect's Run is handed the session it acts for, and several specs
+// below run one effect for two different members to show that the author comes
+// from there rather than from the reducer.
+func memberSession(id live.ID, member Member) live.Session[Member] { return sessionFor(id, member) }
+
+// noEmit is the Emitter handed to an effect whose emissions a spec does not
+// read.
+func noEmit(live.Event) error { return nil }
+
+// sources projects what a transition scheduled into the one thing a
+// specification can compare: live.Effect[Member] carries its behaviour in a function
+// field, and Go cannot compare two function values.
+func sources(effects []live.Effect[Member]) []string {
+	if len(effects) == 0 {
+		// nil rather than an empty slice, so "scheduled nothing" compares equal
+		// to the nil a reducer returns for it.
+		return nil
+	}
+	names := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		names = append(names, effect.Source)
+	}
+	return names
 }
 
 func newState(id live.ID, member Member) State {
@@ -200,31 +231,40 @@ var _ = Describe("The reducer", func() {
 	It("turns a submission into an effect and records nothing itself", func() {
 		state.Draft = "hello everyone"
 
-		next, effects := Reduce(state, submit("hello everyone", 7, baseTime))
+		next, effects := reduce(state, submit("hello everyone", 7, baseTime))
 
-		Expect(effects).To(Equal([]live.IEffect{PostEffect{Body: "hello everyone", Cause: 7}}))
+		Expect(sources(effects)).To(Equal([]string{SourcePost}))
 		Expect(next.Messages()).To(BeEmpty(), "a reducer must not append the message itself")
 		Expect(next.Draft).To(BeEmpty(), "an accepted message leaves the box empty")
 		Expect(next.DraftError).To(BeEmpty())
 	})
 
 	// The effect carries a body and no author. Who said it is read from the
-	// session at the actor boundary, so a reducer cannot attribute a sentence
-	// to somebody else even by mistake.
+	// session inside the effect's own Run, so a reducer cannot attribute a
+	// sentence to somebody else even by mistake — which is what running the
+	// effect for two different sessions shows.
 	It("puts no author on the effect it returns", func() {
-		_, effects := Reduce(state, submit("hi", 1, baseTime))
+		room := NewRoom()
+		room.Join(tabA, "alice")
+		_, effects := Reducer(room)(state, submit("hi", 1, baseTime))
 
 		Expect(effects).To(HaveLen(1))
-		post, ok := effects[0].(PostEffect)
-		Expect(ok).To(BeTrue())
-		Expect(post.Body).To(Equal("hi"))
+		Expect(effects[0].Run(context.Background(), memberSession(tabA, alice), noEmit)).To(Succeed())
+		Expect(room.Log().Messages).To(HaveLen(1))
+		Expect(room.Log().Messages[0].Author).To(Equal("alice"))
+		Expect(room.Log().Messages[0].Body).To(Equal("hi"))
 	})
 
 	It("trims the body it accepts but keeps what was typed when it refuses", func() {
-		_, effects := Reduce(state, submit("   spaced   ", 1, baseTime))
-		Expect(effects).To(Equal([]live.IEffect{PostEffect{Body: "spaced", Cause: 1}}))
+		room := NewRoom()
+		room.Join(tabA, "alice")
+		_, effects := Reducer(room)(state, submit("   spaced   ", 1, baseTime))
+		Expect(sources(effects)).To(Equal([]string{SourcePost}))
+		Expect(effects[0].Run(context.Background(), memberSession(tabA, alice), noEmit)).To(Succeed())
+		Expect(room.Log().Messages[0].Body).To(Equal("spaced"),
+			"the body the effect carries is the trimmed one")
 
-		next, effects := Reduce(state, submit("   ", 2, baseTime))
+		next, effects := reduce(state, submit("   ", 2, baseTime))
 		Expect(effects).To(BeEmpty())
 		Expect(next.Draft).To(Equal("   "),
 			"the rejected text stays in the state: losing what somebody typed is the rudest thing a form can do")
@@ -234,7 +274,7 @@ var _ = Describe("The reducer", func() {
 	It("refuses a body past the length limit and says how long it was", func() {
 		long := strings.Repeat("é", MaxBodyRunes+1)
 
-		next, effects := Reduce(state, submit(long, 1, baseTime))
+		next, effects := reduce(state, submit(long, 1, baseTime))
 
 		Expect(effects).To(BeEmpty())
 		Expect(next.Draft).To(Equal(long))
@@ -246,7 +286,7 @@ var _ = Describe("The reducer", func() {
 	// re-render of this region puts it back, which is the half of input
 	// preservation the browser cannot do for you.
 	It("keeps the draft the server will have to render back", func() {
-		next, effects := Reduce(state, typed("half a sen", 1, baseTime))
+		next, effects := reduce(state, typed("half a sen", 1, baseTime))
 
 		Expect(effects).To(BeEmpty(), "typing is not a reason to do I/O")
 		Expect(next.Draft).To(Equal("half a sen"))
@@ -261,7 +301,7 @@ var _ = Describe("The reducer", func() {
 		state = applyDraft(state, long)
 		Expect(state.DraftError).NotTo(BeEmpty(), "the fixture must start with a verdict to clear")
 
-		next, effects := Reduce(state, cleared(long, 3, baseTime))
+		next, effects := reduce(state, cleared(long, 3, baseTime))
 
 		Expect(effects).To(BeEmpty(), "discarding a draft is not a reason to do I/O")
 		Expect(next.Draft).To(BeEmpty())
@@ -277,7 +317,7 @@ var _ = Describe("The reducer", func() {
 		state.Draft = "half a sen"
 		state.Notice = "the room was cleared by moderator"
 
-		next, _ := Reduce(state, cleared("half a sen", 4, baseTime))
+		next, _ := reduce(state, cleared("half a sen", 4, baseTime))
 
 		Expect(next.Draft).To(BeEmpty())
 		Expect(next.Notice).To(Equal("the room was cleared by moderator"))
@@ -288,23 +328,23 @@ var _ = Describe("The reducer", func() {
 	It("ignores whatever the clear event happens to carry", func() {
 		state.Draft = "half a sen"
 
-		next, _ := Reduce(state, cleared("something else entirely", 5, baseTime))
+		next, _ := reduce(state, cleared("something else entirely", 5, baseTime))
 
 		Expect(next.Draft).To(BeEmpty())
 	})
 
 	It("validates as you type, but says nothing about an empty box", func() {
-		typedLong, _ := Reduce(state, typed(strings.Repeat("x", MaxBodyRunes+5), 1, baseTime))
+		typedLong, _ := reduce(state, typed(strings.Repeat("x", MaxBodyRunes+5), 1, baseTime))
 		Expect(typedLong.DraftError).NotTo(BeEmpty())
 
-		cleared, _ := Reduce(typedLong, typed("", 2, baseTime))
+		cleared, _ := reduce(typedLong, typed("", 2, baseTime))
 		Expect(cleared.Draft).To(BeEmpty())
 		Expect(cleared.DraftError).To(BeEmpty(),
 			"an empty box is not yet a mistake; reporting one puts an error on screen before the user acted")
 	})
 
 	It("folds a message the room pushed", func() {
-		next, effects := Reduce(state, pushed(
+		next, effects := reduce(state, pushed(
 			postedUpdate(1, 4, "bob", "morning", []string{"alice", "bob"}), tabA, baseTime))
 
 		Expect(effects).To(BeEmpty(), "folding a push is not itself a reason to do I/O")
@@ -321,10 +361,10 @@ var _ = Describe("The reducer", func() {
 	It("ignores a push at a revision it has already passed", func() {
 		state.Room = &Log{Version: 9}
 
-		next, _ := Reduce(state, pushed(postedUpdate(1, 9, "bob", "again", nil), tabA, baseTime))
+		next, _ := reduce(state, pushed(postedUpdate(1, 9, "bob", "again", nil), tabA, baseTime))
 		Expect(next.Messages()).To(BeEmpty())
 
-		next, _ = Reduce(state, pushed(postedUpdate(1, 8, "bob", "older", nil), tabA, baseTime))
+		next, _ = reduce(state, pushed(postedUpdate(1, 8, "bob", "older", nil), tabA, baseTime))
 		Expect(next.Messages()).To(BeEmpty())
 		Expect(next.Version()).To(Equal(uint64(9)))
 	})
@@ -333,7 +373,7 @@ var _ = Describe("The reducer", func() {
 		func(fields map[string]string) {
 			state.Room = &Log{Version: 1}
 
-			next, _ := Reduce(state, live.Event{
+			next, _ := reduce(state, live.Event{
 				Name: EventPosted, At: baseTime, Fields: live.NewFields(fields),
 			})
 
@@ -347,9 +387,9 @@ var _ = Describe("The reducer", func() {
 	)
 
 	It("folds a roster change without disturbing the log", func() {
-		state, _ = Reduce(state, pushed(postedUpdate(1, 2, "bob", "hi", []string{"alice", "bob"}), tabA, baseTime))
+		state, _ = reduce(state, pushed(postedUpdate(1, 2, "bob", "hi", []string{"alice", "bob"}), tabA, baseTime))
 
-		next, _ := Reduce(state, pushed(update{
+		next, _ := reduce(state, pushed(update{
 			kind: EventPresence, version: 3, members: []string{"alice", "bob", "mallory"},
 		}, tabA, baseTime))
 
@@ -358,9 +398,9 @@ var _ = Describe("The reducer", func() {
 	})
 
 	It("folds a purge, naming who did it", func() {
-		state, _ = Reduce(state, pushed(postedUpdate(1, 2, "bob", "hi", []string{"alice", "bob"}), tabA, baseTime))
+		state, _ = reduce(state, pushed(postedUpdate(1, 2, "bob", "hi", []string{"alice", "bob"}), tabA, baseTime))
 
-		next, _ := Reduce(state, pushed(update{
+		next, _ := reduce(state, pushed(update{
 			kind: EventPurged, version: 3, members: []string{"alice", "bob"}, by: "mallory",
 		}, tabA, baseTime))
 
@@ -370,9 +410,9 @@ var _ = Describe("The reducer", func() {
 	})
 
 	It("asks the room to clear itself, naming no actor", func() {
-		next, effects := Reduce(state, live.Event{Name: EventPurge, ID: 5, At: baseTime})
+		next, effects := reduce(state, live.Event{Name: EventPurge, ID: 5, At: baseTime})
 
-		Expect(effects).To(Equal([]live.IEffect{PurgeEffect{Cause: 5}}))
+		Expect(sources(effects)).To(Equal([]string{SourcePurge}))
 		Expect(next.Messages()).To(BeEmpty())
 	})
 
@@ -382,7 +422,7 @@ var _ = Describe("The reducer", func() {
 	It("leaves state alone for a name it does not handle", func() {
 		state.Draft = "mid-sentence"
 
-		next, effects := Reduce(state, live.Event{Name: "chat.nothing_emits_this", At: baseTime})
+		next, effects := reduce(state, live.Event{Name: "chat.nothing_emits_this", At: baseTime})
 
 		Expect(effects).To(BeEmpty())
 		Expect(next).To(Equal(state))
@@ -390,7 +430,7 @@ var _ = Describe("The reducer", func() {
 
 	It("keeps only the last MaxHistory messages", func() {
 		for i := 1; i <= MaxHistory+10; i++ {
-			state, _ = Reduce(state, pushed(
+			state, _ = reduce(state, pushed(
 				postedUpdate(uint64(i), uint64(i), "bob", "line "+strconv.Itoa(i), nil), tabA, baseTime))
 		}
 
@@ -403,10 +443,10 @@ var _ = Describe("The reducer", func() {
 	// panic recovery free, because the pre-transition state is still intact.
 	// A slice in the state is where that rule is easy to break by accident.
 	It("does not write through the log it was handed", func() {
-		state, _ = Reduce(state, pushed(postedUpdate(1, 2, "bob", "first", nil), tabA, baseTime))
+		state, _ = reduce(state, pushed(postedUpdate(1, 2, "bob", "first", nil), tabA, baseTime))
 		before := state.Room
 
-		next, _ := Reduce(state, pushed(postedUpdate(2, 3, "bob", "second", nil), tabA, baseTime))
+		next, _ := reduce(state, pushed(postedUpdate(2, 3, "bob", "second", nil), tabA, baseTime))
 
 		Expect(next.Room).NotTo(BeIdenticalTo(before))
 		Expect(before.Messages).To(HaveLen(1))
@@ -428,12 +468,12 @@ var _ = Describe("The reducer", func() {
 	// capacity to exist at all and a correct `with` never leaves any.
 	It("gives two transitions from one state two independent logs", func() {
 		for i := 1; i <= 5; i++ {
-			state, _ = Reduce(state, pushed(
+			state, _ = reduce(state, pushed(
 				postedUpdate(uint64(i), uint64(i+1), "bob", "line "+strconv.Itoa(i), nil), tabA, baseTime))
 		}
 
-		left, _ := Reduce(state, pushed(postedUpdate(9, 90, "bob", "the left branch", nil), tabA, baseTime))
-		right, _ := Reduce(state, pushed(postedUpdate(9, 91, "bob", "the right branch", nil), tabA, baseTime))
+		left, _ := reduce(state, pushed(postedUpdate(9, 90, "bob", "the left branch", nil), tabA, baseTime))
+		right, _ := reduce(state, pushed(postedUpdate(9, 91, "bob", "the right branch", nil), tabA, baseTime))
 
 		Expect(state.Messages()).To(HaveLen(5), "the state both branches came from must not have moved")
 		Expect(left.Messages()).To(HaveLen(6))
@@ -460,14 +500,14 @@ var _ = Describe("The failed-effect path", func() {
 	}
 
 	DescribeTable("re-subscribes only when the library says a retry is safe",
-		func(source, retryable string, want []live.IEffect) {
-			next, effects := Reduce(newState(tabA, alice), failure(source, "boom", retryable))
+		func(source, retryable string, want []string) {
+			next, effects := reduce(newState(tabA, alice), failure(source, "boom", retryable))
 
-			Expect(effects).To(Equal(want))
+			Expect(sources(effects)).To(Equal(want))
 			Expect(next.Messages()).To(BeEmpty(), "a failed effect is not something somebody said")
 		},
 		Entry("a transient subscription failure is re-subscribed",
-			SourceSubscribe, "true", []live.IEffect{SubscribeEffect{}}),
+			SourceSubscribe, "true", []string{SourceSubscribe}),
 		Entry("a terminal subscription failure is not",
 			SourceSubscribe, "false", nil),
 		Entry("an unreadable classification is terminal",
@@ -489,7 +529,7 @@ var _ = Describe("The failed-effect path", func() {
 	It("shows the effect's name and never the error text it came with", func() {
 		leak := "dial postgres://chat:hunter2@db.internal:5432: connection refused"
 
-		next, _ := Reduce(newState(tabA, alice), failure(SourcePost, leak, "false"))
+		next, _ := reduce(newState(tabA, alice), failure(SourcePost, leak, "false"))
 		html := render(ComposerRegion(next))
 
 		Expect(next.Notice).To(ContainSubstring(SourcePost))
@@ -585,15 +625,13 @@ var _ = Describe("Authorization", func() {
 		Expect(sessionFor(tabA, alice).Identity()).To(Equal(sessionFor(tabB, alice).Identity()))
 	})
 
-	// The one failure mode an authorization hook must not have. An identity of
-	// an unexpected shape is not something to shrug at.
-	It("denies an identity it does not recognise rather than failing open", func() {
-		err := Authorize(context.Background(),
-			livetest.NewSession(GinkgoTB(), tabA, stranger{}), live.Event{Name: EventSend, ID: 1})
-
-		var fatal *live.FatalDenyError
-		Expect(errors.As(err, &fatal)).To(BeTrue(), "got %v", err)
-	})
+	// The "denies an identity it does not recognise" spec is gone, and its
+	// absence is the finding rather than a gap. A live.Session is typed by the
+	// identity Authenticate produced since 2026-09-03, so an identity of an
+	// unexpected shape is a COMPILE error at the call site: this spec could
+	// only be written by constructing a Session[stranger], which no hook of this
+	// application accepts. The failure mode an authorization hook must not have
+	// is now one it cannot have.
 
 	It("binds the session to a member from the cookie and to nothing without one", func() {
 		dir := DemoDirectory()
@@ -640,7 +678,7 @@ var _ = Describe("Input preservation", func() {
 		before := newState(tabA, alice)
 		before.Draft = "half a sentence I have not finished"
 
-		after, _ := Reduce(before, pushed(
+		after, _ := reduce(before, pushed(
 			postedUpdate(1, 2, "bob", "sorry to interrupt", []string{"alice", "bob"}), tabA, baseTime))
 
 		Expect(after.Room).NotTo(BeIdenticalTo(before.Room), "the room did move")
@@ -653,7 +691,7 @@ var _ = Describe("Input preservation", func() {
 		before := newState(tabA, alice)
 		before.Draft = "still typing"
 
-		after, _ := Reduce(before, pushed(update{
+		after, _ := reduce(before, pushed(update{
 			kind: EventPresence, version: 2, members: []string{"alice", "bob"},
 		}, tabA, baseTime))
 
@@ -687,7 +725,7 @@ var _ = Describe("Input preservation", func() {
 		state := newState(tabA, alice)
 		long := strings.Repeat("x", MaxBodyRunes+1)
 
-		rejected, _ := Reduce(state, submit(long, 1, baseTime))
+		rejected, _ := reduce(state, submit(long, 1, baseTime))
 		html := render(ComposerRegion(rejected))
 
 		Expect(html).To(ContainSubstring(`value="` + long + `"`))
@@ -703,7 +741,7 @@ var _ = Describe("Input preservation", func() {
 		before.Draft = "mid-sentence"
 		before.Room = &Log{Version: 1, Members: []string{"alice"}}
 
-		after, _ := Reduce(before, pushed(
+		after, _ := reduce(before, pushed(
 			postedUpdate(1, 2, "bob", "hello", []string{"alice", "bob"}), tabA, baseTime))
 
 		dirty := map[string]bool{}
@@ -797,13 +835,13 @@ var _ = Describe("Determinism", func() {
 	// fail it; nothing else in a pure function of two values can differ
 	// between runs.
 	It("replays the whole session to the same state and the same effects", func() {
-		livetest.ReplayN(GinkgoTB(), Reduce, initial(), mixedLog(), 25)
+		livetest.ReplayN(GinkgoTB(), reduce, initial(), mixedLog(), 25)
 	})
 
 	It("replays to the room the log describes", func() {
 		state := initial()
 		for _, ev := range mixedLog() {
-			state, _ = Reduce(state, ev)
+			state, _ = reduce(state, ev)
 		}
 
 		Expect(state.Messages()).To(BeEmpty(), "mallory cleared the room at the end")
@@ -833,11 +871,11 @@ var _ = Describe("Determinism", func() {
 		before := newState(tabA, alice)
 		before.Room = &Log{Version: 1, Members: []string{"alice", "bob"}}
 
-		after, _ := Reduce(before, pushed(
+		after, _ := reduce(before, pushed(
 			postedUpdate(1, 2, "bob", "hello", []string{"alice", "bob"}), tabA, baseTime))
 		Expect(roster.Dirty(before, after)).To(BeFalse())
 
-		grown, _ := Reduce(after, pushed(update{
+		grown, _ := reduce(after, pushed(update{
 			kind: EventPresence, version: 3, members: []string{"alice", "bob", "olive"},
 		}, tabA, baseTime))
 		Expect(roster.Dirty(after, grown)).To(BeTrue())
@@ -852,7 +890,7 @@ var _ = Describe("Determinism", func() {
 		b := a
 		Expect(a == b).To(BeTrue())
 
-		moved, _ := Reduce(a, pushed(postedUpdate(1, 2, "bob", "hi", nil), tabA, baseTime))
+		moved, _ := reduce(a, pushed(postedUpdate(1, 2, "bob", "hi", nil), tabA, baseTime))
 		Expect(a == moved).To(BeFalse())
 	})
 })
@@ -911,8 +949,8 @@ var _ = Describe("The room", func() {
 	It("numbers and stamps a message, and keeps the room's revision moving", func() {
 		room.Join(tabA, "alice")
 
-		first := room.Post("alice", PostEffect{Body: "one"}, tabA)
-		second := room.Post("alice", PostEffect{Body: "two"}, tabA)
+		first := room.Post("alice", Post{Body: "one"}, tabA)
+		second := room.Post("alice", Post{Body: "two"}, tabA)
 
 		Expect(first.Seq).To(Equal(uint64(1)))
 		Expect(second.Seq).To(Equal(uint64(2)))
@@ -923,7 +961,7 @@ var _ = Describe("The room", func() {
 	It("keeps only the last MaxHistory messages", func() {
 		room.Join(tabA, "alice")
 		for i := 1; i <= MaxHistory+5; i++ {
-			room.Post("alice", PostEffect{Body: "line " + strconv.Itoa(i)}, tabA)
+			room.Post("alice", Post{Body: "line " + strconv.Itoa(i)}, tabA)
 		}
 
 		log := room.Log()
@@ -937,13 +975,13 @@ var _ = Describe("The room", func() {
 	It("never writes through a log it already handed out", func() {
 		room.Join(tabA, "alice")
 		for i := 1; i <= MaxHistory; i++ {
-			room.Post("alice", PostEffect{Body: "line " + strconv.Itoa(i)}, tabA)
+			room.Post("alice", Post{Body: "line " + strconv.Itoa(i)}, tabA)
 		}
 		held := room.Log()
 		firstBody := held.Messages[0].Body
 
 		for i := 1; i <= 10; i++ {
-			room.Post("alice", PostEffect{Body: "later " + strconv.Itoa(i)}, tabA)
+			room.Post("alice", Post{Body: "later " + strconv.Itoa(i)}, tabA)
 		}
 
 		Expect(held.Messages[0].Body).To(Equal(firstBody))
@@ -951,32 +989,31 @@ var _ = Describe("The room", func() {
 
 	It("clears the log on a purge and keeps the roster", func() {
 		room.Join(tabA, "alice")
-		room.Post("alice", PostEffect{Body: "something"}, tabA)
+		room.Post("alice", Post{Body: "something"}, tabA)
 
-		room.Purge("mallory", PurgeEffect{}, tabA)
+		room.Purge("mallory", Purge{}, tabA)
 
 		log := room.Log()
 		Expect(log.Messages).To(BeEmpty())
 		Expect(log.Members).To(Equal([]string{"alice"}))
 	})
 
-	It("refuses an effect it has no executor for", func() {
-		err := room.Execute(GinkgoT().Context(), sessionFor(tabA, alice), unknownEffect{}, nil)
-
-		Expect(err).To(MatchError(ContainSubstring("no executor")))
-	})
-
-	// The reason Config.Execute takes a live.Session. The same effect value,
+	// The reason an effect's Run takes a live.Session[Member]. The same effect,
 	// performed for two sessions, produces two different authors — so a
 	// reducer cannot attribute a sentence to somebody who did not write it,
 	// because a reducer never gets to say who wrote it.
+	//
+	// The spec that used to sit above this one — "refuses an effect it has no
+	// executor for" — is gone with the executor. An effect this room does not
+	// own is an effect this room cannot be handed now that a live.Effect[Member]
+	// carries its own Run.
 	It("stamps the author from the session, not from the effect", func() {
 		room.Join(tabA, "alice")
 		room.Join(tabB, "bob")
-		post := PostEffect{Body: "the very same effect value"}
+		post := room.PostEffect(Post{Body: "the very same effect"})
 
-		Expect(room.Execute(GinkgoT().Context(), sessionFor(tabA, alice), post, nil)).To(Succeed())
-		Expect(room.Execute(GinkgoT().Context(), sessionFor(tabB, bob), post, nil)).To(Succeed())
+		Expect(post.Run(GinkgoT().Context(), sessionFor(tabA, alice), noEmit)).To(Succeed())
+		Expect(post.Run(GinkgoT().Context(), sessionFor(tabB, bob), noEmit)).To(Succeed())
 
 		log := room.Log()
 		Expect(log.Messages).To(HaveLen(2))
@@ -987,9 +1024,10 @@ var _ = Describe("The room", func() {
 	It("stamps the purger from the session too", func() {
 		room.Join(tabA, "alice")
 		room.Join(tabB, "bob")
-		room.Post("alice", PostEffect{Body: "something"}, tabA)
+		room.Post("alice", Post{Body: "something"}, tabA)
 
-		Expect(room.Execute(GinkgoT().Context(), sessionFor(tabB, mallory), PurgeEffect{Cause: 3}, nil)).To(Succeed())
+		Expect(room.PurgeEffect(Purge{Cause: 3}).
+			Run(GinkgoT().Context(), sessionFor(tabB, mallory), noEmit)).To(Succeed())
 
 		var got live.Event
 		Eventually(func() bool {
@@ -1006,26 +1044,20 @@ var _ = Describe("The room", func() {
 		Expect(got.Fields.Get(fieldBy)).To(Equal("mallory"))
 	})
 
-	It("refuses an effect for a session whose identity is not a member", func() {
-		err := room.Execute(GinkgoT().Context(),
-			livetest.NewSession(GinkgoTB(), tabA, stranger{}), PostEffect{Body: "hi"}, nil)
-
-		Expect(err).To(MatchError(ContainSubstring("not a Member")))
-	})
+	// The "refuses an effect for a session whose identity is not a member" spec
+	// is gone with the assertion it exercised. An effect's Run takes a
+	// live.Session[Member]; a Session carrying anything else is a compile error
+	// at the call site, so there is no runtime refusal left to specify.
 
 	// FR-23's second site, at the boundary rather than through it. The library
 	// is what turns this into an event; this asserts only that the effect does
 	// what it says.
 	It("panics on the injected panic effect", func() {
 		Expect(func() {
-			_ = room.Execute(GinkgoT().Context(), sessionFor(tabA, alice), PanicEffect{}, nil)
+			_ = room.PanicEffect().Run(GinkgoT().Context(), sessionFor(tabA, alice), noEmit)
 		}).To(PanicWith(ContainSubstring(CmdPanicEffect)))
 	})
 })
-
-type unknownEffect struct{}
-
-func (unknownEffect) EffectSource() string { return "chat.unknown" }
 
 // ---------------------------------------------------------------------------
 
@@ -1049,7 +1081,7 @@ var _ = Describe("The subscription pump", func() {
 
 		emitted := make(chan live.Event, 16)
 		go func() {
-			_ = room.Execute(ctx, sessionFor(tabB, bob), SubscribeEffect{}, func(ev live.Event) error {
+			_ = room.SubscribeEffect().Run(ctx, sessionFor(tabB, bob), func(ev live.Event) error {
 				emitted <- ev
 				return nil
 			})
@@ -1059,7 +1091,7 @@ var _ = Describe("The subscription pump", func() {
 		// returned it as the initial state — but alice's tab was told about
 		// it, which is the roster growing without anybody touching anything.
 		var ev live.Event
-		room.Post("alice", PostEffect{Body: "morning"}, tabA)
+		room.Post("alice", Post{Body: "morning"}, tabA)
 
 		Eventually(emitted).Should(Receive(&ev))
 		Expect(ev.Name).To(Equal(EventPosted))
@@ -1068,7 +1100,7 @@ var _ = Describe("The subscription pump", func() {
 		Expect(ev.Fields.Get(fieldMembers)).To(Equal("alice,bob"))
 
 		// And the event a reducer receives folds to the message alice sent.
-		next, _ := Reduce(newState(tabB, bob), live.Event{Name: ev.Name, Fields: ev.Fields, At: baseTime})
+		next, _ := reduce(newState(tabB, bob), live.Event{Name: ev.Name, Fields: ev.Fields, At: baseTime})
 		Expect(next.Messages()).To(HaveLen(1))
 		Expect(next.Messages()[0].Body).To(Equal("morning"))
 	})
@@ -1099,7 +1131,7 @@ var _ = Describe("The subscription pump", func() {
 		accepted := make(chan live.Event, 4)
 		refusals := 0
 		go func() {
-			_ = room.Execute(ctx, sessionFor(tabA, alice), SubscribeEffect{}, func(ev live.Event) error {
+			_ = room.SubscribeEffect().Run(ctx, sessionFor(tabA, alice), func(ev live.Event) error {
 				if refusals < 2 {
 					refusals++
 					return errSaturated
@@ -1109,7 +1141,7 @@ var _ = Describe("The subscription pump", func() {
 			})
 		}()
 
-		room.Post("alice", PostEffect{Body: "eventually"}, tabA)
+		room.Post("alice", Post{Body: "eventually"}, tabA)
 
 		var ev live.Event
 		Eventually(accepted, 2*time.Second).Should(Receive(&ev))
@@ -1126,11 +1158,11 @@ var _ = Describe("The subscription pump", func() {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- room.Execute(ctx, sessionFor(tabA, alice), SubscribeEffect{},
+			done <- room.SubscribeEffect().Run(ctx, sessionFor(tabA, alice),
 				func(live.Event) error { return errSaturated })
 		}()
 
-		room.Post("alice", PostEffect{Body: "nobody will get this"}, tabA)
+		room.Post("alice", Post{Body: "nobody will get this"}, tabA)
 
 		var err error
 		Eventually(done, 5*time.Second).Should(Receive(&err))
@@ -1155,7 +1187,7 @@ var _ = Describe("The subscription pump", func() {
 		}
 		Expect(sub.behind.Load()).To(BeTrue())
 
-		err := room.Execute(GinkgoT().Context(), sessionFor(tabA, alice), SubscribeEffect{},
+		err := room.SubscribeEffect().Run(GinkgoT().Context(), sessionFor(tabA, alice),
 			func(live.Event) error { return nil })
 
 		Expect(err).To(MatchError(ContainSubstring("fell more than")))
@@ -1173,7 +1205,7 @@ var _ = Describe("The subscription pump", func() {
 		ctx, cancel := context.WithCancel(GinkgoT().Context())
 		done := make(chan error, 1)
 		go func() {
-			done <- room.Execute(ctx, sessionFor(tabA, alice), SubscribeEffect{},
+			done <- room.SubscribeEffect().Run(ctx, sessionFor(tabA, alice),
 				func(live.Event) error { return nil })
 		}()
 
@@ -1182,7 +1214,7 @@ var _ = Describe("The subscription pump", func() {
 	})
 
 	It("reports a session that was never joined rather than blocking forever", func() {
-		err := room.Execute(GinkgoT().Context(), sessionFor(tabA, alice), SubscribeEffect{},
+		err := room.SubscribeEffect().Run(GinkgoT().Context(), sessionFor(tabA, alice),
 			func(live.Event) error { return nil })
 
 		Expect(err).To(MatchError(ContainSubstring("not in the room")))
@@ -1226,9 +1258,9 @@ var _ = Describe("Escaping", func() {
 	for _, tc := range payloads {
 		It("escapes "+tc.name+" in a message body", func() {
 			state := newState(tabA, alice)
-			hostile, _ := Reduce(state, pushed(
+			hostile, _ := reduce(state, pushed(
 				postedUpdate(1, 2, "bob", tc.payload, []string{"alice", "bob"}), tabA, baseTime))
-			safe, _ := Reduce(state, pushed(
+			safe, _ := reduce(state, pushed(
 				postedUpdate(1, 2, "bob", benignBody, []string{"alice", "bob"}), tabA, baseTime))
 
 			html := render(LogRegion(hostile))
@@ -1245,8 +1277,8 @@ var _ = Describe("Escaping", func() {
 		})
 
 		It("escapes "+tc.name+" in the draft echoed back into the input", func() {
-			hostile, _ := Reduce(newState(tabA, alice), typed(tc.payload, 1, baseTime))
-			safe, _ := Reduce(newState(tabA, alice), typed(benignBody, 1, baseTime))
+			hostile, _ := reduce(newState(tabA, alice), typed(tc.payload, 1, baseTime))
+			safe, _ := reduce(newState(tabA, alice), typed(benignBody, 1, baseTime))
 
 			html := render(ComposerRegion(hostile))
 
@@ -1264,7 +1296,7 @@ var _ = Describe("Escaping", func() {
 	// directory, because a directory is a thing an operator edits.
 	It("escapes a name in a notice", func() {
 		state := newState(tabA, alice)
-		state, _ = Reduce(state, pushed(update{
+		state, _ = reduce(state, pushed(update{
 			kind: EventPurged, version: 2, by: `<script>alert(1)</script>`, members: []string{"alice"},
 		}, tabA, baseTime))
 
@@ -1279,7 +1311,7 @@ var _ = Describe("Escaping", func() {
 	// controlled, and the escaping must not depend on that staying true.
 	It("escapes a name in the roster", func() {
 		state := newState(tabA, alice)
-		state, _ = Reduce(state, pushed(update{
+		state, _ = reduce(state, pushed(update{
 			kind: EventPresence, version: 2, members: []string{"alice", `<b onclick=alert(1)>bob`},
 		}, tabA, baseTime))
 
@@ -1294,7 +1326,7 @@ var _ = Describe("Escaping", func() {
 	// library writes.
 	It("puts exactly one script element on the page, and it is the runtime's", func() {
 		state := newState(tabA, alice)
-		state, _ = Reduce(state, pushed(
+		state, _ = reduce(state, pushed(
 			postedUpdate(1, 2, "bob", `</head><script>alert(1)</script>`, []string{"alice"}), tabA, baseTime))
 
 		html := render(Page(chatApp(), state))
@@ -1431,7 +1463,7 @@ var _ = Describe("The markup", func() {
 	// that was already correct.
 	It("composes the page from the same components the fragments render", func() {
 		state := newState(tabA, alice)
-		state, _ = Reduce(state, pushed(
+		state, _ = reduce(state, pushed(
 			postedUpdate(1, 2, "bob", "hello", []string{"alice", "bob"}), tabA, baseTime))
 
 		page := render(Page(chatApp(), state))
@@ -1448,7 +1480,7 @@ var _ = Describe("The markup", func() {
 	It("renders the same state to the same bytes, every time", func() {
 		state := newState(tabA, alice)
 		for i := 1; i <= 4; i++ {
-			state, _ = Reduce(state, pushed(postedUpdate(uint64(i), uint64(i+1), "bob",
+			state, _ = reduce(state, pushed(postedUpdate(uint64(i), uint64(i+1), "bob",
 				"line "+strconv.Itoa(i), []string{"alice", "bob", "mallory"}), tabA, baseTime))
 		}
 
@@ -1488,7 +1520,7 @@ func render(c templ.Component) string {
 // LoginPage need one because app.Document is a method: what it writes into the
 // document's head depends on this Config, and Dev is false here, which is what
 // the "exactly one script element" spec above is counting.
-func chatApp() *live.App[State] {
+func chatApp() *live.App[State, Member] {
 	GinkgoHelper()
 
 	app, err := live.New(Config(NewRoom(), DemoDirectory(), []string{testOrigin}))

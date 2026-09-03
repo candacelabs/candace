@@ -173,7 +173,7 @@ var _ = Describe("Duplicate and replayed frames (PRD case 8)", func() {
 	//     unbounded one is per-session memory a client controls.
 	It("uses a telemetry report about a patch the client just acknowledged, and drops a forged one and one that has aged out of the ring (H-11, BR-1)", func() {
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) { cfg.Metrics = rec })
+		s := serve(func(cfg *live.Config[board, chaosUser]) { cfg.Metrics = rec })
 		w := dialWire(s.addr(), wireOpts{acks: ackAuto})
 
 		dropped := func() float64 { return rec.Total("gotthlive_client_telemetry_dropped_total") }

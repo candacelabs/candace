@@ -40,7 +40,7 @@ const consecutiveDenialsBeforeClose = 3
 // accounted for: an acknowledgement and a heartbeat are transport plumbing
 // that no reducer can observe, and client telemetry is a report about a patch
 // this session already sent. None of them can reach application state.
-func (a *Actor) Ingress(ctx context.Context, in protocol.IInbound) {
+func (a *Actor[I]) Ingress(ctx context.Context, in protocol.IInbound) {
 	now := a.now()
 	a.lastInboundNS.Store(now.UnixNano())
 
@@ -60,7 +60,7 @@ func (a *Actor) Ingress(ctx context.Context, in protocol.IInbound) {
 	}
 }
 
-func (a *Actor) ingressEvent(ctx context.Context, in protocol.InboundEvent, now time.Time) {
+func (a *Actor[I]) ingressEvent(ctx context.Context, in protocol.InboundEvent, now time.Time) {
 	name := in.Name()
 	clientRef := in.ClientRef()
 
@@ -160,7 +160,7 @@ func (a *Actor) ingressEvent(ctx context.Context, in protocol.InboundEvent, now 
 // This span is itself a child of gotthlive.parse, which the read pump opened
 // for the frame these bytes arrived in. So the sampler decides once, at the
 // frame, and everything from here to the write inherits it.
-func (a *Actor) authorize(ctx context.Context, ev Event) (obs.SpanRef, bool) {
+func (a *Actor[I]) authorize(ctx context.Context, ev Event) (obs.SpanRef, bool) {
 	var span obs.Span
 	if a.tr.Enabled() {
 		ctx, span = a.tr.Start(ctx, obs.SpanAuthorize,
@@ -197,7 +197,7 @@ func (a *Actor) authorize(ctx context.Context, ev Event) (obs.SpanRef, bool) {
 	return obs.SpanRef{}, false
 }
 
-func (a *Actor) ingressResync(ctx context.Context, in protocol.InboundResyncRequest, now time.Time) {
+func (a *Actor[I]) ingressResync(ctx context.Context, in protocol.InboundResyncRequest, now time.Time) {
 	a.eventSeq++
 	ev := Event{
 		ID:            a.eventSeq,
@@ -234,7 +234,7 @@ func (a *Actor) ingressResync(ctx context.Context, in protocol.InboundResyncRequ
 	}
 }
 
-func (a *Actor) ingressAck(ctx context.Context, in protocol.InboundAck) {
+func (a *Actor[I]) ingressAck(ctx context.Context, in protocol.InboundAck) {
 	select {
 	case a.acks <- in.ServerSeq():
 	default:
@@ -247,7 +247,7 @@ func (a *Actor) ingressAck(ctx context.Context, in protocol.InboundAck) {
 	}
 }
 
-func (a *Actor) ingressTelemetry(ctx context.Context, in protocol.InboundClientTelemetry) {
+func (a *Actor[I]) ingressTelemetry(ctx context.Context, in protocol.InboundClientTelemetry) {
 	m := getInbound()
 	m.kind = msgTelemetry
 	m.patchID = in.PatchID()

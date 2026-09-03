@@ -55,43 +55,59 @@ const (
 // claim about and a spec cannot tell the two apart if both are tight.
 const backlogDepth = 4096
 
-// SubscribeEffect asks the feed to push this session every update until the
-// session ends.
+// SubscribeEffect is the effect that pushes this session every feed update
+// until the session ends.
 //
-// It exists because Config.Execute is the only place an application is handed
+// It exists because an effect's Run is the only place an application is handed
 // a live.Emitter, so a subscription that wants to inject events has to be
 // expressed as a long-running effect. Config.Init registers the session; this
-// pumps what the registration collects. It carries nothing: a subscription's
+// pumps what the registration collects. It captures nothing: a subscription's
 // address is the session it belongs to, which the library already knows and
-// hands to Execute.
-type SubscribeEffect struct{}
+// hands to Run.
+//
+// Every patch the feed causes in this session carries
+// "effect:dashboard.subscribe" as its origin, which is the string that
+// distinguishes a server-initiated repaint from one this browser asked for.
+func (f *Feed) SubscribeEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceSubscribe,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return f.pump(ctx, sess.ID(), emit)
+		},
+	}
+}
 
-// EffectSource names the subscription for provenance and metrics. Every patch
-// the feed causes in this session carries "effect:dashboard.subscribe" as its
-// origin, which is the string that distinguishes a server-initiated repaint
-// from one this browser asked for.
-func (SubscribeEffect) EffectSource() string { return SourceSubscribe }
-
-// ProbeEffect asks the feed for one extra reading, right now.
+// ProbeEffect is the effect that asks the feed for one extra reading, right
+// now.
 //
 // It is the one client interaction that produces a server-initiated patch
 // through the shared feed, and it is here because that fan-out is where
 // provenance gets interesting: the patch that finally shows the reading is
 // emitted by the SUBSCRIPTION, which was scheduled at mount, so without an
 // explicit edge the only thing an operator could recover from the frame is
-// "some effect did it". Cause is the identifier of the event that asked, it
+// "some effect did it". cause is the identifier of the event that asked, it
 // rides through the feed, and it comes back out on the emitted event's
 // Contributing list for the session that asked and for nobody else.
-type ProbeEffect struct{ Cause uint64 }
+func (f *Feed) ProbeEffect(cause uint64) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceProbe,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			f.Sample(sess.ID(), cause)
+			return nil
+		},
+	}
+}
 
-// EffectSource names the effect for provenance and metrics.
-func (ProbeEffect) EffectSource() string { return SourceProbe }
-
-// ClearEffect asks the feed to empty the shared alert log.
-type ClearEffect struct{ Cause uint64 }
-
-// EffectSource names the effect for provenance and metrics.
-func (ClearEffect) EffectSource() string { return SourceClear }
+// ClearEffect is the effect that empties the shared alert log.
+func (f *Feed) ClearEffect(cause uint64) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceClear,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			f.Clear(sess.ID(), cause)
+			return nil
+		},
+	}
+}
 
 // Series are the metrics this dashboard shows, in the order they render.
 //
@@ -562,26 +578,6 @@ func broadcast(subs []*subscriber, u update) {
 	}
 }
 
-// Execute performs one effect at the actor boundary. It is Config.Execute.
-//
-// The effect values arrive exactly as the reducer declared them; nothing here
-// runs inside a reducer, and nothing here can reach a session's state except by
-// emitting an event the reducer folds in.
-func (f *Feed) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch e := effect.(type) {
-	case SubscribeEffect:
-		return f.pump(ctx, sess.ID(), emit)
-	case ProbeEffect:
-		f.Sample(sess.ID(), e.Cause)
-		return nil
-	case ClearEffect:
-		f.Clear(sess.ID(), e.Cause)
-		return nil
-	default:
-		return fmt.Errorf("dashboard: no executor for effect %T", effect)
-	}
-}
-
 // pump delivers feed updates to one session until its context is cancelled.
 //
 // It runs for the session's whole life, on a goroutine the library owns and
@@ -594,7 +590,7 @@ func (f *Feed) pump(ctx context.Context, id live.ID, emit live.Emitter) error {
 	sub := f.subs[id]
 	f.mu.Unlock()
 	if sub == nil {
-		return fmt.Errorf("dashboard: session %s is not subscribed: Config.Init must Join before it returns a SubscribeEffect", id)
+		return fmt.Errorf("dashboard: session %s is not subscribed: Config.Init must Join before it returns a subscribe effect", id)
 	}
 
 	var (

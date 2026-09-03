@@ -163,7 +163,7 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 	}
 
 	It("passes a reducer that is a pure function of its inputs", func() {
-		pure := func(s tally, ev live.Event) (tally, []live.IEffect) {
+		pure := func(s tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 			if ev.Name == "qa.increment" {
 				s.N++
 			}
@@ -179,7 +179,7 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 
 	// The mutation. If this passes, the helper is decoration.
 	It("fails a reducer that reads a clock", func() {
-		impure := func(s tally, ev live.Event) (tally, []live.IEffect) {
+		impure := func(s tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 			s.N++
 			s.Label = fmt.Sprint(time.Now().UnixNano())
 			return s, nil
@@ -208,13 +208,13 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 	// replay 2 by construction, on every host and every schedule.
 	It("fails a reducer whose effects differ between replays", func() {
 		calls := 0
-		impure := func(s tally, ev live.Event) (tally, []live.IEffect) {
+		impure := func(s tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 			// State advances identically on every replay, so the effects
 			// comparison is the only thing that can catch this.
 			s.N++
 			calls++
 			if calls%2 == 1 {
-				return s, []live.IEffect{noisyEffect{}}
+				return s, []live.Effect[qaUser]{noisyEffect()}
 			}
 			return s, nil
 		}
@@ -231,7 +231,7 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 	})
 
 	It("refuses to certify anything from a single replay or an empty log", func() {
-		pure := func(s tally, _ live.Event) (tally, []live.IEffect) { return s, nil }
+		pure := func(s tally, _ live.Event) (tally, []live.Effect[qaUser]) { return s, nil }
 
 		tooFew, msgFew := runProbe(func(tb testing.TB) {
 			livetest.ReplayN(tb, pure, tally{}, log, 1)
@@ -281,9 +281,15 @@ var _ = Describe("The dirty-declaration helper", func() {
 // helpers
 // ---------------------------------------------------------------------------
 
-type noisyEffect struct{}
-
-func (noisyEffect) EffectSource() string { return "qa.noisy" }
+// noisyEffect is the effect the impure reducer above schedules on one replay
+// and not on the next. Only its source matters: ReplayN compares the sequence
+// of sources two replays produced.
+func noisyEffect() live.Effect[qaUser] {
+	return live.Effect[qaUser]{
+		Source: "qa.noisy",
+		Run:    func(ctx context.Context, session live.Session[qaUser], emit live.Emitter) error { return nil },
+	}
+}
 
 // drive runs one session through a log of event names and returns the markup
 // of every fragment update it produced, in order.

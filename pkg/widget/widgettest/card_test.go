@@ -43,7 +43,7 @@ type probeWidget struct {
 	nameless bool
 }
 
-var _ widget.IWidget[probeState] = probeWidget{}
+var _ widget.IWidget[probeState, live.AnonymousIdentity] = probeWidget{}
 
 func (instance probeWidget) Register() widget.Registration {
 	return widget.Registration{
@@ -55,14 +55,14 @@ func (instance probeWidget) Register() widget.Registration {
 }
 
 func (instance probeWidget) Mount(
-	ctx context.Context, session live.Session,
-) (probeState, []live.IEffect, error) {
+	ctx context.Context, session live.Session[live.AnonymousIdentity],
+) (probeState, []live.Effect[live.AnonymousIdentity], error) {
 	return probeState{}, nil, nil
 }
 
 func (instance probeWidget) Reduce(
 	state probeState, event live.Event,
-) (probeState, []live.IEffect) {
+) (probeState, []live.Effect[live.AnonymousIdentity]) {
 	current := state
 	if event.Name != probeEvent {
 		return current, nil
@@ -95,13 +95,8 @@ func (instance probeWidget) Render(state probeState) templ.Component {
 	})
 }
 
-func (instance probeWidget) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("probe: schedules no effect, but %s arrived", effect.EffectSource())
+func (instance probeWidget) Unmount(ctx context.Context, session live.Session[live.AnonymousIdentity], state probeState) {
 }
-
-func (instance probeWidget) Unmount(ctx context.Context, session live.Session, state probeState) {}
 
 func (instance probeWidget) Snapshot(state probeState) widget.Snapshot {
 	return widget.Snapshot{Widget: "Probe", Fields: []widget.SnapshotField{

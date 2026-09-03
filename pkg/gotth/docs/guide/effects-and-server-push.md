@@ -17,43 +17,57 @@ work — and the library performs them at the actor boundary, on a goroutine it
 owns and waits for at shutdown.
 
 ```text
-Reduce(state, ev) → (state, []IEffect)        pure, on the session's goroutine
+Reduce(state, ev) → (state, []Effect)        pure, on the session's goroutine
         │
         ▼  actor boundary
-Config.Execute(ctx, session, effect, emit)   I/O, on a goroutine the library owns
+effect.Run(ctx, session, emit)               I/O, on a goroutine the library owns
         │
         └── emit(Event) ─────────────────▶  back into the same session's mailbox
 ```
 
-`live.IEffect` has one method:
+`live.Effect` is a **concrete struct** with two fields:
 
 ```text
-EffectSource() string
+Source string
+Run    func(ctx context.Context, session Session, emit Emitter) error
 ```
 
-It names the effect for provenance and metrics, in the form `package.action`,
-and becomes the origin source `effect:<name>` on every patch the effect causes.
-It is also the value the failure event carries, and the one that is safe to
-render.
+`Source` names the effect for provenance and metrics, in the form
+`package.action`, and becomes the origin source `effect:<name>` on every patch
+the effect causes. It is also the value the failure event carries, and the one
+that is safe to render.
 
-**Implementations must be plain values**: no channels, no connections, no
-closures over live handles. That is what lets a test assert on what a reducer
-decided to do without performing it, and it is what makes `livetest.ReplayN`'s
-deep comparison of emitted effects mean anything.
+`Run` is the behaviour. Operator ruling, 2026-09-03: this used to be a one-method
+interface an application implemented, and a reducer handing back a slice of those
+handed a caller a slice of abstractions where every element is one named thing the
+application decided to do. A framework this repository owns does not get the
+pass-through exemption CS-8 grants third-party contracts.
+
+Write an effect as a **constructor returning a value**, closing over whatever it
+needs. A zero `Effect` is inert and is dropped; an `Effect` that names itself and
+carries no `Run` fails deterministically, because an effect that never runs is a
+change that never happens.
 
 <!-- sample: effects/effects.go -->
 ```go
-type ApplyEffect struct {
-	Delta int64
-
-	Cause uint64
+func (s *Store) ApplyEffect(delta int64, cause uint64) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceApply,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			s.apply(delta)
+			return nil
+		},
+	}
 }
 
-func (ApplyEffect) EffectSource() string { return SourceApply }
-
-type WatchEffect struct{}
-
-func (WatchEffect) EffectSource() string { return SourceWatch }
+func (s *Store) WatchEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceWatch,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return s.Pump(ctx, sess.ID(), emit)
+		},
+	}
+}
 ```
 
 ---
@@ -62,20 +76,26 @@ func (WatchEffect) EffectSource() string { return SourceWatch }
 
 <!-- sample: effects/effects.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	switch ev.Name {
-	case EventInc:
-		return s, []live.IEffect{ApplyEffect{Delta: 1, Cause: ev.ID}}
+func Reducer(store *Store) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		switch ev.Name {
+		case EventInc:
+			return s, []live.Effect[live.AnonymousIdentity]{store.ApplyEffect(1, ev.ID)}
 
-	case EventSync:
-		return applySync(s, ev), nil
+		case EventSync:
+			return applySync(s, ev), nil
 
-	case live.EffectFailedEvent:
-		return s, retryWatch(ev)
+		case live.EffectFailedEvent:
+			return s, retryWatch(store, ev)
+		}
+		return s, nil
 	}
-	return s, nil
 }
 ```
+
+The reducer is a **constructor** over the store, because an effect carries its
+own behaviour and the transition that schedules one has to be able to build it.
+It still touches the store not at all.
 
 **The reducer never changes the shared value.** It returns an effect and learns
 the result the same way every other session does. That is what
@@ -83,32 +103,17 @@ the result the same way every other session does. That is what
 
 ---
 
-## `Config.Execute`
+## There is no `Config.Execute`
 
-```text
-Execute func(ctx context.Context, session Session, effect IEffect, emit Emitter) error
-```
+There was one until 2026-09-03, taking one effect interface and type-switching on
+its dynamic type. It went with the interface: `Effect.Run` is where an effect's
+behaviour lives, so there is nothing left for a central executor to dispatch on.
+An application that had one moves each `case` arm into the constructor that
+builds the effect — which is also where the store, broker or pool it needs is
+already in scope.
 
-Required as soon as any code path returns an effect; `live.New` refuses a
-`Config` that returns effects with no executor. It type-switches on your own
-effect types.
-
-<!-- sample: effects/effects.go -->
-```go
-func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch e := effect.(type) {
-	case ApplyEffect:
-		s.apply(e.Delta)
-		return nil
-	case WatchEffect:
-		return s.Pump(ctx, sess.ID(), emit)
-	default:
-		return fmt.Errorf("effects: no executor for %T", effect)
-	}
-}
-```
-
-**The `Session` is a parameter, not something to fish out of the context.** An
+**The `Session` is a parameter of `Run`, not something to fish out of the
+context.** An
 effect's identity is an input to what the effect does — a message published to a
 topic has an author, and the identity `Authorize` permitted the event under is
 the identity the effect it scheduled must still act as. A context value would
@@ -245,18 +250,18 @@ one the library may not coalesce — it is subtracted from the flush headroom th
 
 ---
 
-## Retry: the classification is the executor's, not the reducer's
+## Retry: the classification is the effect's, not the reducer's
 
 A failed or panicking effect is delivered to the reducer as an ordinary event
 named `live.EffectFailedEvent`, carrying three fields:
 
 | Field | Holds |
 |---|---|
-| `live.EffectFailedSourceField` | the `EffectSource()` of the effect that failed — **the value that is safe to render** |
+| `live.EffectFailedSourceField` | the `Source` of the effect that failed — **the value that is safe to render** |
 | `live.EffectFailedErrorField` | the error's message, or the panic value, verbatim and unredacted, in production |
-| `live.EffectFailedRetryableField` | `"true"` only if the executor marked it with `live.Retryable` |
+| `live.EffectFailedRetryableField` | `"true"` only if the effect marked it with `live.Retryable` |
 
-`live.Retryable(err)` marks an error returned from `Execute` as transient.
+`live.Retryable(err)` marks an error returned from an effect's `Run` as transient.
 `live.IsRetryable(err)` reads the mark back, through `errors.As`, so it survives
 `%w` wrapping in either direction and is invisible in the message.
 `Retryable(nil)` is nil, so a result can be wrapped unconditionally.
@@ -275,10 +280,10 @@ mailbox nor a session mid-shutdown is a property of the subscription.
 
 <!-- sample: effects/effects.go -->
 ```go
-func retryWatch(ev live.Event) []live.IEffect {
+func retryWatch(store *Store, ev live.Event) []live.Effect[live.AnonymousIdentity] {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceWatch {
-		return []live.IEffect{WatchEffect{}}
+		return []live.Effect[live.AnonymousIdentity]{store.WatchEffect()}
 	}
 	return nil
 }
@@ -292,7 +297,7 @@ is terminal.
 chose to put in an error — a connection string, a query, an internal hostname —
 and it is not gated by `Config.Dev`. Rendering it into a fragment publishes it
 to the browser. Branch on it in the reducer and render the source instead; log
-it and count it somewhere that is not the reducer — `Config.Execute`, or the
+it and count it somewhere that is not the reducer — the effect's own `Run`, or the
 `slog.Handler` you give `Config.Logger` — because FR-16 makes logging
 application data I/O and a reducer may not perform I/O. This sentence used to
 end "log it, count it, branch on it", which is the wording that produced
@@ -384,8 +389,8 @@ charge derives the same key:
 
 <!-- sample: payments/payments.go -->
 ```go
-func (s State) charge() ChargeEffect {
-	return ChargeEffect{
+func (s State) charge() ChargeIntent {
+	return ChargeIntent{
 		OrderID:     s.OrderID,
 		AmountCents: s.AmountCents,
 		Key:         IdempotencyKey(s.OrderID, s.AmountCents),
@@ -399,8 +404,8 @@ func (s State) charge() ChargeEffect {
 		if s.Status != StatusOpen {
 			return s, nil
 		}
-		s.Status = StatusCharging
-		return s, []live.IEffect{s.charge()}
+			s.Status = StatusCharging
+			return s, []live.Effect[live.AnonymousIdentity]{gateway.ChargeEffect(s.charge())}
 ```
 
 The `Status` guard is **not** the mechanism. It is worth having — within one
@@ -412,38 +417,39 @@ session's `Init` legitimately rebuilds the checkout as unpaid because nothing
 recorded the charge. Ship only the guard and you have a checkout that is safe in
 development and charges twice in production.
 
-The executor passes the key out to the third party:
+The effect passes the key out to the third party:
 
 <!-- sample: payments/payments.go -->
 ```go
-	case ChargeEffect:
-		charge, err := g.Provider.Charge(ctx, ChargeRequest{
-			IdempotencyKey: e.Key,
-			OrderID:        e.OrderID,
-			AmountCents:    e.AmountCents,
-		})
-		if err != nil {
-			return fmt.Errorf("payments: charging order %s: %w", e.OrderID, err)
-		}
-		if err := emit(live.Event{
-			Name: EventCharged,
-			Fields: live.NewFields(map[string]string{
-				FieldChargeID: charge.ID,
-				FieldOrderID:  e.OrderID,
-			}),
-		}); err != nil {
-			return live.Retryable(fmt.Errorf(
-				"payments: order %s was charged as %s and the session did not learn: %w",
-				e.OrderID, charge.ID, err))
-		}
-		return nil
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			charge, err := g.Provider.Charge(ctx, ChargeRequest{
+				IdempotencyKey: request.Key,
+				OrderID:        request.OrderID,
+				AmountCents:    request.AmountCents,
+			})
+			if err != nil {
+				return fmt.Errorf("payments: charging order %s: %w", request.OrderID, err)
+			}
+			if err := emit(live.Event{
+				Name: EventCharged,
+				Fields: live.NewFields(map[string]string{
+					FieldChargeID: charge.ID,
+					FieldOrderID:  request.OrderID,
+				}),
+			}); err != nil {
+				return live.Retryable(fmt.Errorf(
+					"payments: order %s was charged as %s and the session did not learn: %w",
+					request.OrderID, charge.ID, err))
+			}
+			return nil
+		},
 ```
 
 **Look at the `emit` branch.** The money has moved by the time that line runs, so
 an emit that fails *is* path 2 happening inside one process — committed
 externally, and the session never learned. The interesting part is the
 `live.Retryable`: marking a failure transient is a claim that running the effect
-again is safe, and this executor is entitled to make that claim **because it
+again is safe, and this effect is entitled to make that claim **because it
 passed a key**. Delete `IdempotencyKey` and the honest classification here
 becomes terminal, and the customer is left looking at a checkout that has
 already taken their money. That is the sense in which the key is not defensive
@@ -453,12 +459,12 @@ The same key is what makes the failure path safe to write at all:
 
 <!-- sample: payments/payments.go -->
 ```go
-func failedCharge(s State, ev live.Event) (State, []live.IEffect) {
+func failedCharge(gateway *Gateway, s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
 	if ev.Fields.Get(live.EffectFailedSourceField) != SourceCharge {
 		return s, nil
 	}
 	if retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField)); retryable {
-		return s, []live.IEffect{s.charge()}
+		return s, []live.Effect[live.AnonymousIdentity]{gateway.ChargeEffect(s.charge())}
 	}
 	s.Status = StatusOpen
 	return s, nil

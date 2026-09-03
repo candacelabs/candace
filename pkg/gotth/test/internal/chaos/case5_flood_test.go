@@ -45,7 +45,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 		// At 5/s and a burst of 5 that threshold is 75 frames/s, which a local
 		// socket clears trivially. At the DEFAULTS it is 15,000 frames/s, which
 		// is the point of the next spec.
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Limits.MaxEventsPerSecond = 5
 			cfg.Limits.EventBurst = 5
@@ -84,7 +84,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 	// The spec asserts the CURRENT behaviour, so it goes red the day the close
 	// becomes reachable here — which is the signal that D-24 has been acted on.
 	It("does not reach a defined close below that rate, and answers every refused frame instead (D-24)", func() {
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Limits.MaxEventsPerSecond = 50 // the documented default
 			cfg.Limits.EventBurst = 100        // the documented default
@@ -173,7 +173,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 	// operator's dashboard is told "normal".
 	It("refuses an oversize frame at the transport without allocating its payload, and closes with 1009 rather than 4007 (FR-13, H-5, D-28)", func() {
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Metrics = rec
 			cfg.Limits.MaxInboundFrameBytes = 4096
@@ -230,7 +230,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 	})
 
 	It("bounds the mailbox rather than queueing, and says so with a typed error", func() {
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Limits.MailboxDepth = 4
 			// The bucket must not be the thing that refuses, or the mailbox
@@ -268,7 +268,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 	// Asserted as the current behaviour so the spec goes red when it is fixed.
 	It("counts gotthlive_sessions_active down on every rejected handshake (D-22, FR-34)", func() {
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Metrics = rec
 		})

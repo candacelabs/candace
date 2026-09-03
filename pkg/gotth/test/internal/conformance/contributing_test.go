@@ -39,9 +39,18 @@ import (
 
 // contributingEffect is scheduled by every increment and emits one event
 // carrying a full-size contributing list.
-type contributingEffect struct{}
-
-func (contributingEffect) EffectSource() string { return "qa.contributes" }
+func contributingEffect(label func() string, take func(n int) []uint64) live.Effect[qaUser] {
+	return live.Effect[qaUser]{
+		Source: "qa.contributes",
+		Run: func(ctx context.Context, sess live.Session[qaUser], emit live.Emitter) error {
+			return emit(live.Event{
+				Name:         "qa.relabel",
+				Fields:       live.NewFields(map[string]string{"label": label()}),
+				Contributing: take(session.MaxEventContributing),
+			})
+		},
+	}
+}
 
 // distinctIDs hands out blocks of identifiers that never repeat between
 // emissions, so the union really grows rather than deduplicating back down to
@@ -65,7 +74,7 @@ var _ = Describe("The coalescing flush trigger, with an application contributing
 		var pool distinctIDs
 		var labels atomic.Uint64
 
-		d := dial(func(c *live.Config[tally]) {
+		d := dial(func(c *live.Config[tally, qaUser]) {
 			c.Metrics = metrics
 			// The widest setting an operator may configure, so the headroom
 			// this spec is about is the smallest it can legally be.
@@ -78,25 +87,19 @@ var _ = Describe("The coalescing flush trigger, with an application contributing
 			c.Limits.MaxEventsPerSecond = 1e6
 			c.Limits.EventBurst = 1 << 20
 
-			c.Reduce = func(state tally, ev live.Event) (tally, []live.IEffect) {
+			c.Reduce = func(state tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 				switch ev.Name {
 				case "qa.increment":
 					// No state change here: the patch this spec is about is
 					// the one the effect's emission causes.
-					return state, []live.IEffect{contributingEffect{}}
+					return state, []live.Effect[qaUser]{contributingEffect(
+						func() string { return fmt.Sprintf("v%d", labels.Add(1)) },
+						pool.take,
+					)}
 				case "qa.relabel":
 					state.Label = ev.Fields.Get("label")
 				}
 				return state, nil
-			}
-			c.Execute = func(_ context.Context, _ live.Session, _ live.IEffect, emit live.Emitter) error {
-				return emit(live.Event{
-					Name: "qa.relabel",
-					Fields: live.NewFields(map[string]string{
-						"label": fmt.Sprintf("v%d", labels.Add(1)),
-					}),
-					Contributing: pool.take(session.MaxEventContributing),
-				})
 			}
 		})
 

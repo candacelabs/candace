@@ -35,7 +35,7 @@ import (
 // measured against two real binaries built by the Go toolchain, in a spec that
 // skips where no toolchain is present rather than asserting something weaker.
 
-func devReloadApp(dev bool) *live.App[counter] {
+func devReloadApp(dev bool) *live.App[counter, user] {
 	GinkgoHelper()
 
 	cfg := validConfig()
@@ -45,7 +45,7 @@ func devReloadApp(dev bool) *live.App[counter] {
 	return app
 }
 
-func stampedApp(dev bool, id string) *live.App[counter] {
+func stampedApp(dev bool, id string) *live.App[counter, user] {
 	GinkgoHelper()
 
 	cfg := validConfig()

@@ -38,14 +38,16 @@ type subject string
 
 func (s subject) Subject() string { return string(s) }
 
-// testEffect is an effect declared as data, which is the property that lets a
-// spec assert on what a reducer decided to do without performing it.
+// testEffect is what a spec's reducer decides to do, as data: a source and the
+// reply the execute hook echoes back.
+//
+// It is not itself the effect any more. Since live.Effect became a concrete
+// struct carrying its own Run, a spec builds one through [testApp.effect],
+// which is where the harness records what the actor ran.
 type testEffect struct {
 	Source string
 	Reply  string
 }
-
-func (e testEffect) EffectSource() string { return e.Source }
 
 // testApp is a stateful fake rather than a generated mock, because most of
 // these specs are about behaviour over a sequence of transitions. The
@@ -56,16 +58,16 @@ type testApp struct {
 	events map[string]bool
 
 	initState   any
-	initEffects []session.IEffect
+	initEffects []session.Effect[subject]
 	initErr     error
 
 	// pointerState makes StateComparable answer the way live's adapter answers
 	// for a reference state type.
 	pointerState bool
 
-	reduce    func(state any, ev session.Event) (any, []session.IEffect)
-	authorize func(ctx context.Context, p session.Peer, ev session.Event) error
-	execute   func(ctx context.Context, p session.Peer, e session.IEffect, emit session.Emit) error
+	reduce    func(state any, ev session.Event) (any, []session.Effect[subject])
+	authorize func(ctx context.Context, p session.Peer[subject], ev session.Event) error
+	execute   func(ctx context.Context, p session.Peer[subject], e testEffect, emit session.Emit) error
 
 	mu          sync.Mutex
 	authorized  []string
@@ -91,7 +93,7 @@ func newTestApp(frags ...render.Fragment) *testApp {
 		reg:       reg,
 		events:    map[string]bool{"counter.increment": true, "counter.relabel": true, "counter.noop": true},
 		initState: counterState{Label: "hits"},
-		reduce: func(state any, ev session.Event) (any, []session.IEffect) {
+		reduce: func(state any, ev session.Event) (any, []session.Effect[subject]) {
 			s := state.(counterState)
 			switch ev.Name {
 			case "counter.increment":
@@ -115,11 +117,11 @@ func counterFragment() render.Fragment {
 	}
 }
 
-func (t *testApp) Init(ctx context.Context, peer session.Peer) (any, []session.IEffect, error) {
+func (t *testApp) Init(ctx context.Context, peer session.Peer[subject]) (any, []session.Effect[subject], error) {
 	return t.initState, t.initEffects, t.initErr
 }
 
-func (t *testApp) Authorize(ctx context.Context, p session.Peer, ev session.Event) error {
+func (t *testApp) Authorize(ctx context.Context, p session.Peer[subject], ev session.Event) error {
 	t.mu.Lock()
 	t.authorized = append(t.authorized, ev.Name)
 	t.mu.Unlock()
@@ -129,7 +131,7 @@ func (t *testApp) Authorize(ctx context.Context, p session.Peer, ev session.Even
 	return nil
 }
 
-func (t *testApp) Reduce(state any, ev session.Event) (any, []session.IEffect) {
+func (t *testApp) Reduce(state any, ev session.Event) (any, []session.Effect[subject]) {
 	t.mu.Lock()
 	t.reduced = append(t.reduced, ev.Name)
 	t.mu.Unlock()
@@ -139,18 +141,32 @@ func (t *testApp) Reduce(state any, ev session.Event) (any, []session.IEffect) {
 	return t.reduce(state, ev)
 }
 
-func (t *testApp) Execute(ctx context.Context, p session.Peer, e session.IEffect, scheduledBy uint64, emit session.Emit) error {
-	t.mu.Lock()
-	t.executeSeen = append(t.executeSeen, e.EffectSource())
-	t.executeScheduledBy = append(t.executeScheduledBy, scheduledBy)
-	t.mu.Unlock()
-	if t.execute == nil {
-		return nil
+// effect builds the session.Effect[subject] a spec's reducer returns, and is where the
+// harness observes what the actor ran.
+//
+// It replaced the IApp[subject].Execute hook when the effect became a concrete struct
+// carrying its own Run: there is no executor method left to instrument, so the
+// instrumentation moved onto the effect the spec constructs. scheduledBy is
+// recorded here for the same reason it was recorded there — it is what FR-58
+// makes the adapter's emission errors name, and a parameter nothing observes is
+// a parameter that can quietly become wrong.
+func (t *testApp) effect(e testEffect) session.Effect[subject] {
+	return session.Effect[subject]{
+		Source: e.Source,
+		Run: func(ctx context.Context, p session.Peer[subject], scheduledBy uint64, emit session.Emit) error {
+			t.mu.Lock()
+			t.executeSeen = append(t.executeSeen, e.Source)
+			t.executeScheduledBy = append(t.executeScheduledBy, scheduledBy)
+			t.mu.Unlock()
+			if t.execute == nil {
+				return nil
+			}
+			return t.execute(ctx, p, e, emit)
+		},
 	}
-	return t.execute(ctx, p, e, emit)
 }
 
-func (t *testApp) Teardown(_ context.Context, _ session.Peer, state any) {
+func (t *testApp) Teardown(_ context.Context, _ session.Peer[subject], state any) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.tornDown = true
@@ -406,7 +422,7 @@ type harness struct {
 	ticks   chan time.Time
 	logs    *records
 	metrics *obstest.Metrics
-	actor   *session.Actor
+	actor   *session.Actor[subject]
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -432,7 +448,7 @@ func newHarness(app *testApp, lim session.Limits) *harness {
 	return newHarnessIn(app, lim, false)
 }
 
-// newDevHarness wires an actor with Options.Dev set. It exists so that FR-23's
+// newDevHarness wires an actor with Options[subject].Dev set. It exists so that FR-23's
 // two directions are asserted by two specs over one code path, rather than by
 // one spec and a hope about the other.
 func newDevHarness(app *testApp, lim session.Limits) *harness {
@@ -468,8 +484,8 @@ func newHarnessIn(app *testApp, lim session.Limits, dev bool) *harness {
 	metrics, err := obs.NewMetrics(h.metrics)
 	Expect(err).NotTo(HaveOccurred())
 
-	h.actor = session.New(session.Options{
-		Peer:   session.Peer{ID: testSessionID(), Identity: subject("tester")},
+	h.actor = session.New[subject](session.Options[subject]{
+		Peer:   session.Peer[subject]{ID: testSessionID(), Identity: subject("tester")},
 		App:    app,
 		Limits: lim,
 		Framer: framer,

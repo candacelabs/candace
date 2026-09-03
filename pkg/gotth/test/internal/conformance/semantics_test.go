@@ -27,7 +27,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // attempt dials without the harness's assumptions and reports what happened.
-func attempt(cfg live.Config[tally], origin string, sendOrigin bool) (int, error) {
+func attempt(cfg live.Config[tally, qaUser], origin string, sendOrigin bool) (int, error) {
 	GinkgoHelper()
 
 	app, err := live.New(cfg)
@@ -86,8 +86,8 @@ var _ = Describe("The handshake, as a cross-origin attacker experiences it (FR-4
 
 	It("refuses a connection whose identity hook fails, before any session exists", func() {
 		cfg := qaConfig()
-		cfg.Authenticate = func(request *http.Request) (live.IIdentity, error) {
-			return nil, errors.New("no session cookie")
+		cfg.Authenticate = func(request *http.Request) (qaUser, error) {
+			return "", errors.New("no session cookie")
 		}
 
 		status, err := attempt(cfg, allowedOrigin, true)
@@ -127,14 +127,14 @@ var _ = Describe("The per-event authorization hook (FR-47)", func() {
 		var authorized []string
 		var reduced []string
 
-		d := dial(func(c *live.Config[tally]) {
-			c.Authorize = func(_ context.Context, _ live.Session, ev live.Event) error {
+		d := dial(func(c *live.Config[tally, qaUser]) {
+			c.Authorize = func(_ context.Context, _ live.Session[qaUser], ev live.Event) error {
 				mu.Lock()
 				authorized = append(authorized, ev.Name)
 				mu.Unlock()
 				return &live.DenyError{Reason: "QA denies everything"}
 			}
-			c.Reduce = func(s tally, ev live.Event) (tally, []live.IEffect) {
+			c.Reduce = func(s tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 				mu.Lock()
 				reduced = append(reduced, ev.Name)
 				mu.Unlock()
@@ -170,8 +170,8 @@ var _ = Describe("The per-event authorization hook (FR-47)", func() {
 
 	It("leaves state untouched when the hook denies", func() {
 		deny := true
-		d := dial(func(c *live.Config[tally]) {
-			c.Authorize = func(_ context.Context, _ live.Session, ev live.Event) error {
+		d := dial(func(c *live.Config[tally, qaUser]) {
+			c.Authorize = func(_ context.Context, _ live.Session[qaUser], ev live.Event) error {
 				if deny {
 					return &live.DenyError{Reason: "not yet"}
 				}
@@ -191,8 +191,8 @@ var _ = Describe("The per-event authorization hook (FR-47)", func() {
 	})
 
 	It("closes the connection on a fatal denial", func() {
-		d := dial(func(c *live.Config[tally]) {
-			c.Authorize = func(ctx context.Context, session live.Session, event live.Event) error {
+		d := dial(func(c *live.Config[tally, qaUser]) {
+			c.Authorize = func(ctx context.Context, session live.Session[qaUser], event live.Event) error {
 				return &live.FatalDenyError{Reason: "revoked"}
 			}
 		})

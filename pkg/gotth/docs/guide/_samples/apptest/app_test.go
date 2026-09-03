@@ -61,20 +61,20 @@ var _ = Describe("the reducer", func() {
 var _ = Describe("the authorization hook", func() {
 	// livetest.NewSession builds the live.Session a Config hook is called with.
 	// Session's fields are unexported because identity is bound at the
-	// handshake and nothing downstream may mint one, so live.Session{} compiles
-	// and is useless: its Identity() is nil, and identity is the reason the
-	// hook takes a Session at all.
+	// handshake and nothing downstream may mint one, so a zero Session compiles
+	// and is useless: its Identity() is the zero identity, and identity is the
+	// reason the hook takes a Session at all.
 	//
 	// Both values are the caller's. Two tabs belonging to one user are two
 	// identifiers and one identity, which is what Limits.MaxSessionsPerIdentity
 	// is about.
-	newSession := func(b byte, identity live.IIdentity) live.Session {
+	newSession := func(b byte, identity apptest.User) live.Session[apptest.User] {
 		return livetest.NewSession(GinkgoTB(), live.ID{b}, identity)
 	}
 
 	It("denies a reset from a guest without closing the connection", func() {
 		err := apptest.Authorize(context.Background(),
-			newSession(1, apptest.Guest{}), live.Event{Name: apptest.EventReset})
+			newSession(1, apptest.Guest), live.Event{Name: apptest.EventReset})
 
 		var deny *live.DenyError
 		Expect(errors.As(err, &deny)).To(BeTrue())
@@ -83,12 +83,12 @@ var _ = Describe("the authorization hook", func() {
 
 	It("allows a reset from an admin", func() {
 		Expect(apptest.Authorize(context.Background(),
-			newSession(2, apptest.Admin{}), live.Event{Name: apptest.EventReset})).To(Succeed())
+			newSession(2, apptest.Admin), live.Event{Name: apptest.EventReset})).To(Succeed())
 	})
 
 	It("allows an increment from anybody", func() {
 		Expect(apptest.Authorize(context.Background(),
-			newSession(3, apptest.Guest{}), live.Event{Name: apptest.EventInc})).To(Succeed())
+			newSession(3, apptest.Guest), live.Event{Name: apptest.EventInc})).To(Succeed())
 	})
 })
 

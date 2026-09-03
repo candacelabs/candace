@@ -141,12 +141,12 @@ func hxPlainPage() string {
 		`<p id="plain">plain</p>`+outsideHTML)
 }
 
-func hxConfig() live.Config[hxState] {
-	return live.Config[hxState]{
-		Init: func(ctx context.Context, session live.Session) (hxState, []live.IEffect, error) {
+func hxConfig() live.Config[hxState, qaUser] {
+	return live.Config[hxState, qaUser]{
+		Init: func(ctx context.Context, session live.Session[qaUser]) (hxState, []live.Effect[qaUser], error) {
 			return hxState{}, nil, nil
 		},
-		Reduce: func(s hxState, ev live.Event) (hxState, []live.IEffect) {
+		Reduce: func(s hxState, ev live.Event) (hxState, []live.Effect[qaUser]) {
 			if ev.Name == eventHXTick {
 				s.Tick++
 			}
@@ -158,8 +158,8 @@ func hxConfig() live.Config[hxState] {
 			Dirty:  func(prev, next hxState) bool { return prev != next },
 		}},
 		Events:       []string{eventHXTick},
-		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("qa"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }

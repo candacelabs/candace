@@ -31,7 +31,7 @@ var _ = Describe("Instrumentation", func() {
 	BeforeEach(func() {
 		metrics = obstest.NewMetrics()
 		traces = obstest.NewTraces()
-		app = mount(func(c *live.Config[counter]) {
+		app = mount(func(c *live.Config[counter, user]) {
 			c.Metrics = metrics
 			c.Tracer = traces
 		})

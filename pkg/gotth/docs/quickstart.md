@@ -106,8 +106,8 @@ type State struct{ N int }
 
 // app is the application, and it is a package-level var rather than a local in
 // main so that view.templ can reach it: app.Document renders the page shell.
-var app = live.MustNew(live.Config[State]{
-	Reduce: func(s State, ev live.Event) (State, []live.IEffect) {
+var app = live.MustNew(live.Config[State, live.AnonymousIdentity]{
+	Reduce: func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
 		if ev.Name == EventInc {
 			s.N++
 		}
@@ -117,7 +117,7 @@ var app = live.MustNew(live.Config[State]{
 	Events:       []string{EventInc},
 	Origins:      []string{"http://127.0.0.1:8080"},
 	Authenticate: live.Anonymous,
-	Authorize:    live.AllowAll,
+	Authorize:    live.AllowAll[live.AnonymousIdentity],
 	CSRF:         live.NoCSRFCheck,
 })
 

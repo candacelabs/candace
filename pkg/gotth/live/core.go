@@ -1,6 +1,7 @@
 package live
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -27,7 +28,7 @@ import (
 //
 // A reducer is called from the session's own goroutine and never concurrently
 // with itself.
-type Reducer[S any] func(state S, ev Event) (S, []IEffect)
+type Reducer[S any, I IIdentity] func(state S, ev Event) (S, []Effect[I])
 
 // Fragment declares one server-owned live region and how to render it.
 type Fragment[S any] struct {
@@ -181,19 +182,82 @@ func (f Fields) All(yield func(key, value string) bool) {
 	}
 }
 
-// IEffect is a value describing I/O for the library to perform at the actor
-// boundary.
+// Effect is one unit of I/O the library performs at the actor boundary, on a
+// goroutine of its own, after the transition that returned it has committed.
 //
-// Implementations must be plain values: no channels, no connections, no other
-// live handles. That is what lets a test assert on what a reducer decided to
-// do without performing it, and it is why effects are returned rather than
-// executed.
-type IEffect interface {
-	// EffectSource names the effect for provenance and metrics, in the form
+// It is a concrete struct and not an interface. Operator ruling, 2026-09-03:
+// a reducer signature handing back a slice of one-method effect interfaces
+// hands a caller a slice of abstractions where every element is one named thing
+// this application decided to do, and CS-8's pass-through exemption covers
+// third-party libraries only —
+// this library is the repository's own, so its contract is the repository's
+// choice. What used to be an implementation of a one-method interface is now
+// a value with two fields: what to call it, and what it does.
+//
+// Both fields are the effect's whole content, and neither is optional:
+//
+//   - A zero Effect — no source and no Run — is INERT. It is dropped before it
+//     reaches the boundary, exactly as a nil element of the old effect slice
+//     was, so `append`ing a conditional effect that turned out not to apply
+//     costs nothing and cannot execute anything.
+//   - An Effect with a source and no Run is a MISTAKE, and it fails
+//     deterministically rather than silently succeeding: an effect that never
+//     runs is a change that never happens, and the reducer learns about it in
+//     an [EffectFailedEvent] like any other failure.
+//   - An Effect with a Run and no usable source is refused the same way, by
+//     the same boundary check that has always refused an unusable
+//     EffectSource: the source becomes an origin the wire cannot carry, so no
+//     patch this effect caused could be sent.
+//
+// # What a test can assert on
+//
+// A function value cannot be compared, so a specification asserts on what the
+// reducer *named* — the Source — rather than on a struct literal's fields.
+// That is a real narrowing from the interface's plain-value contract and it is
+// the price of the ruling: [livetest.ReplayN] compares the source sequence two
+// runs produced, which catches a reducer that scheduled a different effect and
+// no longer catches one that scheduled the same effect with a different
+// argument. Effects worth distinguishing should therefore be worth naming
+// distinctly.
+type Effect[I IIdentity] struct {
+	// Source names the effect for provenance and metrics, in the form
 	// "package.action" — it becomes the origin source "effect:<name>" on every
-	// patch the effect causes.
-	EffectSource() string
+	// patch the effect causes, and it is the value a failure event reports in
+	// [EffectFailedSourceField].
+	//
+	// It is at most the protocol's origin-source budget less the library's
+	// "effect:" prefix, and must match ^[a-z][a-z0-9_.:/-]*$. A source that
+	// cannot name an origin is refused before Run is called.
+	Source string
+
+	// Run performs the effect. It is called once, on a goroutine the library
+	// owns and waits for at shutdown, and it is the only place in an
+	// application where I/O belongs: a reducer returns this value and performs
+	// nothing.
+	//
+	// It receives the session the effect is acting for — an effect acts on a
+	// session's behalf and its identity is an input to what it does — and the
+	// [Emitter] that injects the results back into that session as events. A
+	// returned error becomes an [EffectFailedEvent] the reducer handles; wrap
+	// it in [Retryable] to classify it as transient. A panic is contained,
+	// counted, and delivered as the same failure event, classified terminal.
+	//
+	// Everything the effect needs beyond those three is captured: this is a
+	// closure over whatever the application owns — a store, a broker, a
+	// connection pool — which is what makes a central executor unnecessary and
+	// is why there is no longer a Config.Execute to type-switch in.
+	Run func(ctx context.Context, session Session[I], emit Emitter) error
 }
+
+// inert reports whether this is the zero Effect, which is dropped rather than
+// run or refused.
+//
+// The test is deliberately "both fields empty" rather than "no Run". An Effect
+// that names itself and forgot its behaviour is the failure this library keeps
+// naming — a change that never happens — so it is refused loudly at the
+// boundary; an Effect that is nothing at all is the conditional that did not
+// apply, and dropping it is what a nil element of the old effect slice did.
+func (effect Effect[I]) inert() bool { return effect.Source == "" && effect.Run == nil }
 
 // Emitter injects an event into the session that spawned an effect. It is
 // passed to Config.Execute and is safe to call from the effect's goroutine.
@@ -379,25 +443,46 @@ type ID [16]byte
 // attributes and the provenance stream.
 func (id ID) String() string { return session.ID(id).String() }
 
-// IIdentity is the application's identity for a session. It is bound at the
-// handshake and immutable for the connection's life: a session cannot outlive
-// its connection, so there is no re-authentication and no privilege change
-// mid-session.
+// IIdentity is what this library needs from an application's identity, and
+// since 2026-09-03 it appears in exactly two positions: as the CONSTRAINT on
+// the type parameter every generic declaration here carries, and as the
+// parameter type of the internal admission bookkeeping that calls Subject().
+//
+// It is never a return type and never a field a getter hands back. Operator
+// ruling, 2026-09-03, on the signature this replaces:
+//
+//	func (s Session) Identity() IIdentity { return s.identity }
+//	RETURN TYPE IS IIDENTITY FUCK YOU
+//
+// That signature was the last "application-type pass-through" exemption in the
+// library: the concrete type genuinely lives in the caller's package and this
+// package cannot name it — which is the existential case, and generics are what
+// Go has instead of existential types. The type parameter is the answer, and
+// the assertion every application used to write, `sess.Identity().(Member)`, is
+// now a compile-time fact.
 type IIdentity interface {
 	// Subject returns a stable, non-secret identifier, used for logging and
 	// for per-identity session limits. It must not be a token.
 	Subject() string
 }
 
-// Session identifies one live connection. It is passed to Config.Init,
-// Config.Authorize and Config.Teardown, and is safe to copy.
-type Session struct {
+// Session identifies one live connection, typed by the identity the
+// application's own Authenticate hook produced. It is passed to Config.Init,
+// Config.Authorize, Config.Teardown and every [Effect.Run], and is safe to
+// copy.
+//
+// I is the application's own identity type — a struct it declared, not an
+// interface — so [Session.Identity] hands back the thing rather than an
+// abstraction over it. An application with no meaningful identity instantiates
+// on [AnonymousIdentity], which is a small concrete struct for exactly that.
+type Session[I IIdentity] struct {
 	id       ID
-	identity IIdentity
+	identity I
 }
 
 // ID returns the session's identifier.
-func (s Session) ID() ID { return s.id }
+func (s Session[I]) ID() ID { return s.id }
 
-// Identity returns the identity bound at the handshake.
-func (s Session) Identity() IIdentity { return s.identity }
+// Identity returns the identity bound at the handshake, as the application's
+// own type. No assertion, and nothing to get wrong.
+func (s Session[I]) Identity() I { return s.identity }

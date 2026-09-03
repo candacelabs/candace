@@ -37,15 +37,33 @@ func payEvent(id uint64) live.Event {
 	return live.Event{ID: id, Name: payments.EventPay}
 }
 
-// drain runs every effect a transition produced through the executor.
-func drain(g *payments.Gateway, effects []live.IEffect, emit live.Emitter) []error {
+// drain performs every effect a transition produced.
+//
+// An effect carries its own Run since live.Effect[live.AnonymousIdentity] became a concrete struct, so
+// there is no executor to hand it to: the gateway it closes over is the one the
+// reducer that built it was bound to.
+func drain(effects []live.Effect[live.AnonymousIdentity], emit live.Emitter) []error {
 	var errs []error
 	for _, effect := range effects {
-		if err := g.Execute(context.Background(), live.Session{}, effect, emit); err != nil {
+		if err := effect.Run(context.Background(), live.Session[live.AnonymousIdentity]{}, emit); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// sources projects what a transition scheduled into the one thing a
+// specification can compare: Effect.Run is a function value, and Go compares
+// two of those only when both are nil.
+func sources(effects []live.Effect[live.AnonymousIdentity]) []string {
+	if len(effects) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		names = append(names, effect.Source)
+	}
+	return names
 }
 
 // discard is an Emitter that accepts everything, standing in for a session with
@@ -61,15 +79,15 @@ var _ = Describe("a sender who genuinely sent twice", func() {
 		provider := payments.NewKeyedProvider()
 		gateway := &payments.Gateway{Provider: provider}
 
-		charging, first := payments.Reduce(open(), payEvent(1))
-		after, second := payments.Reduce(charging, payEvent(2))
+		charging, first := payments.Reducer(gateway)(open(), payEvent(1))
+		after, second := payments.Reducer(gateway)(charging, payEvent(2))
 
 		Expect(first).To(HaveLen(1), "the first click must schedule a charge")
 		Expect(second).To(BeEmpty(),
 			"the second click of a double-click saw StatusCharging and scheduled nothing")
 		Expect(after.Status).To(Equal(payments.StatusCharging))
 
-		Expect(drain(gateway, append(first, second...), discard)).To(BeEmpty())
+		Expect(drain(append(first, second...), discard)).To(BeEmpty())
 		Expect(provider.Made()).To(Equal(1))
 	})
 
@@ -80,14 +98,16 @@ var _ = Describe("a sender who genuinely sent twice", func() {
 		provider := payments.NewKeyedProvider()
 		gateway := &payments.Gateway{Provider: provider}
 
-		_, tabA := payments.Reduce(open(), payEvent(1))
-		_, tabB := payments.Reduce(open(), payEvent(1))
+		_, tabA := payments.Reducer(gateway)(open(), payEvent(1))
+		_, tabB := payments.Reducer(gateway)(open(), payEvent(1))
 
 		Expect(tabA).To(HaveLen(1))
 		Expect(tabB).To(HaveLen(1))
-		Expect(tabA).To(Equal(tabB), "both tabs derived the same key from the same order")
+		// That both tabs derived the SAME key is no longer readable off the
+		// effect — the key lives in a closure — so it is read where it always
+		// mattered: the provider sees one charge for two intents.
 
-		Expect(drain(gateway, append(tabA, tabB...), discard)).To(BeEmpty())
+		Expect(drain(append(tabA, tabB...), discard)).To(BeEmpty())
 		Expect(provider.Made()).To(Equal(1))
 	})
 })
@@ -102,8 +122,8 @@ var _ = Describe("an effect that committed while its patch never reached the cli
 
 		// The money moves and the session never learns: a full mailbox here, a
 		// dropped connection in the field. Same shape either way.
-		state, effects := payments.Reduce(open(), payEvent(1))
-		errs := drain(gateway, effects, func(live.Event) error {
+		state, effects := payments.Reducer(gateway)(open(), payEvent(1))
+		errs := drain(effects, func(live.Event) error {
 			return errors.New("mailbox full")
 		})
 
@@ -117,11 +137,10 @@ var _ = Describe("an effect that committed while its patch never reached the cli
 		// The customer reloads. The session died with its connection, so this is
 		// a fresh mount, and Init rebuilt the order as still unpaid — because
 		// nothing recorded the charge.
-		retryState, retryEffects := payments.Reduce(open(), payEvent(2))
-		Expect(retryEffects).To(Equal(effects),
-			"a fresh session mints the same key from the same order")
+		retryState, retryEffects := payments.Reducer(gateway)(open(), payEvent(2))
+		Expect(sources(retryEffects)).To(Equal(sources(effects)))
 
-		Expect(drain(gateway, retryEffects, discard)).To(BeEmpty())
+		Expect(drain(retryEffects, discard)).To(BeEmpty())
 		Expect(provider.Made()).To(Equal(1), "the provider answered with the charge it already made")
 		Expect(retryState.Status).To(Equal(payments.StatusCharging))
 	})
@@ -130,8 +149,8 @@ var _ = Describe("an effect that committed while its patch never reached the cli
 		provider := payments.NewKeyedProvider()
 		gateway := &payments.Gateway{Provider: provider}
 
-		state, effects := payments.Reduce(open(), payEvent(1))
-		Expect(drain(gateway, effects, discard)).To(BeEmpty())
+		state, effects := payments.Reducer(gateway)(open(), payEvent(1))
+		Expect(drain(effects, discard)).To(BeEmpty())
 
 		failed := live.Event{
 			ID:   2,
@@ -142,10 +161,10 @@ var _ = Describe("an effect that committed while its patch never reached the cli
 				live.EffectFailedErrorField:     "the session did not learn",
 			}),
 		}
-		_, retry := payments.Reduce(state, failed)
+		_, retry := payments.Reducer(gateway)(state, failed)
 
-		Expect(retry).To(Equal(effects))
-		Expect(drain(gateway, retry, discard)).To(BeEmpty())
+		Expect(sources(retry)).To(Equal(sources(effects)))
+		Expect(drain(retry, discard)).To(BeEmpty())
 		Expect(provider.Made()).To(Equal(1))
 	})
 
@@ -157,8 +176,9 @@ var _ = Describe("an effect that committed while its patch never reached the cli
 				live.EffectFailedSourceField: payments.SourceCharge,
 			}),
 		}
-		state, _ := payments.Reduce(open(), payEvent(1))
-		reopened, effects := payments.Reduce(state, failed)
+		gateway := &payments.Gateway{Provider: payments.NewKeyedProvider()}
+		state, _ := payments.Reducer(gateway)(open(), payEvent(1))
+		reopened, effects := payments.Reducer(gateway)(state, failed)
 
 		Expect(effects).To(BeEmpty())
 		Expect(reopened.Status).To(Equal(payments.StatusOpen))
@@ -174,16 +194,16 @@ var _ = Describe("keying on the event instead of the order", func() {
 		provider := payments.NewKeyedProvider()
 		gateway := &payments.Gateway{Provider: provider}
 
-		var effects []live.IEffect
+		var effects []live.Effect[live.AnonymousIdentity]
 		for _, id := range []uint64{1, 2} {
-			effects = append(effects, payments.ChargeEffect{
+			effects = append(effects, gateway.ChargeEffect(payments.ChargeIntent{
 				OrderID:     orderID,
 				AmountCents: amountCents,
 				Key:         strconv.FormatUint(id, 10),
-			})
+			}))
 		}
 
-		Expect(drain(gateway, effects, discard)).To(BeEmpty())
+		Expect(drain(effects, discard)).To(BeEmpty())
 		Expect(provider.Made()).To(Equal(2),
 			"a key derived from the event is a different key per click, which is no key at all")
 	})

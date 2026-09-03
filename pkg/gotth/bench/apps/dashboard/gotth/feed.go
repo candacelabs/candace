@@ -59,13 +59,17 @@ const PanelGrace = 30 * time.Second
 // to walk a map that is almost always empty.
 const panelSweepEvery = 10
 
-// SubscribeEffect asks the feed to push this session every tick until the
-// session ends. It carries nothing: a subscription's address is the session it
-// belongs to, which the library already knows and hands to Execute.
-type SubscribeEffect struct{}
-
-// EffectSource names the subscription for provenance and metrics.
-func (SubscribeEffect) EffectSource() string { return SourceSubscribe }
+// SubscribeEffect is the effect that pushes this session every tick until the
+// session ends. It captures nothing: a subscription's address is the session it
+// belongs to, which the library already knows and hands to Run.
+func (f *Feed) SubscribeEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceSubscribe,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return f.pump(ctx, sess.ID(), emit)
+		},
+	}
+}
 
 // subscriber is one session's slot: a bounded backlog and a mark saying the
 // feed gave up keeping it.
@@ -379,22 +383,6 @@ func (f *Feed) sweepPanelsLocked(now time.Time) {
 			continue
 		}
 		delete(f.panels, sid)
-	}
-}
-
-/* -------------------------------------------------------------- executor --- */
-
-// Execute performs one effect at the actor boundary. It is Config.Execute.
-//
-// The effect values arrive exactly as the reducer declared them; nothing here
-// runs inside a reducer, and nothing here can reach a session's state except by
-// emitting an event the reducer folds in.
-func (f *Feed) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch effect.(type) {
-	case SubscribeEffect:
-		return f.pump(ctx, sess.ID(), emit)
-	default:
-		return fmt.Errorf("dashboard-gotth: no executor for effect %T", effect)
 	}
 }
 

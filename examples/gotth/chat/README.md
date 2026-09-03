@@ -236,7 +236,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/examples/gotth/chat \
     dis-gotth-live:latest go test -race -count=1 ./...
 ```
 
-160 specs. Ginkgo v2 + Gomega throughout; no gomock, because nothing here is an
+157 specs. Ginkgo v2 + Gomega throughout; no gomock, because nothing here is an
 expectation-based interface assertion — the specs assert on returned state, on
 rendered bytes, or on frames off the wire.
 

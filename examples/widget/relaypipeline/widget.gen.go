@@ -7,7 +7,6 @@ package relaypipeline
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -69,21 +68,31 @@ type RelayPipelineState struct {
 }
 
 // RelayPipeline is the generated RelayPipeline widget.
-type RelayPipeline struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type RelayPipeline[I live.IIdentity] struct{}
 
-// NewRelayPipeline returns the widget a host registers.
-func NewRelayPipeline() *RelayPipeline { return &RelayPipeline{} }
+// NewRelayPipeline returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewRelayPipeline[I live.IIdentity]() *RelayPipeline[I] { return &RelayPipeline[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[RelayPipelineState]        = (*RelayPipeline)(nil)
-	_ widget.IDirtyDeclarer[RelayPipelineState] = (*RelayPipeline)(nil)
+	_ widget.IWidget[RelayPipelineState, live.AnonymousIdentity] = (*RelayPipeline[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[RelayPipelineState]                  = (*RelayPipeline[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *RelayPipeline) Register() widget.Registration {
+func (instance *RelayPipeline[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     RelayPipelineName,
 		Region:   RelayPipelineRegion,
@@ -106,17 +115,17 @@ func (instance *RelayPipeline) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *RelayPipeline) Mount(
-	ctx context.Context, session live.Session,
-) (RelayPipelineState, []live.IEffect, error) {
+func (instance *RelayPipeline[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (RelayPipelineState, []live.Effect[I], error) {
 	return RelayPipelineState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *RelayPipeline) Reduce(
+func (instance *RelayPipeline[I]) Reduce(
 	state RelayPipelineState, event live.Event,
-) (RelayPipelineState, []live.IEffect) {
+) (RelayPipelineState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case RelayPipelineEventAdvance:
@@ -145,13 +154,13 @@ func (instance *RelayPipeline) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *RelayPipeline) Render(state RelayPipelineState) templ.Component {
+func (instance *RelayPipeline[I]) Render(state RelayPipelineState) templ.Component {
 	return RelayPipelineView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *RelayPipeline) Dirty(previous RelayPipelineState, next RelayPipelineState) bool {
+func (instance *RelayPipeline[I]) Dirty(previous RelayPipelineState, next RelayPipelineState) bool {
 	return previous.Cursor != next.Cursor ||
 		previous.IngressUp != next.IngressUp ||
 		previous.RelayUp != next.RelayUp ||
@@ -160,23 +169,13 @@ func (instance *RelayPipeline) Dirty(previous RelayPipelineState, next RelayPipe
 		previous.Slow != next.Slow
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *RelayPipeline) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", RelayPipelineName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *RelayPipeline) Unmount(ctx context.Context, session live.Session, state RelayPipelineState) {
+func (instance *RelayPipeline[I]) Unmount(ctx context.Context, session live.Session[I], state RelayPipelineState) {
 }
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *RelayPipeline) Snapshot(state RelayPipelineState) widget.Snapshot {
+func (instance *RelayPipeline[I]) Snapshot(state RelayPipelineState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: RelayPipelineName,
 		Fields: []widget.SnapshotField{

@@ -216,7 +216,7 @@ var _ = Describe("A legitimate client refused by the resync budget, without the 
 		// Five seconds rather than the default thirty, so the spec is seconds
 		// rather than half a minute. The arithmetic is what is under test.
 		const grace = 5 * time.Second
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			// A budget of one, refilling once a minute, so the second gap inside
 			// the spec is certainly refused. The DEFAULTS produce the same

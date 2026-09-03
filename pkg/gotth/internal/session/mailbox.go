@@ -66,7 +66,7 @@ func putInbound(m *inbound) {
 // the connection's own liveness detection — which is the failure the bound
 // exists to prevent, arrived at by a different route. A full mailbox drops,
 // and the caller answers the client with a typed error.
-func (a *Actor) post(m *inbound) bool {
+func (a *Actor[I]) post(m *inbound) bool {
 	select {
 	case a.mailbox <- m:
 		return true

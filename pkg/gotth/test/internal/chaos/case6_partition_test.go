@@ -86,7 +86,7 @@ var _ = Describe("A network partition and a half-open connection (PRD case 6, FR
 
 	It("detects the dead peer within HeartbeatTimeout + HeartbeatInterval and reclaims the session", func() {
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Metrics = rec
 			cfg.Limits.HeartbeatInterval = hbInterval
@@ -171,7 +171,7 @@ var _ = Describe("A network partition and a half-open connection (PRD case 6, FR
 	})
 
 	It("leaves other sessions serving while one is partitioned", func() {
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Limits.HeartbeatInterval = hbInterval
 			cfg.Limits.HeartbeatTimeout = hbTimeout
@@ -221,7 +221,7 @@ var _ = Describe("A network partition and a half-open connection (PRD case 6, FR
 	})
 
 	It("evicts an idle session on the configured bound rather than holding it forever (FR-22)", func() {
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Limits.HeartbeatInterval = time.Second
 			// Long enough that a client sending nothing but heartbeats stays

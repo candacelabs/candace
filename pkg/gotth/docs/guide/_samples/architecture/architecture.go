@@ -37,13 +37,6 @@ type State struct {
 	Notice string
 }
 
-// ShoutEffect is the I/O the reducer asks for rather than performs.
-type ShoutEffect struct{ Body string }
-
-// EffectSource names the effect on every patch it causes and in every metric
-// it moves: the origin source becomes "effect:room.shout".
-func (ShoutEffect) EffectSource() string { return "room.shout" }
-
 // Room is state shared between sessions, and it is the application's, not the
 // library's. Every session has its own goroutine, so anything reachable from
 // more than one of them is yours to synchronise — which is why this has a
@@ -79,42 +72,46 @@ func (r *Room) Said() []string {
 	return append([]string(nil), r.said...)
 }
 
-// Reduce is the pure transition, and it runs on the session's actor goroutine.
+// ShoutEffect is the I/O the reducer asks for rather than performs.
 //
-// One goroutine owns this session's state and is the only writer, so this
-// function needs no mutex and gets none. What it may not do is the price of
-// that: no I/O, no clock, no randomness, no logging, and no mutation of the
-// state it was handed. It returns the work it wants done as a value.
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	if ev.Name != EventShout {
-		return s, nil
+// Its Run is not on the actor goroutine, and that is the point: it is allowed
+// to block, to call a database, to take as long as it takes. The session keeps
+// handling events while it runs, and what it produces reaches the reducer as an
+// ordinary event rather than as a return value. The source names the effect on
+// every patch it causes and in every metric it moves: the origin source becomes
+// "effect:room.shout".
+func (r *Room) ShoutEffect(body string) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: "room.shout",
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.said = append(r.said, sess.ID().String()+": "+body)
+			return nil
+		},
 	}
-	body := ev.Fields.Get(FieldBody)
-	if body == "" {
-		s.Notice = "say something first"
-		return s, nil
-	}
-	s.Heard++
-	s.Notice = ""
-	return s, []live.IEffect{ShoutEffect{Body: body}}
 }
 
-// Execute performs one effect, on a goroutine the library spawns for it.
+// Reducer is the pure transition, and it runs on the session's actor goroutine.
 //
-// It is not on the actor goroutine, and that is the point: this is allowed to
-// block, to call a database, to take as long as it takes. The session keeps
-// handling events while it runs, and what it produces reaches the reducer as
-// an ordinary event rather than as a return value.
-func (r *Room) Execute(_ context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
-	shout, ok := effect.(ShoutEffect)
-	if !ok {
-		return fmt.Errorf("architecture: no executor for %T", effect)
+// One goroutine owns this session's state and is the only writer, so the
+// function it returns needs no mutex and gets none. What it may not do is the
+// price of that: no I/O, no clock, no randomness, no logging, and no mutation
+// of the state it was handed. It returns the work it wants done as a value.
+func Reducer(room *Room) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		if ev.Name != EventShout {
+			return s, nil
+		}
+		body := ev.Fields.Get(FieldBody)
+		if body == "" {
+			s.Notice = "say something first"
+			return s, nil
+		}
+		s.Heard++
+		s.Notice = ""
+		return s, []live.Effect[live.AnonymousIdentity]{room.ShoutEffect(body)}
 	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.said = append(r.said, sess.ID().String()+": "+shout.Body)
-	return nil
 }
 
 // Authorize runs on the connection's read pump, ahead of the mailbox, and not
@@ -126,7 +123,7 @@ func (r *Room) Execute(_ context.Context, sess live.Session, effect live.IEffect
 // consequence is the one to remember while writing this hook — blocking in
 // here stalls the whole connection, acknowledgements and heartbeats included,
 // where blocking in a reducer would stall only the mailbox behind it.
-func (r *Room) Authorize(_ context.Context, _ live.Session, ev live.Event) error {
+func (r *Room) Authorize(_ context.Context, _ live.Session[live.AnonymousIdentity], ev live.Event) error {
 	if len(ev.Fields.Get(FieldBody)) > 280 {
 		return &live.DenyError{Reason: "that is too long for this room"}
 	}
@@ -135,18 +132,18 @@ func (r *Room) Authorize(_ context.Context, _ live.Session, ev live.Event) error
 
 // Config is the whole application, and the comment above each hook is the
 // goroutine it runs on.
-func Config(room *Room, origins []string) live.Config[State] {
-	return live.Config[State]{
+func Config(room *Room, origins []string) live.Config[State, live.AnonymousIdentity] {
+	return live.Config[State, live.AnonymousIdentity]{
 		// The session's actor goroutine, as the first transition, before the
 		// first snapshot reaches the browser. A slow Init is a slow first
 		// paint.
-		Init: func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
+		Init: func(ctx context.Context, sess live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 			room.Join(sess.ID())
 			return State{}, nil, nil
 		},
 
 		// The session's actor goroutine, one event at a time, in order.
-		Reduce: Reduce,
+		Reduce: Reducer(room),
 
 		// The session's actor goroutine, immediately after Reduce, for each
 		// fragment whose Dirty said the transition could have changed it.
@@ -169,11 +166,10 @@ func Config(room *Room, origins []string) live.Config[State] {
 		Authorize: room.Authorize,
 
 		// A goroutine per effect, spawned by the actor after the transition
-		// that returned it.
-		Execute: room.Execute,
+		// that returned it: ShoutEffect's own Run, above.
 
 		// The actor's exit path, after the mailbox has drained.
-		Teardown: func(_ context.Context, sess live.Session, _ State) { room.Leave(sess.ID()) },
+		Teardown: func(_ context.Context, sess live.Session[live.AnonymousIdentity], _ State) { room.Leave(sess.ID()) },
 
 		// The HTTP handler's goroutine, on the upgrade request, before any
 		// per-session memory is allocated. These two are ordinary request

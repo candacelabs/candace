@@ -20,15 +20,15 @@ import (
 )
 
 // Options configure one session actor.
-type Options struct {
+type Options[I IIdentity] struct {
 	// Peer is the identity and session identifier this actor is bound to for
 	// its whole life. Neither changes: a re-authentication is a new session.
-	Peer Peer
+	Peer Peer[I]
 
 	// App is the application behaviour — mount, reduce, render, execute — as
 	// the type-erased interface this package can hold without knowing the
 	// state type.
-	App IApp
+	App IApp[I]
 
 	// Limits are the resource bounds. Zero fields are filled by Normalize, so
 	// a caller may set one and leave the rest.
@@ -79,9 +79,9 @@ type Options struct {
 // acknowledgements; and a heartbeat tick. Only the mailbox can reach a
 // reducer, and exactly one function writes to it from the wire, which is what
 // makes the per-event authorization hook impossible to route around.
-type Actor struct {
-	peer   Peer
-	app    IApp
+type Actor[I IIdentity] struct {
+	peer   Peer[I]
+	app    IApp[I]
 	lim    Limits
 	fr     *protocol.Framer
 	closer func(code protocol.CloseCode, reason string)
@@ -158,14 +158,14 @@ type Actor struct {
 // New builds an actor. It allocates the mailbox, the acknowledgement channel
 // and the window, which is the moment a session's per-connection memory comes
 // into existence — after authentication, never before.
-func New(o Options) *Actor {
+func New[I IIdentity](o Options[I]) *Actor[I] {
 	o.Limits = o.Limits.Normalize()
 	if o.Now == nil {
 		o.Now = time.Now
 	}
 	now := o.Now()
 
-	a := &Actor{
+	a := &Actor[I]{
 		peer:         o.Peer,
 		app:          o.App,
 		lim:          o.Limits,
@@ -197,14 +197,14 @@ func New(o Options) *Actor {
 }
 
 // ID returns the session's identifier.
-func (a *Actor) ID() ID { return a.peer.ID }
+func (a *Actor[I]) ID() ID { return a.peer.ID }
 
 // TrackedBytes is the exactly-sized cost of the structures this actor owns:
 // the window, the two channel backing arrays, and the fragment hashes. It is
 // what the per-session memory gauge reports, and it deliberately does not
 // pretend to know the heap cost of application state, because Go has no
 // per-goroutine heap attribution.
-func (a *Actor) TrackedBytes() int64 {
+func (a *Actor[I]) TrackedBytes() int64 {
 	const pointerSize, uint64Size = 8, 8
 	return a.win.trackedBytes() +
 		int64(a.lim.MailboxDepth)*pointerSize +
@@ -215,7 +215,7 @@ func (a *Actor) TrackedBytes() int64 {
 // Run drives the session until its context is cancelled or the session closes.
 // It returns when the actor goroutine is finished, having drained or abandoned
 // in-flight effects and run the teardown hook exactly once.
-func (a *Actor) Run(ctx context.Context) {
+func (a *Actor[I]) Run(ctx context.Context) {
 	effCtx, cancel := context.WithCancel(ctx)
 	a.cancelEffects = cancel
 	defer a.shutdown(ctx, cancel)
@@ -241,7 +241,7 @@ func (a *Actor) Run(ctx context.Context) {
 // Ready blocks until the mount transition has emitted its snapshot. The read
 // pump waits on it so that a client cannot have a frame accepted before the
 // snapshot that establishes the sequence it must reference.
-func (a *Actor) Ready(ctx context.Context) error {
+func (a *Actor[I]) Ready(ctx context.Context) error {
 	select {
 	case <-a.ingressReady:
 		return nil
@@ -261,7 +261,7 @@ func (a *Actor) Ready(ctx context.Context) error {
 // shutdown is the ordered teardown: stop accepting, cancel in-flight effects,
 // give them a bounded window to return, run the application's teardown hook,
 // and deregister exactly once.
-func (a *Actor) shutdown(ctx context.Context, cancel context.CancelFunc) {
+func (a *Actor[I]) shutdown(ctx context.Context, cancel context.CancelFunc) {
 	a.closing.Store(true)
 	cancel()
 
@@ -297,11 +297,11 @@ func waitFor(wg *sync.WaitGroup, d time.Duration) bool {
 }
 
 // Done reports a channel closed when the actor has finished.
-func (a *Actor) Done() <-chan struct{} { return a.stopped }
+func (a *Actor[I]) Done() <-chan struct{} { return a.stopped }
 
 // Close ends the session with an enumerated code. It is safe to call from any
 // goroutine and is idempotent.
-func (a *Actor) Close(code protocol.CloseCode, reason string) {
+func (a *Actor[I]) Close(code protocol.CloseCode, reason string) {
 	if a.closing.Swap(true) {
 		return
 	}
@@ -312,7 +312,7 @@ func (a *Actor) Close(code protocol.CloseCode, reason string) {
 
 // mount runs the application's mount hook as the session's first transition
 // and emits the snapshot that establishes the sequence.
-func (a *Actor) mount(ctx context.Context) {
+func (a *Actor[I]) mount(ctx context.Context) {
 	var span obs.Span
 	if a.tr.Enabled() {
 		ctx, span = a.tr.Start(ctx, obs.SpanOrigin,
@@ -360,7 +360,7 @@ func (a *Actor) mount(ctx context.Context) {
 }
 
 // step performs one mailbox message. It is the only place a reducer is called.
-func (a *Actor) step(ctx context.Context, m *inbound) {
+func (a *Actor[I]) step(ctx context.Context, m *inbound) {
 	defer putInbound(m)
 
 	switch m.kind {
@@ -374,7 +374,7 @@ func (a *Actor) step(ctx context.Context, m *inbound) {
 }
 
 // transition is one reducer invocation and everything that follows from it.
-func (a *Actor) transition(ctx context.Context, ev Event, origin protocol.Origin, parent obs.SpanRef) {
+func (a *Actor[I]) transition(ctx context.Context, ev Event, origin protocol.Origin, parent obs.SpanRef) {
 	// A true child of the span authorization ran under, through the reference
 	// the ingress carried across the goroutine boundary (FR-36 clause 4).
 	//
@@ -475,7 +475,7 @@ type panicDetail struct {
 // closes over exactly the application's reducer and the guard around it — the
 // thing an operator attributing latency inside one event is asking about — and
 // so a panicking reducer's span records the error rather than ending clean.
-func (a *Actor) reduce(ctx context.Context, state any, ev Event) (next any, effects []IEffect, failure *panicDetail) {
+func (a *Actor[I]) reduce(ctx context.Context, state any, ev Event) (next any, effects []Effect[I], failure *panicDetail) {
 	var span obs.Span
 	if a.tr.Enabled() {
 		_, span = a.tr.Start(ctx, obs.SpanReduce,
@@ -529,7 +529,7 @@ func (a *Actor) reduce(ctx context.Context, state any, ev Event) (next any, effe
 // stages reachable: a stage that stopped emitting entirely would hold the
 // depth at half the window forever and degrade could never be entered, which
 // would be two stages wearing three stages' clothes.
-func (a *Actor) emitPatch(ctx context.Context, origin protocol.Origin, ev Event, forced bool) {
+func (a *Actor[I]) emitPatch(ctx context.Context, origin protocol.Origin, ev Event, forced bool) {
 	a.m.WindowDepth(ctx, a.win.depth())
 
 	// The flush trigger. The contributing-event union has a schema ceiling,
@@ -638,7 +638,7 @@ func (a *Actor) emitPatch(ctx context.Context, origin protocol.Origin, ev Event,
 // and a failure look alike only by accident today, and H-10 turns on the
 // difference — mount must close a connection whose snapshot never went out
 // rather than serve it (BR-5).
-func (a *Actor) emitSnapshot(ctx context.Context, origin protocol.Origin, sup protocol.Supersession, eventID uint64) (int, bool) {
+func (a *Actor[I]) emitSnapshot(ctx context.Context, origin protocol.Origin, sup protocol.Supersession, eventID uint64) (int, bool) {
 	start := a.now()
 	res := a.renderPass(ctx, true)
 	a.m.RenderDuration(ctx, a.now().Sub(start).Seconds(), "")
@@ -688,7 +688,7 @@ func (a *Actor) emitSnapshot(ctx context.Context, origin protocol.Origin, sup pr
 
 // renderPass runs one render under gotthlive.render. The per-fragment spans
 // inside it come from the observer installed once in New.
-func (a *Actor) renderPass(ctx context.Context, all bool) render.Result {
+func (a *Actor[I]) renderPass(ctx context.Context, all bool) render.Result {
 	var span obs.Span
 	if a.tr.Enabled() {
 		ctx, span = a.tr.Start(ctx, obs.SpanRender,
@@ -712,7 +712,7 @@ func (a *Actor) renderPass(ctx context.Context, all bool) render.Result {
 // internal/obs imports log/slog and time. It is installed once per session,
 // never per pass, and only when tracing is on — so a disabled configuration
 // leaves the renderer's hook nil and pays one branch per fragment.
-func (a *Actor) observeFragments() {
+func (a *Actor[I]) observeFragments() {
 	if !a.tr.Enabled() {
 		return
 	}
@@ -753,7 +753,7 @@ var errFragmentRender = errors.New("gotth-live: the fragment could not be render
 // Conn.Write, the write-stall signal" and was recording validate-plus-marshal
 // as well, so it and gotthlive_encode_duration_seconds were equal by
 // construction and neither could isolate a stalling client.
-func (a *Actor) send(ctx context.Context, frame *pb.Frame, causal protocol.Causal) (int, obs.SpanRef, bool) {
+func (a *Actor[I]) send(ctx context.Context, frame *pb.Frame, causal protocol.Causal) (int, obs.SpanRef, bool) {
 	var span obs.Span
 	if a.tr.Enabled() {
 		ctx, span = a.tr.Start(ctx, obs.SpanEncode,
@@ -838,7 +838,7 @@ func (a *Actor) send(ctx context.Context, frame *pb.Frame, causal protocol.Causa
 // what this record adds is which regions the client is missing until the retry
 // lands. A counter would need a name and a row in instrumentation.md, which is
 // a decision rather than a fix.
-func (a *Actor) noteStale(ctx context.Context, res render.Result) {
+func (a *Actor[I]) noteStale(ctx context.Context, res render.Result) {
 	if len(res.Updates) == 0 {
 		return
 	}
@@ -853,7 +853,7 @@ func (a *Actor) noteStale(ctx context.Context, res render.Result) {
 //
 // Nothing is dropped on the way: the transition being displaced hands over
 // both its own event identifier and the edges it had already collected.
-func (a *Actor) deferPatch(origin protocol.Origin) {
+func (a *Actor[I]) deferPatch(origin protocol.Origin) {
 	if prev := a.pendingOrig; prev != nil {
 		if prev.EventID != 0 {
 			a.pendingIDs = append(a.pendingIDs, prev.EventID)
@@ -866,7 +866,7 @@ func (a *Actor) deferPatch(origin protocol.Origin) {
 
 // enterCoalesce is the ladder's first stage: half the window is outstanding,
 // so transitions stop emitting a frame each and collapse into the next one.
-func (a *Actor) enterCoalesce(ctx context.Context, origin protocol.Origin) {
+func (a *Actor[I]) enterCoalesce(ctx context.Context, origin protocol.Origin) {
 	a.deferPatch(origin)
 
 	if !a.coalesceNotified {
@@ -881,7 +881,7 @@ func (a *Actor) enterCoalesce(ctx context.Context, origin protocol.Origin) {
 
 // degrade is the ladder's second stage: the window is full, so nothing is
 // emitted at all until an acknowledgement re-opens it.
-func (a *Actor) degrade(ctx context.Context, origin protocol.Origin) {
+func (a *Actor[I]) degrade(ctx context.Context, origin protocol.Origin) {
 	a.deferPatch(origin)
 
 	if !a.slowNotified {
@@ -913,7 +913,7 @@ func (a *Actor) degrade(ctx context.Context, origin protocol.Origin) {
 // three rules: the origin's own event identifier is not a contributor to its
 // own patch, zero is not an identifier, and an identifier named twice is named
 // once.
-func (a *Actor) unionReaches(origin protocol.Origin, n int) bool {
+func (a *Actor[I]) unionReaches(origin protocol.Origin, n int) bool {
 	upper := len(a.pendingIDs) + len(origin.Contributing)
 	if prev := a.pendingOrig; prev != nil {
 		upper += 1 + len(prev.Contributing)
@@ -972,7 +972,7 @@ func (a *Actor) unionReaches(origin protocol.Origin, n int) bool {
 // memory behind a failure the operator is already being told about is the worse
 // of the two. Reaching it is loud, because every emission that got here has
 // already logged its own failure.
-func (a *Actor) redefer(ctx context.Context, origin protocol.Origin, contributing []uint64) {
+func (a *Actor[I]) redefer(ctx context.Context, origin protocol.Origin, contributing []uint64) {
 	a.pendingIDs = append(a.pendingIDs, contributing...)
 	if over := len(a.pendingIDs) - protocol.CoalesceFlushCeiling; over > 0 {
 		a.pendingIDs = a.pendingIDs[:protocol.CoalesceFlushCeiling]
@@ -991,7 +991,7 @@ func (a *Actor) redefer(ctx context.Context, origin protocol.Origin, contributin
 //
 // It is a TAKE, not a commit. An exit that does not emit what it took must hand
 // it back through redefer.
-func (a *Actor) takePending(origin protocol.Origin) (protocol.Origin, []uint64) {
+func (a *Actor[I]) takePending(origin protocol.Origin) (protocol.Origin, []uint64) {
 	contributing := a.pendingIDs
 	a.pendingIDs = nil
 
@@ -1045,7 +1045,7 @@ func unionEdges(origin protocol.Origin, deferred []uint64) []uint64 {
 // transport state, because a reducer that could read the window would produce
 // different results for the same event log under different network
 // conditions, which would destroy replayability.
-func (a *Actor) synthesize(source string) {
+func (a *Actor[I]) synthesize(source string) {
 	m := getInbound()
 	m.kind = msgSynthetic
 	m.ev = Event{Name: source, At: a.now()}
@@ -1055,7 +1055,7 @@ func (a *Actor) synthesize(source string) {
 
 // onAck applies a client acknowledgement and renders once, from current state,
 // if the window re-opened onto pending work.
-func (a *Actor) onAck(ctx context.Context, seq uint64) {
+func (a *Actor[I]) onAck(ctx context.Context, seq uint64) {
 	if err := a.win.ack(seq); err != nil {
 		a.log.Error(ctx, "gotth-live: a client acknowledged a patch this session never sent",
 			obs.Str("session_id", a.idStr), obs.U64("server_seq", seq), obs.Err(err))
@@ -1085,7 +1085,7 @@ func (a *Actor) onAck(ctx context.Context, seq uint64) {
 }
 
 // onTick is liveness, idle eviction, slow-client eviction and the heartbeat.
-func (a *Actor) onTick(ctx context.Context, now time.Time) {
+func (a *Actor[I]) onTick(ctx context.Context, now time.Time) {
 	if now.IsZero() {
 		now = a.now()
 	}
@@ -1125,7 +1125,7 @@ func (a *Actor) onTick(ctx context.Context, now time.Time) {
 
 // notePanic records a recovered panic against the session's budget. A session
 // that keeps panicking at one site closes; every other session keeps serving.
-func (a *Actor) notePanic(ctx context.Context, site string) {
+func (a *Actor[I]) notePanic(ctx context.Context, site string) {
 	a.m.Panic(ctx, site)
 	a.panics[site]++
 	if a.panics[site] >= a.lim.PanicBudget {
@@ -1163,7 +1163,7 @@ const (
 // The failure is not fatal. A stale region is not a dead session: the other
 // fragments patched, resync is deliberately not triggered (a render that panics
 // will panic again), and the budget is what ends a session that cannot stop.
-func (a *Actor) noteRenderFailures(ctx context.Context, failures []render.Failure, eventID, clientRef uint64) {
+func (a *Actor[I]) noteRenderFailures(ctx context.Context, failures []render.Failure, eventID, clientRef uint64) {
 	if len(failures) == 0 {
 		return
 	}
@@ -1228,7 +1228,7 @@ func renderDetail(failures []render.Failure) []string {
 // reaches a browser is the head of a stack whose whole is logged at error level
 // in both modes. That is the trade the existing field already makes, and it is
 // why this needed no protocol change.
-func (a *Actor) devMessage(generic string, detail ...string) string {
+func (a *Actor[I]) devMessage(generic string, detail ...string) string {
 	if !a.dev {
 		return generic
 	}
@@ -1245,7 +1245,7 @@ func (a *Actor) devMessage(generic string, detail ...string) string {
 }
 
 // emitError sends an error frame carrying the causal chain.
-func (a *Actor) emitError(ctx context.Context, code pb.ErrorCode, message string, eventID, clientRef uint64, fatal bool) {
+func (a *Actor[I]) emitError(ctx context.Context, code pb.ErrorCode, message string, eventID, clientRef uint64, fatal bool) {
 	frame := protocol.NewError(a.peer.ID, code, message, eventID, clientRef, fatal)
 	if _, err := a.fr.Send(ctx, frame); err != nil {
 		// The causal identifiers are on the record and not only on the frame
@@ -1263,7 +1263,7 @@ func (a *Actor) emitError(ctx context.Context, code pb.ErrorCode, message string
 }
 
 // provenance emits one transition's causal row.
-func (a *Actor) provenance(ctx context.Context, o protocol.Origin, ev Event, fragments []string, patchID, serverSeq uint64, sup protocol.Supersession) {
+func (a *Actor[I]) provenance(ctx context.Context, o protocol.Origin, ev Event, fragments []string, patchID, serverSeq uint64, sup protocol.Supersession) {
 	a.log.Provenance(ctx, obs.Provenance{
 		SessionID:            a.idStr,
 		EventID:              ev.ID,
@@ -1281,7 +1281,7 @@ func (a *Actor) provenance(ctx context.Context, o protocol.Origin, ev Event, fra
 	})
 }
 
-func (a *Actor) countUpdates(ctx context.Context, updates []render.Update) {
+func (a *Actor[I]) countUpdates(ctx context.Context, updates []render.Update) {
 	var morph, appendOp, prepend, remove int
 	for _, u := range updates {
 		switch u.Op {
@@ -1365,7 +1365,7 @@ func firstFragment(us []render.Update) string {
 // something against itself. Only the reducer can avoid that, by returning a new
 // value, which is what the purity rule requires; live.Config[S] documents it at
 // the type parameter.
-func (a *Actor) sameState(prev, next any) bool {
+func (a *Actor[I]) sameState(prev, next any) bool {
 	if prev == nil || next == nil {
 		return prev == next
 	}

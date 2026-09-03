@@ -65,7 +65,7 @@ Open <http://127.0.0.1:8080>.
 | [`store.go`](store.go) | The shared counter every session reads and writes, and the subscription that pushes changes |
 | [`view.templ`](view.templ) | Two fragments and the page, with `live.Region`, `live.On` and `app.Document` |
 | [`main.go`](main.go) | Flags, routing, the Origin allowlist, graceful shutdown |
-| [`counter_test.go`](counter_test.go) | 53 specs, including the two `livetest` determinism helpers |
+| [`counter_test.go`](counter_test.go) | 52 specs, including the two `livetest` determinism helpers |
 
 ## The loop, once through
 
@@ -198,7 +198,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/examples/gotth/counter \
     dis-gotth-live:latest go test -race ./...
 ```
 
-53 specs, Ginkgo v2 with Gomega. The two that carry the most weight:
+52 specs, Ginkgo v2 with Gomega. The two that carry the most weight:
 
 - **`livetest.ReplayN`** replays a whole session — four clicks and the
   snapshots the store pushed back — 25 times, and fails unless the state and

@@ -103,7 +103,7 @@ var _ = Describe("Rapid abnormal connect/disconnect churn (PRD case 7, FR-22)", 
 
 	measure := func(cycles int, midFlight bool) {
 		GinkgoHelper()
-		s := serve(func(cfg *live.Config[board]) { cfg.Logger = nil })
+		s := serve(func(cfg *live.Config[board, chaosUser]) { cfg.Logger = nil })
 
 		// A warm-up before either baseline, for the same reason
 		// equivalence-spec §3.6 warms up before M(0): a baseline on a process
@@ -157,7 +157,7 @@ var _ = Describe("Rapid abnormal connect/disconnect churn (PRD case 7, FR-22)", 
 	})
 
 	It("survives a connection aborted before the handshake completes", func() {
-		s := serve(func(cfg *live.Config[board]) { cfg.Logger = nil })
+		s := serve(func(cfg *live.Config[board, chaosUser]) { cfg.Logger = nil })
 		baseline := settledGoroutines()
 
 		// A raw TCP connection that sends a partial upgrade request and then

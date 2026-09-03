@@ -145,12 +145,12 @@ func modPanelHTML(s modState) string {
 	return b.String()
 }
 
-func modConfig() live.Config[modState] {
-	return live.Config[modState]{
-		Init: func(ctx context.Context, session live.Session) (modState, []live.IEffect, error) {
+func modConfig() live.Config[modState, qaUser] {
+	return live.Config[modState, qaUser]{
+		Init: func(ctx context.Context, session live.Session[qaUser]) (modState, []live.Effect[qaUser], error) {
 			return modState{}, nil, nil
 		},
-		Reduce: func(s modState, ev live.Event) (modState, []live.IEffect) {
+		Reduce: func(s modState, ev live.Event) (modState, []live.Effect[qaUser]) {
 			s.Events++
 			s.Log = strings.TrimSpace(s.Log + " " + ev.Name)
 			switch ev.Name {
@@ -170,8 +170,8 @@ func modConfig() live.Config[modState] {
 			eventModSend, eventModDraft, eventModStrict, eventModLoose, eventModTick,
 			eventModClickPlain, eventModClickAny,
 		},
-		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("qa"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }

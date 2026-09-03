@@ -90,7 +90,24 @@ var errorCensus = map[string]int{
 	// silently blind it. That is L9-1's PS-1 (docs/reviews/page-shell.md §3.2)
 	// repaired in code rather than in prose; docs/error-audit.md §3.3.2's
 	// second row grades it.
-	"live": 40,
+	//
+	// Then back to 39 at revision 6, which is the first time this census fired
+	// on a REMOVAL: Config.Execute was deleted when live.Effect became a
+	// concrete struct carrying its own Run (operator ruling, 2026-09-03), and
+	// the one error that hook authored — "a reducer returned an effect but
+	// Config.Execute is nil" — went with it. The census is symmetric, which is
+	// what makes it a census rather than a floor. The failure that error
+	// described moved to internal/session, which refuses an effect whose Run is
+	// nil; that site was already enumerated.
+	//
+	// Then 37 at revision 7, on the same day and for the same kind of reason.
+	// live.Session became generic in the identity type, so Config.Authenticate
+	// returns the APPLICATION's own type and "returned no identity and no
+	// error" stopped being a result it can produce. Both errors that answered
+	// that shape are gone: the adapter's, and page.go's errNoIdentity. A type
+	// parameter deleting two error messages is the strongest form of the
+	// argument for it — the failure is not handled better, it is unreachable.
+	"live": 37,
 	// 7 at the walk, then 8 at revision 3: Client.NextErr now wraps whatever
 	// ended the wait with the client's name and its session, so the value a
 	// caller holds carries FR-58's session clause and not only the tb.Fatalf

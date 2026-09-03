@@ -7,7 +7,6 @@ package coldstart
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -78,21 +77,31 @@ type ColdstartState struct {
 }
 
 // Coldstart is the generated Coldstart widget.
-type Coldstart struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type Coldstart[I live.IIdentity] struct{}
 
-// NewColdstart returns the widget a host registers.
-func NewColdstart() *Coldstart { return &Coldstart{} }
+// NewColdstart returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewColdstart[I live.IIdentity]() *Coldstart[I] { return &Coldstart[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[ColdstartState]        = (*Coldstart)(nil)
-	_ widget.IDirtyDeclarer[ColdstartState] = (*Coldstart)(nil)
+	_ widget.IWidget[ColdstartState, live.AnonymousIdentity] = (*Coldstart[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[ColdstartState]                  = (*Coldstart[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *Coldstart) Register() widget.Registration {
+func (instance *Coldstart[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     ColdstartName,
 		Region:   ColdstartRegion,
@@ -118,17 +127,17 @@ func (instance *Coldstart) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *Coldstart) Mount(
-	ctx context.Context, session live.Session,
-) (ColdstartState, []live.IEffect, error) {
+func (instance *Coldstart[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (ColdstartState, []live.Effect[I], error) {
 	return ColdstartState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *Coldstart) Reduce(
+func (instance *Coldstart[I]) Reduce(
 	state ColdstartState, event live.Event,
-) (ColdstartState, []live.IEffect) {
+) (ColdstartState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case ColdstartEventPrewarm:
@@ -165,13 +174,13 @@ func (instance *Coldstart) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *Coldstart) Render(state ColdstartState) templ.Component {
+func (instance *Coldstart[I]) Render(state ColdstartState) templ.Component {
 	return ColdstartView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *Coldstart) Dirty(previous ColdstartState, next ColdstartState) bool {
+func (instance *Coldstart[I]) Dirty(previous ColdstartState, next ColdstartState) bool {
 	return previous.InvocationSequence != next.InvocationSequence ||
 		previous.RuntimeName != next.RuntimeName ||
 		previous.WarmInstances != next.WarmInstances ||
@@ -182,22 +191,13 @@ func (instance *Coldstart) Dirty(previous ColdstartState, next ColdstartState) b
 		previous.Throttled != next.Throttled
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *Coldstart) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", ColdstartName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *Coldstart) Unmount(ctx context.Context, session live.Session, state ColdstartState) {}
+func (instance *Coldstart[I]) Unmount(ctx context.Context, session live.Session[I], state ColdstartState) {
+}
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *Coldstart) Snapshot(state ColdstartState) widget.Snapshot {
+func (instance *Coldstart[I]) Snapshot(state ColdstartState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: ColdstartName,
 		Fields: []widget.SnapshotField{

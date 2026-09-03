@@ -7,7 +7,6 @@ package yakshave
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -87,21 +86,31 @@ type YakshaveState struct {
 }
 
 // Yakshave is the generated Yakshave widget.
-type Yakshave struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type Yakshave[I live.IIdentity] struct{}
 
-// NewYakshave returns the widget a host registers.
-func NewYakshave() *Yakshave { return &Yakshave{} }
+// NewYakshave returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewYakshave[I live.IIdentity]() *Yakshave[I] { return &Yakshave[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[YakshaveState]        = (*Yakshave)(nil)
-	_ widget.IDirtyDeclarer[YakshaveState] = (*Yakshave)(nil)
+	_ widget.IWidget[YakshaveState, live.AnonymousIdentity] = (*Yakshave[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[YakshaveState]                  = (*Yakshave[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *Yakshave) Register() widget.Registration {
+func (instance *Yakshave[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     YakshaveName,
 		Region:   YakshaveRegion,
@@ -131,17 +140,17 @@ func (instance *Yakshave) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *Yakshave) Mount(
-	ctx context.Context, session live.Session,
-) (YakshaveState, []live.IEffect, error) {
+func (instance *Yakshave[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (YakshaveState, []live.Effect[I], error) {
 	return YakshaveState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *Yakshave) Reduce(
+func (instance *Yakshave[I]) Reduce(
 	state YakshaveState, event live.Event,
-) (YakshaveState, []live.IEffect) {
+) (YakshaveState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case YakshaveEventRunAdvance:
@@ -183,13 +192,13 @@ func (instance *Yakshave) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *Yakshave) Render(state YakshaveState) templ.Component {
+func (instance *Yakshave[I]) Render(state YakshaveState) templ.Component {
 	return YakshaveView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *Yakshave) Dirty(previous YakshaveState, next YakshaveState) bool {
+func (instance *Yakshave[I]) Dirty(previous YakshaveState, next YakshaveState) bool {
 	return previous.RunSequence != next.RunSequence ||
 		previous.CurrentStage != next.CurrentStage ||
 		previous.CheckoutOk != next.CheckoutOk ||
@@ -202,22 +211,13 @@ func (instance *Yakshave) Dirty(previous YakshaveState, next YakshaveState) bool
 		previous.Lagging != next.Lagging
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *Yakshave) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", YakshaveName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *Yakshave) Unmount(ctx context.Context, session live.Session, state YakshaveState) {}
+func (instance *Yakshave[I]) Unmount(ctx context.Context, session live.Session[I], state YakshaveState) {
+}
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *Yakshave) Snapshot(state YakshaveState) widget.Snapshot {
+func (instance *Yakshave[I]) Snapshot(state YakshaveState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: YakshaveName,
 		Fields: []widget.SnapshotField{

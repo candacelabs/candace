@@ -63,7 +63,7 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 		// a NEW session with a fresh Init, and Init reads the store.
 		It("gives a freshly mounted session the store's current value", func() {
 			store := NewStore()
-			store.Apply(ChangeEffect{Op: OpAdd, Delta: 7, By: tabA})
+			store.Apply(Change{Op: OpAdd, Delta: 7, By: tabA})
 
 			cfg := Config(store, testOrigins)
 			state, effects, err := cfg.Init(context.Background(), session(tabA))
@@ -82,7 +82,7 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 			store := NewStore()
 			store.Join(tabA)
 			store.Join(tabB)
-			store.Apply(ChangeEffect{Op: OpAdd, Delta: 3, By: tabA})
+			store.Apply(Change{Op: OpAdd, Delta: 3, By: tabA})
 
 			Expect(store.Snapshot().Value).To(Equal(int64(3)))
 			Expect(store.Snapshot().Tabs).To(Equal(2))
@@ -94,21 +94,28 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 		// Config.Events is default-deny, so four names bound what a hostile
 		// client can ask for where one name and a number bounds nothing.
 		DescribeTable("a click returns the effect that asks the store to apply it",
-			func(event string, wantOp Op, wantDelta int64) {
+			func(event string, want int64) {
+				store := NewStore()
+				store.Join(tabA)
 				state := State{Self: tabA}
-				next, effects := Reduce(state, click(event, 1, baseTime))
+				next, effects := Reducer(store)(state, click(event, 1, baseTime))
 
 				Expect(next.Value).To(Equal(state.Value),
 					"a click never changes the value locally: the store decides and the sync reports")
 				Expect(effects).To(HaveLen(1))
-				Expect(effects[0]).To(Equal(live.IEffect(ChangeEffect{
-					Op: wantOp, Delta: wantDelta, By: tabA, Cause: 1,
-				})))
+				Expect(effects[0].Source).To(Equal(SourceChange))
+
+				// The operation the reducer chose lives in the effect's Run
+				// rather than in comparable fields, so it is read by running
+				// the effect against the store it was built for.
+				Expect(effects[0].Run(context.Background(), session(tabA), func(live.Event) error { return nil })).
+					To(Succeed())
+				Expect(store.Snapshot().Value).To(Equal(want))
 			},
-			Entry("−1  (CTR-2)", EventDecrement, OpAdd, int64(-1)),
-			Entry("+1  (CTR-1)", EventIncrement, OpAdd, int64(1)),
-			Entry("+10 (CTR-3)", EventIncrement10, OpAdd, int64(10)),
-			Entry("Reset (CTR-4)", EventReset, OpReset, int64(0)),
+			Entry("−1  (CTR-2)", EventDecrement, int64(-1)),
+			Entry("+1  (CTR-1)", EventIncrement, int64(1)),
+			Entry("+10 (CTR-3)", EventIncrement10, int64(10)),
+			Entry("Reset (CTR-4)", EventReset, int64(0)),
 		)
 
 		It("registers exactly the four names a browser may send", func() {
@@ -153,7 +160,7 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 			store.Join(tabA)
 			store.Join(tabB)
 
-			store.Apply(ChangeEffect{Op: OpAdd, Delta: 1, By: tabA, Cause: 9})
+			store.Apply(Change{Op: OpAdd, Delta: 1, By: tabA, Cause: 9})
 
 			Expect(store.subs[tabB].snapshot().Value).To(Equal(int64(1)),
 				"the tab that did not click is the one CTR-7 measures")
@@ -187,9 +194,10 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 		})
 
 		It("applies the same transition a click does", func() {
-			_, fromKey := Reduce(State{Self: tabA}, key(EventIncrement, 1, baseTime))
-			_, fromClick := Reduce(State{Self: tabA}, click(EventIncrement, 1, baseTime))
-			Expect(fromKey).To(Equal(fromClick),
+			reduce := Reducer(NewStore())
+			_, fromKey := reduce(State{Self: tabA}, key(EventIncrement, 1, baseTime))
+			_, fromClick := reduce(State{Self: tabA}, click(EventIncrement, 1, baseTime))
+			Expect(sources(fromKey)).To(Equal(sources(fromClick)),
 				"CTR-5's paint predicate is 'same as CTR-1', which is only true if the transition is")
 		})
 	})
@@ -213,7 +221,7 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 		// suppresses a patch nobody needs.
 		It("refreshes the age on every transition, from the event's stamp", func() {
 			state := State{Self: tabA, ChangedAtUnixMilli: baseTime.UnixMilli()}
-			next, _ := Reduce(state, click(EventIncrement, 1, baseTime.Add(9*time.Second)))
+			next, _ := Reducer(NewStore())(state, click(EventIncrement, 1, baseTime.Add(9*time.Second)))
 			Expect(next.AgeLabel()).To(Equal("9s ago"))
 		})
 	})
@@ -321,13 +329,13 @@ var _ = Describe("Determinism (FR-15)", func() {
 	// servers must emit the same logical state for tick N, and a reducer whose
 	// output depended on when it ran could not.
 	It("replays the whole session to the same state and the same effects", func() {
-		livetest.ReplayN(GinkgoTB(), Reduce, initial, mixedLog(), 25)
+		livetest.ReplayN(GinkgoTB(), Reducer(NewStore()), initial, mixedLog(), 25)
 	})
 
 	It("replays to the value the log describes", func() {
 		state := initial
 		for _, ev := range mixedLog() {
-			state, _ = Reduce(state, ev)
+			state, _ = Reducer(NewStore())(state, ev)
 		}
 		Expect(state.Value).To(Equal(int64(0)))
 		Expect(state.Version).To(Equal(uint64(5)))
@@ -357,16 +365,32 @@ var _ = Describe("Determinism (FR-15)", func() {
 	// is the line that makes that harmless.
 	It("ignores a snapshot older than the one it holds", func() {
 		state := State{Self: tabA, Value: 9, Version: 4}
-		next, _ := Reduce(state, pushed(Snapshot{Value: 1, Version: 3}, baseTime))
+		next, _ := Reducer(NewStore())(state, pushed(Snapshot{Value: 1, Version: 3}, baseTime))
 		Expect(next.Value).To(Equal(int64(9)))
 	})
 })
 
 var testOrigins = []string{"http://127.0.0.1:3000"}
 
-func session(id live.ID) live.Session {
+// sources projects what a transition scheduled into the one thing a
+// specification can compare: live.Effect[live.AnonymousIdentity] carries its behaviour in a function
+// field, and Go cannot compare two function values.
+func sources(effects []live.Effect[live.AnonymousIdentity]) []string {
+	if len(effects) == 0 {
+		// nil rather than an empty slice, so "scheduled nothing" compares equal
+		// to the nil a reducer returns for it.
+		return nil
+	}
+	names := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		names = append(names, effect.Source)
+	}
+	return names
+}
+
+func session(id live.ID) live.Session[live.AnonymousIdentity] {
 	GinkgoHelper()
-	return livetest.NewSession(GinkgoTB(), id, anonymous{})
+	return livetest.NewSession(GinkgoTB(), id, live.AnonymousIdentity{})
 }
 
 type anonymous struct{}

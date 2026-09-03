@@ -345,7 +345,7 @@ func TestReadLedgerNamesReadsTheCommittedLedger(t *testing.T) {
 // anecdote: the counts are identical and the names are not.
 func TestCompareNamesCatchesTheRenameTheCountsCannotSee(t *testing.T) {
 	stale := map[string]surface{
-		"live":          {Counts: counts{Identifiers: 1}, Names: map[string]bool{"IEffect": true}},
+		"live":          {Counts: counts{Identifiers: 1}, Names: map[string]bool{"IThing": true}},
 		"live/livetest": {Counts: counts{Identifiers: 1}, Names: map[string]bool{"Client": true}},
 	}
 	ledger := map[string]counts{
@@ -353,14 +353,14 @@ func TestCompareNamesCatchesTheRenameTheCountsCannotSee(t *testing.T) {
 		"live/livetest": {Identifiers: 1},
 	}
 	ledgered := map[string]map[string]bool{
-		"live":          {"Effect": true},
+		"live":          {"Thing": true},
 		"live/livetest": {"Client": true},
 	}
 	if compareNames(stale, ledger, ledgered) {
 		t.Error("a ledger row left at its pre-rename spelling was accepted; the counts cannot see it, so nothing would have")
 	}
 
-	ledgered["live"] = map[string]bool{"IEffect": true}
+	ledgered["live"] = map[string]bool{"IThing": true}
 	if !compareNames(stale, ledger, ledgered) {
 		t.Error("a ledger whose rows name exactly the exported symbols was rejected")
 	}

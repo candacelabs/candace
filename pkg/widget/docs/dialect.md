@@ -817,6 +817,48 @@ rather than a ruling. Until then the IR is `internal/ir`, the interpreter and
 the validator's findings are handwritten beside it, and the generator's
 templ/SVG emission will be too.
 
+### 10.4 The evolution: a refinement contract *beside* the IR, not *as* it
+
+The ruling above is right and stands: the IR stays hand-written Go. But it was
+read too far. It rejected a Liquid Proto contract *as the IR* — one message per
+record, resolution replacing handles, a `SourceSpan` the contract has no place
+for — and from that it followed, wrongly, that refinements had no place at all.
+The [`ontology`](ontology.md) is where that showed: it asserted a hundred
+cardinalities and Layer-3 invariants and *proved* almost none of them, and an
+operator ruling on 2026-09-03 named the gap — a cardinality without a gate is
+aspirational.
+
+The resolution is layered rather than either/or, and it does not touch the four
+arguments above:
+
+- A refinement **rejects** a value; the catalogue owes a **class, a line, a
+  column and a repair**. Both are still true — so the hand-written validator
+  stays the author-facing diagnostic, and the refinement does **not** run in the
+  interpreter's path. `left 120` is still `W104`, produced by the validator,
+  not by a predicate.
+- What the refinement adds is a **proof**, not a second diagnostic. The local
+  field invariants — the region pattern, the `[0,100]` placement bounds, the
+  positive duration, the wire-name shape, the closed token/marker/direction/
+  trigger/field-type enums — are expressed as Liquid Proto refinements on the
+  smallest proto surface that carries them,
+  [`refinement/v1/refinement.proto`](../refinement/v1/refinement.proto). This is
+  **not** the IR: it is a separate contract mirroring the IR's local fields, so
+  none of the handle-graph, `SourceSpan`, or no-wire arguments apply to it. The
+  IR is still built by `internal/validate` and read by the generator in one
+  process, exactly as ruled.
+- The two are a layering only if they **agree**, so a spec proves it:
+  [`internal/validate/refinement_agreement_test.go`](../internal/validate/refinement_agreement_test.go)
+  asserts that, for every invariant carrying both, a value the refinement
+  rejects is a value the validator rejects with its class, and a value one
+  accepts the other accepts.
+
+So a full proto IR remains the wrong shape, and this section's decision is
+unchanged. What changed is the false corollary that the local invariants
+therefore go unproven. They are now proven by a generated contract, the
+whole-graph ones by their validator class and a spec, and the handful that only
+a runtime or a generator can hold are marked aspirational in the ontology rather
+than left reading as enforced.
+
 ---
 
 ## 11. What v0 deliberately does not have

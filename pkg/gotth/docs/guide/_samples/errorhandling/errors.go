@@ -18,7 +18,7 @@ import (
 // set it to. Every configuration mistake is a startup failure rather than a
 // session that misbehaves later, so this is a failed deploy and not a pager at
 // three in the morning.
-func Start[S any](cfg live.Config[S]) (*live.App[S], error) {
+func Start[S any, I live.IIdentity](cfg live.Config[S, I]) (*live.App[S, I], error) {
 	app, err := live.New(cfg)
 	if err == nil {
 		return app, nil
@@ -39,10 +39,10 @@ type State struct {
 	Attempts int
 }
 
-// FailedEffect is the effect whose failure this reducer knows how to handle.
-type FailedEffect struct{}
-
-func (FailedEffect) EffectSource() string { return "report.fetch" }
+// SourceFetch is the source of the effect whose failure this reducer knows how
+// to handle. It is the value live.EffectFailedSourceField carries, which is
+// what the reducer matches on.
+const SourceFetch = "report.fetch"
 
 // Reduce handles the failure event — and does not log it.
 //
@@ -58,51 +58,53 @@ func (FailedEffect) EffectSource() string { return "report.fetch" }
 // data" as I/O and a reducer performs no I/O. The reason is replay and not
 // tidiness: a log call in here makes the same event log produce a different
 // sequence of records on every run, and determinism is the property the
-// reducer is written for. Reporter.Execute below is where this application's
-// record of the failure is written.
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	if ev.Name != live.EffectFailedEvent {
+// reducer is written for. Reporter.FetchEffect below is where this
+// application's record of the failure is written.
+func Reducer(reporter *Reporter) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		if ev.Name != live.EffectFailedEvent {
+			return s, nil
+		}
+
+		source := ev.Fields.Get(live.EffectFailedSourceField)
+
+		// Render the SOURCE, never the error.
+		//
+		// live.EffectFailedErrorField carries the error's own message, or the
+		// panic value, verbatim and unredacted, in production, ungated by
+		// Config.Dev. That is right for a reducer, which is server code — but it
+		// is also whatever an upstream library chose to put in an error: a
+		// connection string, a query, an internal hostname. Rendering it into a
+		// fragment publishes it to the browser. The source is a name this
+		// application chose, so it is the value that is safe to show.
+		s.Notice = "could not refresh " + source
+
+		// Branch on the classification, not on the message. The executor is the
+		// party in a position to say whether a failure is transient; an absent or
+		// unparseable value is false, and unclassified is terminal, because
+		// re-running a terminal failure re-runs whatever made it terminal.
+		retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
+
+		// Attempts is the count that survives replay: it is state, so replaying
+		// this event log reaches the same number. A counter incremented by a log
+		// line or a metric call from inside here would not.
+		if retryable && source == SourceFetch && s.Attempts < 3 {
+			s.Attempts++
+			return s, []live.Effect[live.AnonymousIdentity]{reporter.FetchEffect()}
+		}
 		return s, nil
 	}
-
-	source := ev.Fields.Get(live.EffectFailedSourceField)
-
-	// Render the SOURCE, never the error.
-	//
-	// live.EffectFailedErrorField carries the error's own message, or the
-	// panic value, verbatim and unredacted, in production, ungated by
-	// Config.Dev. That is right for a reducer, which is server code — but it
-	// is also whatever an upstream library chose to put in an error: a
-	// connection string, a query, an internal hostname. Rendering it into a
-	// fragment publishes it to the browser. The source is a name this
-	// application chose, so it is the value that is safe to show.
-	s.Notice = "could not refresh " + source
-
-	// Branch on the classification, not on the message. The executor is the
-	// party in a position to say whether a failure is transient; an absent or
-	// unparseable value is false, and unclassified is terminal, because
-	// re-running a terminal failure re-runs whatever made it terminal.
-	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
-
-	// Attempts is the count that survives replay: it is state, so replaying
-	// this event log reaches the same number. A counter incremented by a log
-	// line or a metric call from inside here would not.
-	if retryable && source == (FailedEffect{}).EffectSource() && s.Attempts < 3 {
-		s.Attempts++
-		return s, []live.IEffect{FailedEffect{}}
-	}
-	return s, nil
 }
 
 // Reporter performs the effect, and is where its failure is logged.
 //
-// This is the home the reducer cannot be, and the move is one hop: Config.Execute
-// runs on the session actor after the reducer returned, which is exactly what
-// FR-16 means by "the actor boundary". It is also the better place on the
-// evidence rather than merely the legal one — it holds the error value, so it
-// can classify it, unwrap it, or pull structured fields off it with errors.As,
-// none of which is available from the flattened string the failure event
-// carries.
+// This is the home the reducer cannot be, and the move is one hop: an effect's
+// Run executes on the session actor after the reducer returned, which is
+// exactly what FR-16 means by "the actor boundary". It is also the better place
+// on the evidence rather than merely the legal one — it holds the error value,
+// so it can classify it, unwrap it, or pull structured fields off it with
+// errors.As, none of which is available from the flattened string the failure
+// event carries.
 type Reporter struct {
 	// Log is the application's own logger. It may be the same *slog.Logger
 	// handed to Config.Logger; the library's records carry their own names.
@@ -111,50 +113,51 @@ type Reporter struct {
 	Fetch func(context.Context) error
 }
 
-// Execute performs one effect at the actor boundary and logs what failed.
+// FetchEffect is the effect, and the place its failure is logged.
 //
-// The library writes no record of an error an executor returns: it turns the
+// The library writes no record of an error an effect returns: it turns the
 // error into the reducer's live.EffectFailedEvent and counts it in
 // gotthlive_effects_total{result="error"} when Config.Metrics is set. This log
 // line is the only one there will be, which is why it belongs here and not in
 // the reducer that reads the event afterwards.
-func (r *Reporter) Execute(ctx context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
-	if _, ok := effect.(FailedEffect); !ok {
-		return fmt.Errorf("errorhandling: no executor for %T", effect)
-	}
+func (r *Reporter) FetchEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceFetch,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			err := r.Fetch(ctx)
+			if err == nil {
+				return nil
+			}
 
-	err := r.Fetch(ctx)
-	if err == nil {
-		return nil
+			r.Log.ErrorContext(ctx, "effect failed",
+				slog.String("session", sess.ID().String()),
+				slog.String("source", SourceFetch),
+				slog.String("error", err.Error()),
+				slog.Bool("retryable", live.IsRetryable(err)))
+			return err
+		},
 	}
-
-	r.Log.ErrorContext(ctx, "effect failed",
-		slog.String("session", sess.ID().String()),
-		slog.String("source", effect.EffectSource()),
-		slog.String("error", err.Error()),
-		slog.Bool("retryable", live.IsRetryable(err)))
-	return err
 }
 
-// WireLogging sets both fields, because the two halves of a failed effect are
+// WireLogging sets both halves, because the two halves of a failed effect are
 // logged by two different parties.
 //
-// An effect that returns an error is logged by Reporter.Execute above; the
-// library adds nothing. An effect that PANICS never reaches that line — the
-// library recovers it, logs it at error level to Config.Logger with the
-// session, the effect source, the event that scheduled it and the stack, and
-// synthesizes the same failure event, classified terminal. So an application
-// that sets Execute and leaves Logger nil has logged one half of its effect
-// failures and dropped the other half silently.
-func WireLogging(cfg live.Config[State], r *Reporter, logger *slog.Logger) live.Config[State] {
-	cfg.Execute = r.Execute
+// An effect that returns an error is logged by the Run above; the library adds
+// nothing. An effect that PANICS never reaches that line — the library recovers
+// it, logs it at error level to Config.Logger with the session, the effect
+// source, the event that scheduled it and the stack, and synthesizes the same
+// failure event, classified terminal. So an application whose effects log their
+// own errors and whose Config leaves Logger nil has logged one half of its
+// effect failures and dropped the other half silently.
+func WireLogging(cfg live.Config[State, live.AnonymousIdentity], r *Reporter, logger *slog.Logger) live.Config[State, live.AnonymousIdentity] {
+	cfg.Reduce = Reducer(r)
 	cfg.Logger = logger
 	return cfg
 }
 
 // ExecuteWithClassification shows both sides of the retry mark.
 //
-// Retryable marks an error returned from Config.Execute as transient. The
+// Retryable marks an error returned from an effect's Run as transient. The
 // unmarked default is terminal, deliberately: an effect may have committed
 // externally before it failed, so retrying a failure nobody classified risks
 // doing it twice. Between a visible omission and an invisible duplicate, the

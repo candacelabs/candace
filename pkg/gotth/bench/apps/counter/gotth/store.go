@@ -43,13 +43,16 @@ const (
 	OpReset
 )
 
-// ChangeEffect asks the store to apply one operation.
+// Change is one operation asked of the shared counter: what to do, by whom,
+// and which event asked for it.
 //
-// It is a plain comparable value with no channel, connection or closure in it,
-// which is the whole contract live.IEffect states. That is what lets a spec
-// assert on what the reducer decided to do without a store existing at all,
-// and what lets livetest.ReplayN compare two runs' effects by value.
-type ChangeEffect struct {
+// It is a plain comparable value and it is NOT the effect. Since the
+// 2026-09-03 ruling made live.Effect[live.AnonymousIdentity] a concrete struct carrying its own Run,
+// what a reducer returns is the effect [Store.ChangeEffect] builds from one of
+// these — a closure over this store — and this type is the operation that
+// closure applies. Keeping the two apart is what lets [Store.Apply] be called
+// directly by a specification that has no session.
+type Change struct {
 	Op    Op
 	Delta int64
 	By    live.ID
@@ -61,27 +64,47 @@ type ChangeEffect struct {
 	Cause uint64
 }
 
-// EffectSource names the effect for provenance and metrics. It becomes the
-// origin source "effect:counter.change" on every patch this effect causes,
-// which is the string to grep for in the provenance log.
-func (ChangeEffect) EffectSource() string { return SourceChange }
+// ChangeEffect is the effect that applies one operation to the shared counter.
+//
+// It is a constructor returning a concrete live.Effect[live.AnonymousIdentity], which is what CS-8
+// asks of every factory: the caller receives the thing rather than an
+// abstraction over it. The behaviour is a closure over this store, so the
+// reducer that returns one does not have to be handed an executor and the
+// library does not have to type-switch to find one.
+//
+// The source it stamps becomes the origin "effect:counter.change" on every
+// patch this effect causes, which is the string to grep for in the provenance
+// log.
+func (s *Store) ChangeEffect(change Change) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceChange,
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			s.Apply(change)
+			return nil
+		},
+	}
+}
 
-// WatchEffect asks the store to push this session every change until the
+// WatchEffect is the effect that pushes this session every change until the
 // session ends.
 //
-// It exists because Config.Execute is the only place an application is handed
-// an live.Emitter, so a subscription that wants to inject events has to be
+// It exists because an effect's Run is the only place an application is handed
+// a live.Emitter, so a subscription that wants to inject events has to be
 // expressed as a long-running effect. Config.Init registers the session with
 // the store; this pumps what the registration collects.
 //
-// It carries nothing, and that is the point of the live.Session parameter
-// Config.Execute now takes. A subscription's address is the session it belongs
-// to, which the library knows; what an effect value should carry is what the
-// reducer decided, not who decided it.
-type WatchEffect struct{}
-
-// EffectSource names the subscription for provenance and metrics.
-func (WatchEffect) EffectSource() string { return SourceWatch }
+// It captures nothing, and that is the point of the live.Session[live.AnonymousIdentity] parameter Run
+// takes. A subscription's address is the session it belongs to, which the
+// library knows; what an effect should carry is what the reducer decided, not
+// who decided it.
+func (s *Store) WatchEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceWatch,
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return s.pump(ctx, session.ID(), emit)
+		},
+	}
+}
 
 // Snapshot is the shared counter at one revision. It is a value, so a
 // subscriber holds a consistent picture rather than a window onto something
@@ -216,7 +239,7 @@ func (s *Store) Leave(id live.ID) {
 }
 
 // Apply performs one operation and pushes the result to every session.
-func (s *Store) Apply(change ChangeEffect) Snapshot {
+func (s *Store) Apply(change Change) Snapshot {
 	s.mu.Lock()
 	switch change.Op {
 	case OpAdd:
@@ -256,23 +279,6 @@ func (s *Store) subscribersLocked(except *live.ID) []*subscriber {
 func broadcast(subs []*subscriber, snap Snapshot) {
 	for _, sub := range subs {
 		sub.set(snap)
-	}
-}
-
-// Execute performs one effect at the actor boundary. It is Config.Execute.
-//
-// The effect values arrive exactly as the reducer declared them; nothing here
-// runs inside a reducer, and nothing here can reach a session's state except
-// by emitting an event the reducer folds in.
-func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch e := effect.(type) {
-	case ChangeEffect:
-		s.Apply(e)
-		return nil
-	case WatchEffect:
-		return s.pump(ctx, sess.ID(), emit)
-	default:
-		return fmt.Errorf("counter: no executor for effect %T", effect)
 	}
 }
 

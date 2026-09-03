@@ -36,9 +36,20 @@ import (
 // it has is the context it was built with.
 // ---------------------------------------------------------------------------
 
+// testSubject is the identity these internal specs instantiate the Actor on.
+//
+// The Actor became generic in the identity type on 2026-09-03, so an internal
+// spec has to name one. Nothing below reads it: what these tests exercise is
+// the emission-refusal message and the contributing union, neither of which
+// touches an identity.
+type testSubject string
+
+// Subject satisfies IIdentity for testSubject.
+func (s testSubject) Subject() string { return string(s) }
+
 func TestEmissionRefusedNamesSessionCauseAndNextStep(t *testing.T) {
 	const id = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
-	a := &Actor{idStr: id}
+	a := &Actor[testSubject]{idStr: id}
 
 	cases := []struct {
 		name        string

@@ -21,8 +21,8 @@
 //
 // The names arrived after a measured failure. A count is a projection, and a
 // gate's enforcement surface is exactly the projection it compares: the P3
-// slice renamed 61 interfaces — Effect to IEffect, Identity to IIdentity — and
-// then named 374 parameters, and both times this tool printed
+// slice renamed 61 interfaces onto the house prefix — every one of them gained
+// a leading I — and then named 374 parameters, and both times this tool printed
 //
 //	live                56/56       53/53      109/109     (measured/ledger)
 //	the surface matches the ledger

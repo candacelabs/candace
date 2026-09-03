@@ -20,8 +20,8 @@ import (
 // deployment that turned the check off is one search.
 const AnyOrigin = "*"
 
-// Options configure the transport.
-type Options struct {
+// Options[I] configure the transport.
+type Options[I session.IIdentity] struct {
 	// Origins is the allowlist checked on the upgrade request. Deny by
 	// default: no wildcard, no reflection of the request's own Origin, and no
 	// pass for a request that sends none.
@@ -29,13 +29,13 @@ type Options struct {
 
 	// Authenticate derives the session identity from the upgrade request. It
 	// runs before any per-session memory is allocated.
-	Authenticate func(request *http.Request) (session.IIdentity, error)
+	Authenticate func(request *http.Request) (I, error)
 
 	// CSRF validates a token bound to the authenticated application session.
 	CSRF func(request *http.Request) error
 
 	// NewApp returns the application behaviour for one connection.
-	NewApp func(request *http.Request) session.IApp
+	NewApp func(request *http.Request) session.IApp[I]
 
 	// Limits are the per-session resource bounds, handed to every session this
 	// handler starts. Zero fields take their documented defaults, which
@@ -75,13 +75,13 @@ type Options struct {
 // architecture test asserts that the session, render and protocol packages
 // never reach it. The core talks to a connection through channels and a framer
 // function value rather than through an interface with one implementation.
-type Handler struct {
-	opts Options
+type Handler[I session.IIdentity] struct {
+	opts Options[I]
 
 	// mu guards the session registry, which is process infrastructure rather
 	// than any session's state. No session's state is reachable through it.
 	mu       sync.Mutex
-	sessions map[session.ID]*conn
+	sessions map[session.ID]*conn[I]
 	perID    map[string]int
 	draining bool
 
@@ -98,7 +98,7 @@ type Handler struct {
 }
 
 // NewHandler validates the options and returns a handler.
-func NewHandler(o Options) (*Handler, error) {
+func NewHandler[I session.IIdentity](o Options[I]) (*Handler[I], error) {
 	switch {
 	case o.Authenticate == nil:
 		return nil, fmt.Errorf("gotth-live: no authentication hook: set one, or opt out explicitly")
@@ -111,9 +111,9 @@ func NewHandler(o Options) (*Handler, error) {
 	}
 	o.Limits = o.Limits.Normalize()
 
-	return &Handler{
+	return &Handler[I]{
 		opts:     o,
-		sessions: make(map[session.ID]*conn),
+		sessions: make(map[session.ID]*conn[I]),
 		perID:    make(map[string]int),
 	}, nil
 }
@@ -135,8 +135,8 @@ func NewHandler(o Options) (*Handler, error) {
 // and the expense was measured rather than suspected
 // (docs/bench/g2-baseline.md).
 //
-// net/http holds a `*conn` for as long as its handler has not returned, and
-// that `*conn` holds a 4,096 B `bufio.Reader`, a 4,096 B `bufio.Writer`, the
+// net/http holds a `*conn[I]` for as long as its handler has not returned, and
+// that `*conn[I]` holds a 4,096 B `bufio.Reader`, a 4,096 B `bufio.Writer`, the
 // `*response` with its own 2,048 B `bufio.Writer` and header map, and the
 // `*Request` with its header map and URL. For an ordinary HTTP request all of
 // that is scratch that lives for a millisecond and returns to net/http's pools.
@@ -149,7 +149,7 @@ func NewHandler(o Options) (*Handler, error) {
 // already untracked the connection from `Server.activeConn`
 // (`setState(StateHijacked)`), the transport already reset both buffers off
 // net/http's own reader and writer, and once this frame is gone nothing
-// references the `*conn` at all.
+// references the `*conn[I]` at all.
 //
 // Two consequences, both deliberate and neither free:
 //
@@ -166,7 +166,7 @@ func NewHandler(o Options) (*Handler, error) {
 // at the end of the session. That is the honest boundary for a request that
 // became a connection, and it is the one that lets a request-scoped logger or
 // timeout mean what it says.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *Handler[I]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !h.originAllowed(r) {
@@ -177,8 +177,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// No nil test on the identity, and its absence is the type parameter doing
+	// its job. The hook's result type is the APPLICATION's own since 2026-09-03,
+	// so "returned no identity and no error" — the shape this used to catch, a
+	// hook returning `nil, nil` through an interface result — is no longer
+	// expressible. An application that returns a nil of its own pointer type
+	// still can, and that is its bug: its own Subject() is what panics.
 	identity, err := h.opts.Authenticate(r)
-	if err != nil || identity == nil {
+	if err != nil {
 		h.opts.Metrics.ConnectionClosed(ctx, protocol.CloseUnauthenticated.Label())
 		http.Error(w, "unauthenticated", http.StatusUnauthorized)
 		return
@@ -243,7 +249,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// alive for the session's life, which is the cost this function returns to
 	// avoid.
 	app := h.opts.NewApp(r)
-	peer := session.Peer{ID: id, Identity: identity}
+	peer := session.Peer[I]{ID: id, Identity: identity}
 	sessionCtx := context.WithoutCancel(ctx)
 
 	// Registration happens on THIS goroutine, before the session's, and it can
@@ -289,7 +295,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // originAllowed applies the allowlist. Deny by default, and an absent Origin
 // is a denial rather than a pass: a request with no Origin is not a request
 // from an allowed one.
-func (h *Handler) originAllowed(r *http.Request) bool {
+func (h *Handler[I]) originAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	for _, allowed := range h.opts.Origins {
 		if allowed == AnyOrigin {
@@ -325,7 +331,7 @@ func offersSubprotocol(r *http.Request) bool {
 //
 // Exactly one of releaseAdmission or register must follow, and register is what
 // converts the reservation into a registry entry.
-func (h *Handler) admit(identity session.IIdentity) error {
+func (h *Handler[I]) admit(identity I) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -360,7 +366,7 @@ func (h *Handler) admit(identity session.IIdentity) error {
 // releaseAdmission undoes admit for a connection that never registered: the
 // upgrade failed, the identifier could not be minted, or the drain won the
 // race. Both halves of the reservation go back.
-func (h *Handler) releaseAdmission(identity session.IIdentity) {
+func (h *Handler[I]) releaseAdmission(identity I) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pending--
@@ -372,7 +378,7 @@ func (h *Handler) releaseAdmission(identity session.IIdentity) {
 // what returns that one, so this must not touch pending — a session counted
 // once in the registry and once in pending would bound the process at half
 // what the operator set.
-func (h *Handler) release(identity session.IIdentity) {
+func (h *Handler[I]) release(identity I) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.dropIdentity(identity)
@@ -381,7 +387,7 @@ func (h *Handler) release(identity session.IIdentity) {
 // dropIdentity decrements one subject's count, deleting the entry at zero so
 // the map does not grow with every subject the process has ever seen. The
 // caller holds mu.
-func (h *Handler) dropIdentity(identity session.IIdentity) {
+func (h *Handler[I]) dropIdentity(identity I) {
 	subject := identity.Subject()
 	if h.perID[subject] <= 1 {
 		delete(h.perID, subject)
@@ -400,7 +406,7 @@ func (h *Handler) dropIdentity(identity session.IIdentity) {
 // `draining` set. There is no interleaving in which a session is live and
 // absent from the snapshot, which is what let `Close` report a successful drain
 // over a session it never touched (C-34).
-func (h *Handler) register(c *conn) error {
+func (h *Handler[I]) register(c *conn[I]) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.draining {
@@ -421,7 +427,7 @@ func (h *Handler) register(c *conn) error {
 }
 
 // deregister removes a session exactly once.
-func (h *Handler) deregister(c *conn) {
+func (h *Handler[I]) deregister(c *conn[I]) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.sessions, c.peer.ID)
@@ -429,10 +435,10 @@ func (h *Handler) deregister(c *conn) {
 
 // Close drains every live session, closing each with the going-away code, and
 // waits for in-flight work up to the context's deadline.
-func (h *Handler) Close(ctx context.Context) error {
+func (h *Handler[I]) Close(ctx context.Context) error {
 	h.mu.Lock()
 	h.draining = true
-	live := make([]*conn, 0, len(h.sessions))
+	live := make([]*conn[I], 0, len(h.sessions))
 	for _, c := range h.sessions {
 		live = append(live, c)
 	}
@@ -447,7 +453,7 @@ func (h *Handler) Close(ctx context.Context) error {
 	var closing sync.WaitGroup
 	for _, c := range live {
 		closing.Add(1)
-		go func(c *conn) {
+		go func(c *conn[I]) {
 			defer closing.Done()
 			c.close(protocol.CloseGoingAway, "the server is shutting down")
 		}(c)
@@ -467,7 +473,7 @@ func (h *Handler) Close(ctx context.Context) error {
 // Sessions reports how many sessions are live. It exists for tests and for the
 // leak check, and reads the registry rather than a counter that could drift
 // from it.
-func (h *Handler) Sessions() int {
+func (h *Handler[I]) Sessions() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.sessions)

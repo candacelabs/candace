@@ -233,7 +233,7 @@ from:
 
 <!-- sample: mounting/firstpaint.go -->
 ```go
-func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.IEffect, error) {
+func (st *Store) Init(ctx context.Context, session live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 	s, err := st.Load(ctx)
 	return s, nil, err
 }

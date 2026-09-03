@@ -129,12 +129,31 @@ func roster(room string, presence, typing []string, at time.Time) live.Event {
 	}
 }
 
+// reduce is the reducer under test, bound to rooms the pure specs never reach:
+// the transition builds effects that close over them, and a spec that cares
+// about what an effect DOES builds its own rooms and runs the effect.
+var reduce = Reducer(testRooms())
+
+// sources projects what a transition scheduled into the one thing a
+// specification can compare: live.Effect[Member] carries its behaviour in a function
+// field, and Go cannot compare two function values.
+func sources(effects []live.Effect[Member]) []string {
+	if len(effects) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		names = append(names, effect.Source)
+	}
+	return names
+}
+
 var _ = Describe("§2.3 F-CHT — the feature table", func() {
 	Describe("F-CHT-1: the message list is capped at 200, server-side", func() {
 		It("drops the oldest and keeps the cap exactly", func() {
 			state := initialState()
 			for i := 1; i <= MessageCap+25; i++ {
-				state, _ = Reduce(state, post(RoomIDs[0], i, "ana", "m"+strconv.Itoa(i), "", baseTime))
+				state, _ = reduce(state, post(RoomIDs[0], i, "ana", "m"+strconv.Itoa(i), "", baseTime))
 			}
 			Expect(state.Log().Len()).To(Equal(MessageCap))
 			first := state.Messages()[0]
@@ -150,7 +169,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 		It("renders one node per message and no more", func() {
 			state := initialState()
 			for i := 1; i <= 5; i++ {
-				state, _ = Reduce(state, post(RoomIDs[0], i, "ana", "hello", "", baseTime))
+				state, _ = reduce(state, post(RoomIDs[0], i, "ana", "hello", "", baseTime))
 			}
 			Expect(strings.Count(render(LogRegion(state)), `data-bench-id="message"`)).To(Equal(5))
 		})
@@ -255,7 +274,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 		// which one it was, and this is the spec that says so rather than
 		// leaving it to be inferred from the two bindings naming one event.
 		It("takes the same reducer path as the button's click", func() {
-			next, effects := Reduce(initialState(), sent("hi", 1, baseTime))
+			next, effects := reduce(initialState(), sent("hi", 1, baseTime))
 			Expect(next.DraftError).To(BeEmpty())
 			Expect(effects).To(HaveLen(1), "one send asks the rooms once, whatever raised it")
 		})
@@ -279,7 +298,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 		// bump, and the error rendered where CHT-5's predicate looks.
 		It("keeps the draft and renders the error, and does not bump the composer", func() {
 			state := initialState()
-			next, effects := Reduce(state, sent(strings.Repeat("x", 501), 1, baseTime))
+			next, effects := reduce(state, sent(strings.Repeat("x", 501), 1, baseTime))
 
 			Expect(effects).To(BeEmpty(), "a rejected send asks the rooms for nothing")
 			Expect(next.DraftError).To(Equal("Too long by 1 characters (max 500)."))
@@ -291,14 +310,14 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 
 	Describe("F-CHT-5 and F-CHT-6: presence and the typing indicator", func() {
 		It("renders the roster the server sorted and decayed", func() {
-			state, _ := Reduce(initialState(),
+			state, _ := reduce(initialState(),
 				roster(RoomIDs[0], []string{"ana", "bo", "you"}, []string{"ana", "bo"}, baseTime))
 			Expect(state.Presence()).To(Equal([]string{"ana", "bo", "you"}))
 			Expect(state.TypingLabel()).To(Equal("2 people are typing"))
 		})
 
 		It("never counts this tab as typing", func() {
-			state, _ := Reduce(initialState(),
+			state, _ := reduce(initialState(),
 				roster(RoomIDs[0], []string{"you"}, []string{"you"}, baseTime))
 			Expect(state.Typing()).To(BeEmpty())
 			Expect(state.TypingLabel()).To(BeEmpty(), "nobody needs telling that they are typing")
@@ -306,7 +325,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 
 		DescribeTable("the label",
 			func(names []string, want string) {
-				state, _ := Reduce(initialState(), roster(RoomIDs[0], nil, names, baseTime))
+				state, _ := reduce(initialState(), roster(RoomIDs[0], nil, names, baseTime))
 				Expect(state.TypingLabel()).To(Equal(want))
 			},
 			Entry("nobody", []string(nil), ""),
@@ -332,9 +351,9 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 	Describe("F-CHT-7: the room switcher and its unread badges", func() {
 		It("counts a message in another room and not one in this room", func() {
 			state := initialState()
-			state, _ = Reduce(state, post(RoomIDs[0], 1, "ana", "here", "", baseTime))
-			state, _ = Reduce(state, post(RoomIDs[1], 1, "bo", "elsewhere", "", baseTime))
-			state, _ = Reduce(state, post(RoomIDs[1], 2, "cy", "elsewhere again", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[0], 1, "ana", "here", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[1], 1, "bo", "elsewhere", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[1], 2, "cy", "elsewhere again", "", baseTime))
 
 			Expect(state.UnreadIn(RoomIDs[0])).To(Equal(0))
 			Expect(state.UnreadIn(RoomIDs[1])).To(Equal(2))
@@ -342,8 +361,8 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 
 		It("does not count the same message twice", func() {
 			state := initialState()
-			state, _ = Reduce(state, post(RoomIDs[1], 1, "bo", "once", "", baseTime))
-			state, _ = Reduce(state, post(RoomIDs[1], 1, "bo", "once", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[1], 1, "bo", "once", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[1], 1, "bo", "once", "", baseTime))
 			Expect(state.UnreadIn(RoomIDs[1])).To(Equal(1),
 				"emitted events are best-effort; a redelivery must not be a second message")
 		})
@@ -354,25 +373,25 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 		// answers.
 		It("does not change room on the click, only on the server's answer", func() {
 			state := initialState()
-			asked, effects := Reduce(state, switched(RoomIDs[1], 7, baseTime))
+			asked, effects := reduce(state, switched(RoomIDs[1], 7, baseTime))
 			Expect(asked.Room).To(Equal(RoomIDs[0]), "a local flip would make CHT-4 a same-frame paint")
-			Expect(effects).To(Equal([]live.IEffect{SwitchEffect{Room: RoomIDs[1], Cause: 7}}))
+			Expect(sources(effects)).To(Equal([]string{SourceSwitch}))
 
-			arrived, _ := Reduce(asked, entered(RoomIDs[1], baseTime))
+			arrived, _ := reduce(asked, entered(RoomIDs[1], baseTime))
 			Expect(arrived.Room).To(Equal(RoomIDs[1]))
 		})
 
 		It("clears the badge of the room it enters", func() {
 			state := initialState()
-			state, _ = Reduce(state, post(RoomIDs[1], 1, "bo", "unread", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[1], 1, "bo", "unread", "", baseTime))
 			Expect(state.UnreadIn(RoomIDs[1])).To(Equal(1))
 
-			state, _ = Reduce(state, entered(RoomIDs[1], baseTime))
+			state, _ = reduce(state, entered(RoomIDs[1], baseTime))
 			Expect(state.UnreadIn(RoomIDs[1])).To(Equal(0))
 		})
 
 		It("refuses a room that is not one of the three", func() {
-			_, effects := Reduce(initialState(), switched("../etc/passwd", 1, baseTime))
+			_, effects := reduce(initialState(), switched("../etc/passwd", 1, baseTime))
 			Expect(effects).To(BeEmpty())
 		})
 	})
@@ -388,7 +407,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 			Expect(composer.ID).To(Equal(FragmentComposer))
 
 			prev := initialState()
-			next, _ := Reduce(prev, post(RoomIDs[0], 1, "ana", "hello", "", baseTime))
+			next, _ := reduce(prev, post(RoomIDs[0], 1, "ana", "hello", "", baseTime))
 			Expect(composer.Dirty(prev, next)).To(BeFalse())
 		})
 
@@ -409,28 +428,28 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 			state := initialState()
 			before := state.ComposerID()
 
-			state, _ = Reduce(state, typed("hello", 1, baseTime))
+			state, _ = reduce(state, typed("hello", 1, baseTime))
 			Expect(state.ComposerID()).To(Equal(before), "typing does not replace the node")
 
-			state, _ = Reduce(state, sent("hello", 2, baseTime))
+			state, _ = reduce(state, sent("hello", 2, baseTime))
 			Expect(state.ComposerID()).To(Equal(before), "nor does asking")
 
-			state, _ = Reduce(state, post(RoomIDs[0], 1, DefaultName, "hello", "2", baseTime))
+			state, _ = reduce(state, post(RoomIDs[0], 1, DefaultName, "hello", "2", baseTime))
 			Expect(state.ComposerID()).NotTo(Equal(before), "the confirmation is what clears it")
 			Expect(state.Draft).To(BeEmpty())
 		})
 
 		It("recognises its own confirmation by identifier and not by body", func() {
 			state := initialState()
-			state, _ = Reduce(state, sent("hello", 42, baseTime))
+			state, _ = reduce(state, sent("hello", 42, baseTime))
 			before := state.ComposerID()
 
 			// Somebody else's identical message must not clear this composer.
-			state, _ = Reduce(state, post(RoomIDs[0], 1, "ana", "hello", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[0], 1, "ana", "hello", "", baseTime))
 			Expect(state.ComposerID()).To(Equal(before))
 			Expect(state.PendingSend).To(Equal(uint64(42)))
 
-			state, _ = Reduce(state, post(RoomIDs[0], 2, DefaultName, "hello", "42", baseTime))
+			state, _ = reduce(state, post(RoomIDs[0], 2, DefaultName, "hello", "42", baseTime))
 			Expect(state.ComposerID()).NotTo(Equal(before))
 			Expect(state.PendingSend).To(BeZero())
 		})
@@ -442,7 +461,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 			state.Me = ReadonlyName
 			state.Readonly = true
 
-			next, effects := Reduce(state, sent("perfectly fine", 1, baseTime))
+			next, effects := reduce(state, sent("perfectly fine", 1, baseTime))
 			Expect(effects).To(BeEmpty(), "no effect means no message reaches the room")
 			Expect(next.DraftError).To(Equal(ReadonlyError))
 			Expect(render(ComposerRegion(next))).To(ContainSubstring(ReadonlyError))
@@ -450,14 +469,14 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 
 		// The refusal is checked twice, and not redundantly: the reducer's is
 		// what a reader SEES (F-CHT-9 requires a visible error, and a
-		// live.DenyError produces no render), and the executor's is what a
+		// live.DenyError produces no render), and the effect's own is what a
 		// reader cannot get past.
 		It("refuses again at the effect boundary", func() {
 			rooms := testRooms()
-			err := rooms.Execute(context.Background(),
-				livetest.NewSession(GinkgoTB(), tabA, Member{Name: ReadonlyName, Readonly: true}),
-				SendEffect{Room: RoomIDs[0], Body: "hello", Cause: 1},
-				func(live.Event) error { return nil })
+			err := rooms.SendEffect(Send{Room: RoomIDs[0], Body: "hello", Cause: 1}).
+				Run(context.Background(),
+					livetest.NewSession(GinkgoTB(), tabA, Member{Name: ReadonlyName, Readonly: true}),
+					func(live.Event) error { return nil })
 			Expect(err).To(MatchError(ContainSubstring("read-only")))
 			Expect(rooms.LogOf(RoomIDs[0]).Len()).To(BeZero())
 		})
@@ -467,7 +486,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 			r.AddCookie(&http.Cookie{Name: WhoCookie, Value: ReadonlyName})
 			id, err := DirectoryAuthenticate(r)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(id).To(Equal(live.IIdentity(Member{Name: ReadonlyName, Readonly: true})))
+			Expect(id).To(Equal(Member{Name: ReadonlyName, Readonly: true}))
 			Expect(id.Subject()).To(Equal(ReadonlyName))
 		})
 
@@ -488,9 +507,9 @@ var _ = Describe("§2.0 the markup hooks the harness drives", func() {
 
 	BeforeEach(func() {
 		state := initialState()
-		state, _ = Reduce(state, roster(RoomIDs[0], []string{"ana", "you"}, []string{"ana"}, baseTime))
-		state, _ = Reduce(state, post(RoomIDs[0], 1, "ana", "hello", "", baseTime))
-		state, _ = Reduce(state, post(RoomIDs[1], 1, "bo", "elsewhere", "", baseTime))
+		state, _ = reduce(state, roster(RoomIDs[0], []string{"ana", "you"}, []string{"ana"}, baseTime))
+		state, _ = reduce(state, post(RoomIDs[0], 1, "ana", "hello", "", baseTime))
+		state, _ = reduce(state, post(RoomIDs[1], 1, "bo", "elsewhere", "", baseTime))
 		page = render(Page(state))
 	})
 
@@ -544,9 +563,9 @@ var _ = Describe("§2.0 the markup hooks the harness drives", func() {
 	// whole document ≤ 2000 elements."
 	It("stays inside §2.3's element bounds at a full 200-message log", func() {
 		state := initialState()
-		state, _ = Reduce(state, roster(RoomIDs[0], []string{"ana", "bo", "cy", "dee", "eli", "fen", "gus", "hana"}, nil, baseTime))
+		state, _ = reduce(state, roster(RoomIDs[0], []string{"ana", "bo", "cy", "dee", "eli", "fen", "gus", "hana"}, nil, baseTime))
 		for i := 1; i <= MessageCap; i++ {
-			state, _ = Reduce(state, post(RoomIDs[0], i, "ana", "a message body", "", baseTime))
+			state, _ = reduce(state, post(RoomIDs[0], i, "ana", "a message body", "", baseTime))
 		}
 		Expect(countElements(render(LogRegion(state)))).To(BeNumerically("<=", 1600))
 		Expect(countElements(render(Page(state)))).To(BeNumerically("<=", 2000))
@@ -627,13 +646,13 @@ var _ = Describe("Determinism (FR-15)", func() {
 	// rests on: both servers must emit the same logical state for tick N, and a
 	// reducer whose output depended on when it ran could not.
 	It("replays the whole session to the same state and the same effects", func() {
-		livetest.ReplayN(GinkgoTB(), Reduce, initialState(), mixedLog(), 25)
+		livetest.ReplayN(GinkgoTB(), reduce, initialState(), mixedLog(), 25)
 	})
 
 	It("replays to the conversation the log describes", func() {
 		state := initialState()
 		for _, ev := range mixedLog() {
-			state, _ = Reduce(state, ev)
+			state, _ = reduce(state, ev)
 		}
 		Expect(state.Room).To(Equal(RoomIDs[1]))
 		Expect(state.Logs[0].Len()).To(Equal(3))

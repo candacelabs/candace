@@ -764,7 +764,7 @@ func Deploys(deploys []string, at string) templ.Component {
 // so there is one copy of HTMX in this repository and one recorded digest; when
 // that file is not reachable the page says so in the markup rather than
 // rendering a script tag that 404s. FRICTION.md item F-3.
-func Page(app *live.App[State], s State, htmxSrc string) templ.Component {
+func Page(app *live.App[State, live.AnonymousIdentity], s State, htmxSrc string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

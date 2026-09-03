@@ -29,13 +29,13 @@ import (
 // standing is one live application behind a real HTTP server on a real
 // loopback socket.
 type standing struct {
-	app    *live.App[board]
+	app    *live.App[board, chaosUser]
 	http   *httptest.Server
 	ledger *ledger
 }
 
 // serve mounts chaosConfig, optionally mutated, on a real listener.
-func serve(mutate func(cfg *live.Config[board])) *standing {
+func serve(mutate func(cfg *live.Config[board, chaosUser])) *standing {
 	GinkgoHelper()
 
 	led := newLedger()

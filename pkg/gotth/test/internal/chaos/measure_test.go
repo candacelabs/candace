@@ -68,7 +68,7 @@ var _ = Describe("QA3-1 — the coalescing flush trigger", Label("measure"), fun
 		GinkgoHelper()
 
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Metrics = rec
 			cfg.Logger = nil
 			cfg.Limits.CoalesceFlushAt = flushAt
@@ -194,7 +194,7 @@ var _ = Describe("QA3-2 — MinResyncInterval and ResyncBurst against a legitima
 		var results []result
 
 		for _, loss := range []int{1, 5, 10, 25} {
-			s := serve(func(cfg *live.Config[board]) {
+			s := serve(func(cfg *live.Config[board, chaosUser]) {
 				cfg.Logger = nil
 				cfg.Limits.MinResyncInterval = time.Second
 				cfg.Limits.ResyncBurst = 3
@@ -290,7 +290,7 @@ var _ = Describe("QA3-3 — provenance-log volume", Label("measure"), func() {
 		// nothing else. Counting the whole log would fold in warnings and
 		// lifecycle records that instrumentation §4A is not about.
 		sink := newProvenanceSink()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = slog.New(sink)
 			cfg.Metrics = nil
 			cfg.Tracer = nil
@@ -364,7 +364,7 @@ var _ = Describe("QA3-3 — provenance-log volume", Label("measure"), func() {
 func driveTransitions(logger *slog.Logger, window time.Duration) int {
 	GinkgoHelper()
 
-	s := serve(func(cfg *live.Config[board]) {
+	s := serve(func(cfg *live.Config[board, chaosUser]) {
 		cfg.Logger = logger
 		cfg.Metrics = nil
 		cfg.Tracer = nil

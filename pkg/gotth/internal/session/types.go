@@ -19,33 +19,53 @@ type ID [16]byte
 // String returns the lower-case hex form used in logs and span attributes.
 func (id ID) String() string { return hex.EncodeToString(id[:]) }
 
-// IIdentity is the application's identity for a session. It is bound at the
-// handshake and immutable for the connection's life: a session cannot outlive
-// its connection, so there is no re-authentication and no privilege change
-// mid-session.
+// IIdentity is what this package needs from an application's identity, and it
+// appears only as a CONSTRAINT and in the admission bookkeeping that calls
+// Subject(). Since 2026-09-03 the identity itself travels as a type parameter,
+// so nothing here returns one or hands one back through a field.
 type IIdentity interface {
 	// Subject returns a stable, non-secret identifier used for logging and
 	// per-identity session limits.
 	Subject() string
 }
 
-// IEffect is a value describing I/O for the actor to perform. Implementations
-// are plain values, not closures over live handles, which is what lets a test
-// assert on what a reducer decided to do without performing it.
-type IEffect interface {
-	// EffectSource names the effect for provenance and metrics.
-	EffectSource() string
+// Effect is one unit of I/O the actor performs at its boundary.
+//
+// It mirrors the public live.Effect, which is a concrete struct by operator
+// ruling of 2026-09-03, and it is a second declaration rather than an alias
+// because Run is in THIS package's vocabulary: the public signature speaks of a
+// live.Session and a live.Emitter, neither of which an internal package can
+// name. live's own adapter re-expresses one as the other, once, and that is the
+// only translation between the two.
+type Effect[I IIdentity] struct {
+	// Source names the effect for provenance and metrics. It is refined before
+	// the effect runs, because it becomes half of an Origin.source.
+	Source string
+
+	// Run performs the effect, on the goroutine spawn starts for it.
+	//
+	// scheduledBy is the identifier of the event whose transition returned this
+	// effect, or zero when the server started the transition itself. It is
+	// handed over rather than re-derived because FR-58 requires every
+	// library-produced error to name the causal identifier where one exists,
+	// and the errors the public adapter raises against an emitted event are
+	// raised before any identifier of their own is minted.
+	//
+	// A nil Run is a mistake rather than a no-op, and execute refuses it with a
+	// failure event: an effect that never runs is a change that never happens.
+	Run func(ctx context.Context, p Peer[I], scheduledBy uint64, emit Emit) error
 }
 
 // Peer is the immutable pair a session is bound to.
-type Peer struct {
+type Peer[I IIdentity] struct {
 	// ID is the sixteen server-minted bytes naming this session, carried on
 	// every frame in both directions.
 	ID ID
 
 	// Identity is the authenticated principal, derived once from the upgrade
-	// request. It never changes for the life of the session.
-	Identity IIdentity
+	// request, as the application's own type. It never changes for the life of
+	// the session.
+	Identity I
 }
 
 // Field is one form value carried by an event.
@@ -194,37 +214,22 @@ type Emit func(event Event) error
 // state as an opaque value, so something has to be the seam where the type
 // assertion happens exactly once. That seam is this interface, and every
 // method of it is called only from the actor goroutine except Authorize.
-type IApp interface {
+type IApp[I IIdentity] interface {
 	// Init produces the session's initial state and any startup effects. It
 	// runs once, as the first transition, before the first snapshot.
-	Init(ctx context.Context, p Peer) (state any, effects []IEffect, err error)
+	Init(ctx context.Context, p Peer[I]) (state any, effects []Effect[I], err error)
 
 	// Authorize runs before the reducer for every event, at the single
 	// mailbox ingress. It is the one method called from the read pump rather
 	// than from the actor goroutine, because refusing an event before it
 	// occupies a mailbox slot is the entire point of where it sits.
-	Authorize(ctx context.Context, p Peer, ev Event) error
+	Authorize(ctx context.Context, p Peer[I], ev Event) error
 
 	// Reduce is the pure state transition.
-	Reduce(state any, ev Event) (any, []IEffect)
-
-	// Execute performs one effect at the actor boundary, for the peer whose
-	// transition returned it. The peer is passed rather than assumed because
-	// an effect acts on the session's behalf and its identity is an input to
-	// what it does.
-	//
-	// scheduledBy is the identifier of the event whose transition returned this
-	// effect, or zero when the server started the transition itself. It is a
-	// parameter rather than something the implementation re-derives — it cannot
-	// — because FR-58 requires every library-produced error to name the causal
-	// identifier where one exists, and the errors the adapter raises against an
-	// emitted event are raised before any identifier of their own is minted.
-	// This is the one that exists, and it is what an operator holding the
-	// failure needs in order to reach the interaction behind it.
-	Execute(ctx context.Context, p Peer, e IEffect, scheduledBy uint64, emit Emit) error
+	Reduce(state any, ev Event) (any, []Effect[I])
 
 	// Teardown runs after the actor exits, with final state.
-	Teardown(ctx context.Context, p Peer, state any)
+	Teardown(ctx context.Context, p Peer[I], state any)
 
 	// Registry returns the application's fragments.
 	Registry() *render.Registry

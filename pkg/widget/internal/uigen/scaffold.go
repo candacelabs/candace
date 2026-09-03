@@ -49,8 +49,13 @@ func emitScaffold(document *ir.Document, identifiers *names, options Options) ([
 // writeImports emits exactly the imports the emitted code uses. strconv is the
 // only conditional one: a widget whose every state field is text formats
 // nothing.
+//
+// fmt left this list on 2026-09-03 with the Effect method that was its only
+// user. A generated widget schedules no effect, and now that a [live.Effect]
+// carries its own Run there is no method for one to arrive at wrongly, so
+// there is nothing left to format an error about.
 func writeImports(source *strings.Builder, document *ir.Document) {
-	source.WriteString("import (\n\t\"context\"\n\t\"fmt\"\n")
+	source.WriteString("import (\n\t\"context\"\n")
 	if needsStrconv(document) {
 		source.WriteString("\t\"strconv\"\n")
 	}
@@ -188,15 +193,26 @@ func goType(field *ir.StateField) string {
 	}
 }
 
-// writeLifecycle emits the seven methods of the SDK's widget contract.
+// writeLifecycle emits the six methods of the SDK's widget contract, plus the
+// optional dirty declaration.
 func writeLifecycle(source *strings.Builder, document *ir.Document, identifiers *names) {
 	fmt.Fprintf(source, "// %s is the generated %s widget.\n", identifiers.widgetType, document.Name)
-	fmt.Fprintf(source, "type %s struct{}\n\n", identifiers.widgetType)
-	fmt.Fprintf(source, "// %s returns the widget a host registers.\n", identifiers.constructor)
-	fmt.Fprintf(source, "func %s() *%s { return &%s{} }\n\n",
+	fmt.Fprintf(source, "//\n")
+	fmt.Fprintf(source, "// I is the HOST's identity type, threaded through and never read: a widget\n")
+	fmt.Fprintf(source, "// document names no host, no address and no credential, so nothing here can\n")
+	fmt.Fprintf(source, "// look at an identity. It is a type parameter because the SDK's contract\n")
+	fmt.Fprintf(source, "// carries one — live.Session stopped erasing the application's identity type\n")
+	fmt.Fprintf(source, "// on 2026-09-03 — and a generated widget must fit whatever host registers it.\n")
+	fmt.Fprintf(source, "type %s[I live.IIdentity] struct{}\n\n", identifiers.widgetType)
+	fmt.Fprintf(source, "// %s returns the widget a host registers, instantiated on that\n", identifiers.constructor)
+	fmt.Fprintf(source, "// host's own identity type.\n")
+	fmt.Fprintf(source, "func %s[I live.IIdentity]() *%s[I] { return &%s[I]{} }\n\n",
 		identifiers.constructor, identifiers.widgetType, identifiers.widgetType)
-	fmt.Fprintf(source, "var (\n\t_ widget.IWidget[%s]        = (*%s)(nil)\n"+
-		"\t_ widget.IDirtyDeclarer[%s] = (*%s)(nil)\n)\n\n",
+	fmt.Fprintf(source, "// The contract, asserted at one instantiation. Anonymous is the identity a\n")
+	fmt.Fprintf(source, "// host with no accounts uses, and any other I satisfies the same interfaces:\n")
+	fmt.Fprintf(source, "// nothing below branches on it.\n")
+	fmt.Fprintf(source, "var (\n\t_ widget.IWidget[%s, live.AnonymousIdentity]        = (*%s[live.AnonymousIdentity])(nil)\n"+
+		"\t_ widget.IDirtyDeclarer[%s] = (*%s[live.AnonymousIdentity])(nil)\n)\n\n",
 		identifiers.stateType, identifiers.widgetType,
 		identifiers.stateType, identifiers.widgetType)
 
@@ -205,7 +221,6 @@ func writeLifecycle(source *strings.Builder, document *ir.Document, identifiers 
 	writeReduce(source, document, identifiers)
 	writeRender(source, identifiers)
 	writeDirty(source, document, identifiers)
-	writeEffect(source, identifiers)
 	writeUnmount(source, identifiers)
 	writeSnapshot(source, document, identifiers)
 }
@@ -230,7 +245,7 @@ func writeRegister(source *strings.Builder, document *ir.Document, identifiers *
 	fmt.Fprintf(source, "//\n")
 	fmt.Fprintf(source, "// Events are the names a browser may send; Internal are the names only a\n")
 	fmt.Fprintf(source, "// declared stream delivers, which the host routes without registering.\n")
-	fmt.Fprintf(source, "func (instance *%s) Register() widget.Registration {\n", identifiers.widgetType)
+	fmt.Fprintf(source, "func (instance *%s[I]) Register() widget.Registration {\n", identifiers.widgetType)
 	source.WriteString("\treturn widget.Registration{\n")
 	fmt.Fprintf(source, "\t\tName:   %s,\n\t\tRegion: %s,\n", identifiers.nameConst, identifiers.regionConst)
 
@@ -319,8 +334,8 @@ func writeMount(source *strings.Builder, identifiers *names) {
 	fmt.Fprintf(source, "// Mount opens one session's copy of the widget. It schedules no effect: the\n")
 	fmt.Fprintf(source, "// streams this widget declared are the host's to open, because a widget document\n")
 	fmt.Fprintf(source, "// names no host, no address and no credential.\n")
-	fmt.Fprintf(source, "func (instance *%s) Mount(\n\tctx context.Context, session live.Session,\n"+
-		") (%s, []live.IEffect, error) {\n", identifiers.widgetType, identifiers.stateType)
+	fmt.Fprintf(source, "func (instance *%s[I]) Mount(\n\tctx context.Context, session live.Session[I],\n"+
+		") (%s, []live.Effect[I], error) {\n", identifiers.widgetType, identifiers.stateType)
 	fmt.Fprintf(source, "\treturn %s{}, nil, nil\n}\n\n", identifiers.stateType)
 }
 
@@ -329,8 +344,8 @@ func writeMount(source *strings.Builder, identifiers *names) {
 func writeReduce(source *strings.Builder, document *ir.Document, identifiers *names) {
 	fmt.Fprintf(source, "// Reduce is the pure transition from one state to the next. It performs no I/O,\n")
 	fmt.Fprintf(source, "// reads no clock and mutates nothing it was given.\n")
-	fmt.Fprintf(source, "func (instance *%s) Reduce(\n\tstate %s, event live.Event,\n"+
-		") (%s, []live.IEffect) {\n",
+	fmt.Fprintf(source, "func (instance *%s[I]) Reduce(\n\tstate %s, event live.Event,\n"+
+		") (%s, []live.Effect[I]) {\n",
 		identifiers.widgetType, identifiers.stateType, identifiers.stateType)
 	source.WriteString("\tcurrent := state\n")
 
@@ -404,7 +419,7 @@ func signalFields(document *ir.Document) []*ir.StateField {
 func writeRender(source *strings.Builder, identifiers *names) {
 	fmt.Fprintf(source, "// Render draws the widget's live region. It is a pure function of state:\n")
 	fmt.Fprintf(source, "// equal state renders byte-identical markup.\n")
-	fmt.Fprintf(source, "func (instance *%s) Render(state %s) templ.Component {\n",
+	fmt.Fprintf(source, "func (instance *%s[I]) Render(state %s) templ.Component {\n",
 		identifiers.widgetType, identifiers.stateType)
 	fmt.Fprintf(source, "\treturn %s(state)\n}\n\n", identifiers.viewFunc)
 }
@@ -420,7 +435,7 @@ func writeRender(source *strings.Builder, identifiers *names) {
 func writeDirty(source *strings.Builder, document *ir.Document, identifiers *names) {
 	fmt.Fprintf(source, "// Dirty reports whether a transition may have changed this widget's markup: the\n")
 	fmt.Fprintf(source, "// state fields its bindings, its predicates and its tick read, and no others.\n")
-	fmt.Fprintf(source, "func (instance *%s) Dirty(previous %s, next %s) bool {\n",
+	fmt.Fprintf(source, "func (instance *%s[I]) Dirty(previous %s, next %s) bool {\n",
 		identifiers.widgetType, identifiers.stateType, identifiers.stateType)
 
 	fields := document.DirtyProjection.Fields
@@ -438,28 +453,16 @@ func writeDirty(source *strings.Builder, document *ir.Document, identifiers *nam
 	fmt.Fprintf(source, "\treturn %s\n}\n\n", strings.Join(comparisons, " ||\n\t\t"))
 }
 
-func writeEffect(source *strings.Builder, identifiers *names) {
-	fmt.Fprintf(source, "// Effect performs an effect this widget scheduled. It schedules none, so an\n")
-	fmt.Fprintf(source, "// effect arriving here was routed wrongly — which is reported rather than\n")
-	fmt.Fprintf(source, "// silently succeeded at, because an effect that never runs is a change that\n")
-	fmt.Fprintf(source, "// never happens.\n")
-	fmt.Fprintf(source, "func (instance *%s) Effect(\n"+
-		"\tctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,\n"+
-		") error {\n", identifiers.widgetType)
-	fmt.Fprintf(source, "\treturn fmt.Errorf(\"%%s: schedules no effect, but %%s arrived\", %s, effect.EffectSource())\n}\n\n",
-		identifiers.nameConst)
-}
-
 func writeUnmount(source *strings.Builder, identifiers *names) {
 	fmt.Fprintf(source, "// Unmount releases what the session held. This widget holds nothing.\n")
-	fmt.Fprintf(source, "func (instance *%s) Unmount(ctx context.Context, session live.Session, state %s) {}\n\n",
+	fmt.Fprintf(source, "func (instance *%s[I]) Unmount(ctx context.Context, session live.Session[I], state %s) {}\n\n",
 		identifiers.widgetType, identifiers.stateType)
 }
 
 func writeSnapshot(source *strings.Builder, document *ir.Document, identifiers *names) {
 	fmt.Fprintf(source, "// Snapshot projects state into ordered name/value pairs, in state-field\n")
 	fmt.Fprintf(source, "// declaration order.\n")
-	fmt.Fprintf(source, "func (instance *%s) Snapshot(state %s) widget.Snapshot {\n",
+	fmt.Fprintf(source, "func (instance *%s[I]) Snapshot(state %s) widget.Snapshot {\n",
 		identifiers.widgetType, identifiers.stateType)
 	fmt.Fprintf(source, "\treturn widget.Snapshot{\n\t\tWidget: %s,\n", identifiers.nameConst)
 	source.WriteString("\t\tFields: []widget.SnapshotField{\n")

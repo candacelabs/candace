@@ -47,8 +47,8 @@ type State struct{ N int }
 // initialisation is one of the two places it is for: this Config is a literal
 // in this file, so any failure is a startup mistake in it and there is nothing
 // to do with the error but print it and stop.
-var app = live.MustNew(live.Config[State]{
-	Reduce: func(s State, ev live.Event) (State, []live.IEffect) {
+var app = live.MustNew(live.Config[State, live.AnonymousIdentity]{
+	Reduce: func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
 		if ev.Name == EventInc {
 			s.N++
 		}
@@ -58,7 +58,7 @@ var app = live.MustNew(live.Config[State]{
 	Events:       []string{EventInc},
 	Origins:      []string{"http://127.0.0.1:8080"},
 	Authenticate: live.Anonymous,
-	Authorize:    live.AllowAll,
+	Authorize:    live.AllowAll[live.AnonymousIdentity],
 	CSRF:         live.NoCSRFCheck,
 })
 

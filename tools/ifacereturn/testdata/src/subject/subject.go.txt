@@ -51,10 +51,58 @@ func NewMemoryStore() memoryStore { return memoryStore{} }
 // NewMemoryStorePointer returns a concrete pointer: silent.
 func NewMemoryStorePointer() *memoryStore { return nil }
 
-// AllStores returns a slice of interfaces. The slice is not an interface, so
-// this lane is silent for the same reason the lexical one restricts itself to
-// bare results: a container is not one implementation handed back.
-func AllStores() []IStore { return nil }
+// AllStores returns a slice of interfaces. A caller that receives the slice
+// receives the interfaces, so the container is not a boundary.
+func AllStores() []IStore { return nil } // want "AllStores returns the interface subject.IStore"
+
+// View is a struct that carries an interface. A caller that receives one
+// receives the IStore inside it, which is the 2026-09-03 amendment.
+type View struct {
+	Store IStore
+	Name  string
+}
+
+// Inner nests a View, so the reported path has to name both hops.
+type Inner struct {
+	View View
+}
+
+// Recursive is the cycle guard's fixture: a type that reaches itself. Without
+// the visited set the walk would not terminate; with it, the interface below
+// is reported exactly once.
+type Recursive struct {
+	Next  *Recursive
+	Store IStore
+}
+
+// NewView returns a struct carrying an interface: one finding, naming the way
+// through.
+func NewView() View { return View{} } // want "NewView returns View.Store, which is the interface subject.IStore"
+
+// NewViews returns a slice of them, which is the same handover in a container.
+func NewViews() []View { return nil } // want "NewViews returns View.Store, which is the interface subject.IStore"
+
+// NewInner is two hops, and the path says so.
+func NewInner() *Inner { return nil } // want "NewInner returns Inner.View.Store, which is the interface subject.IStore"
+
+// NewRecursive terminates, and reports the one interface once.
+func NewRecursive() *Recursive { return nil } // want "NewRecursive returns Recursive.Store, which is the interface subject.IStore"
+
+// Options carries a callback rather than an implementation. A func-typed field
+// is not followed: a callback is a contract the caller supplies or invokes,
+// not an implementation handed over.
+type Options struct {
+	Authenticate func() IStore
+}
+
+// NewOptions is silent for that reason.
+func NewOptions() Options { return Options{} }
+
+// Plain carries no interface at all: silent.
+type Plain struct{ Name string }
+
+// NewPlain returns it.
+func NewPlain() Plain { return Plain{} }
 
 // Zero returns the caller's own type parameter. types.IsInterface reports true
 // for a type parameter — its underlying type is its constraint — so silence

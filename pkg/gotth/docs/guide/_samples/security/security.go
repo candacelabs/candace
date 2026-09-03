@@ -160,11 +160,11 @@ func (s State) CanPost() bool { return s.Role != RoleObserver }
 // Any error that is neither type is treated as a DenyError. An authorization
 // hook that failed open on a shape it did not anticipate would have the one
 // failure mode an authorization hook must not have.
-func Authorize(_ context.Context, sess live.Session, ev live.Event) error {
-	member, ok := sess.Identity().(Member)
-	if !ok {
-		return &live.FatalDenyError{Reason: "the session identity is not a member of this room"}
-	}
+func Authorize(_ context.Context, sess live.Session[Member], ev live.Event) error {
+	// No assertion. The session is typed by the identity Authenticate produced,
+	// so "the identity is not what I expected" is a compile error rather than a
+	// deny this hook has to remember to write.
+	member := sess.Identity()
 
 	if ev.Name == EventPurge && member.Role != RoleModerator {
 		return &live.DenyError{Reason: member.Name + " is not a moderator and may not purge the room"}
@@ -172,90 +172,75 @@ func Authorize(_ context.Context, sess live.Session, ev live.Event) error {
 	return nil
 }
 
-// PostEffect is the write that leaves the process.
-type PostEffect struct {
-	Author string
-	Body   string
-}
-
-// EffectSource names the effect for provenance and metrics.
-func (PostEffect) EffectSource() string { return "room.post" }
-
-// Reduce is the visible half of the rule.
+// Reducer is the visible half of the rule.
 //
 // The observer's refusal is here, not in Authorize, because this is the only
 // place in the library where a refusal can become markup: the reducer returns a
 // state whose Notice field is rendered by FragmentNotice, and the browser sees
 // a sentence rather than an event that vanished.
 //
-// It is a pure function: it performs no I/O, reads no clock, and returns the
-// write it wants as a value for the executor to perform.
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	switch ev.Name {
-	case EventPost:
-		if !s.CanPost() {
-			s.Notice = ObserverRefusal
-			return s, nil
-		}
-		body := strings.TrimSpace(ev.Fields.Get(FieldBody))
-		if body == "" {
-			s.Notice = "a message needs some words in it"
-			return s, nil
-		}
-		s.Notice = ""
-		return s, []live.IEffect{PostEffect{Author: s.Me, Body: body}}
+// The function it returns is pure: it performs no I/O, reads no clock, and
+// returns the write it wants as a value for the library to perform.
+func Reducer(room *Room) live.Reducer[State, Member] {
+	return func(s State, ev live.Event) (State, []live.Effect[Member]) {
+		switch ev.Name {
+		case EventPost:
+			if !s.CanPost() {
+				s.Notice = ObserverRefusal
+				return s, nil
+			}
+			body := strings.TrimSpace(ev.Fields.Get(FieldBody))
+			if body == "" {
+				s.Notice = "a message needs some words in it"
+				return s, nil
+			}
+			s.Notice = ""
+			return s, []live.Effect[Member]{room.PostEffect(s.Me, body)}
 
-	case EventPurge:
-		s.Notice = ""
-		s.Messages = nil
+		case EventPurge:
+			s.Notice = ""
+			s.Messages = nil
+		}
+		return s, nil
 	}
-	return s, nil
 }
 
 // Room is the application-owned store the effect writes to.
 type Room struct{ Posted []string }
 
-// Execute performs one effect at the actor boundary, and it enforces the same
+// PostEffect is the write that leaves the process, and it enforces the same
 // rule a third time.
 //
-// This is not redundant with Reduce. The reducer's refusal is what a reader
-// SEES; this one is what a reader cannot get past, and it is here because an
-// effect is reachable from anywhere a reducer can be wrong — a new event name,
-// a refactor, a branch nobody replayed. The identity is a parameter of this
-// hook rather than something to fish out of a context, which is what makes an
-// executor that forgot to ask impossible to write.
-func (r *Room) Execute(_ context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
-	member, ok := sess.Identity().(Member)
-	if !ok {
-		return fmt.Errorf("room: the session identity is not a member")
-	}
-
-	switch e := effect.(type) {
-	case PostEffect:
-		if member.Role == RoleObserver {
-			return fmt.Errorf("room: %s is an observer and may not post", member.Name)
-		}
-		r.Posted = append(r.Posted, e.Author+": "+e.Body)
-		return nil
-	default:
-		return fmt.Errorf("room: no executor for effect %q", effect.EffectSource())
+// This is not redundant with the reducer. The reducer's refusal is what a
+// reader SEES; this one is what a reader cannot get past, and it is here
+// because an effect is reachable from anywhere a reducer can be wrong — a new
+// event name, a refactor, a branch nobody replayed. The identity is a parameter
+// of Run rather than something to fish out of a context, which is what makes an
+// effect that forgot to ask impossible to write.
+func (r *Room) PostEffect(author, body string) live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: "room.post",
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			member := sess.Identity()
+			if member.Role == RoleObserver {
+				return fmt.Errorf("room: %s is an observer and may not post", member.Name)
+			}
+			r.Posted = append(r.Posted, author+": "+body)
+			return nil
+		},
 	}
 }
 
 // Config is the application. All four security fields are required — there is
 // no nil that means "off" — so turning a check off is something written down
 // and greppable.
-func Config(room *Room, origins []string) live.Config[State] {
-	return live.Config[State]{
-		Init: func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
-			member, ok := sess.Identity().(Member)
-			if !ok {
-				return State{}, nil, fmt.Errorf("room: the session identity is not a member")
-			}
+func Config(room *Room, origins []string) live.Config[State, Member] {
+	return live.Config[State, Member]{
+		Init: func(ctx context.Context, sess live.Session[Member]) (State, []live.Effect[Member], error) {
+			member := sess.Identity()
 			return State{Me: member.Name, Role: member.Role}, nil, nil
 		},
-		Reduce:  Reduce,
-		Execute: room.Execute,
+		Reduce: Reducer(room),
 		Fragments: []live.Fragment[State]{
 			{
 				ID:     FragmentLog,
@@ -297,10 +282,10 @@ func Config(room *Room, origins []string) live.Config[State] {
 // A real application reads whatever it already trusts here — a session cookie,
 // a bearer token — and turns it into a live.IIdentity. This one reads a header
 // so the sample has no session store in it.
-func Authenticate(r *http.Request) (live.IIdentity, error) {
+func Authenticate(r *http.Request) (Member, error) {
 	name := r.Header.Get("X-Room-Member")
 	if name == "" {
-		return nil, fmt.Errorf("room: no member on the request")
+		return Member{}, fmt.Errorf("room: no member on the request")
 	}
 	role := RoleMember
 	switch r.Header.Get("X-Room-Role") {

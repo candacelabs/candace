@@ -34,7 +34,7 @@ type Card struct {
 	// reduce is the registry's router. A card drives events through it so that
 	// an event named by no registration is refused here exactly as it would be
 	// on the wire.
-	reduce live.Reducer[widget.HostState]
+	reduce live.Reducer[widget.HostState, live.AnonymousIdentity]
 
 	// state is this card's session state. It is a field of a value only the
 	// caller's own goroutine holds; a Card is not safe to drive from two.
@@ -46,23 +46,29 @@ type Card struct {
 // The security posture is the anonymous one, because a card that is rendered and
 // never served has no socket to authenticate: nothing here opens a listener, and
 // [Mount] is the wrong tool for asserting anything about authorization.
-func Mount[S any](ctx context.Context, instance widget.IWidget[S]) (*Card, error) {
-	registry := widget.NewRegistry()
+//
+// That is also why the identity type is fixed rather than a second parameter.
+// A widget is generic in its host's identity type since 2026-09-03, and a card
+// has no host: it instantiates on [live.AnonymousIdentity], the concrete type
+// live.Anonymous produces, which is the honest identity for a session that
+// never opened.
+func Mount[S any](ctx context.Context, instance widget.IWidget[S, live.AnonymousIdentity]) (*Card, error) {
+	registry := widget.NewRegistry[live.AnonymousIdentity]()
 	if registerError := widget.Register(registry, instance); registerError != nil {
 		return nil, registerError
 	}
 
-	config, configError := registry.LiveConfig(widget.MountOptions{
+	config, configError := registry.LiveConfig(widget.MountOptions[live.AnonymousIdentity]{
 		Origins:      []string{"http://127.0.0.1:0"},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 	if configError != nil {
 		return nil, configError
 	}
 
-	state, _, initError := config.Init(ctx, live.Session{})
+	state, _, initError := config.Init(ctx, live.Session[live.AnonymousIdentity]{})
 	if initError != nil {
 		return nil, initError
 	}
@@ -87,8 +93,8 @@ func (card *Card) Region() string { return card.region }
 // The effects are returned rather than dropped because "this card scheduled
 // none" is a thing worth asserting: a widget that schedules an effect a host
 // cannot execute is a change that never happens.
-func (card *Card) Apply(events ...live.Event) []live.IEffect {
-	var scheduled []live.IEffect
+func (card *Card) Apply(events ...live.Event) []live.Effect[live.AnonymousIdentity] {
+	var scheduled []live.Effect[live.AnonymousIdentity]
 	for _, event := range events {
 		if event.FragmentID == "" {
 			event.FragmentID = card.region

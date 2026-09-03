@@ -50,7 +50,7 @@ func (st *Store) Load(ctx context.Context) (State, error) {
 }
 
 // Init is Config.Init. It returns exactly what Load returns.
-func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.IEffect, error) {
+func (st *Store) Init(ctx context.Context, session live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 	s, err := st.Load(ctx)
 	return s, nil, err
 }
@@ -62,15 +62,15 @@ func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.IEffec
 // it accepts, and the four security hooks, opted out of here because a sample
 // with one number in it has no identities — and they are written out so this
 // compiles rather than to be copied.
-func (st *Store) App() *live.App[State] {
-	return live.MustNew(live.Config[State]{
+func (st *Store) App() *live.App[State, live.AnonymousIdentity] {
+	return live.MustNew(live.Config[State, live.AnonymousIdentity]{
 		Init:         st.Init,
-		Reduce:       func(s State, _ live.Event) (State, []live.IEffect) { return s, nil },
+		Reduce:       func(s State, _ live.Event) (State, []live.Effect[live.AnonymousIdentity]) { return s, nil },
 		Fragments:    []live.Fragment[State]{{ID: "reading", Render: Page}},
 		Events:       []string{"reading.refresh"},
 		Origins:      []string{"http://127.0.0.1:8080"},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 }

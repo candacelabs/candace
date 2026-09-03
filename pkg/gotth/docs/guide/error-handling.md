@@ -16,7 +16,7 @@ sentinels, because the text is more actionable than an `errors.Is` target.
 
 <!-- sample: errorhandling/errors.go -->
 ```go
-func Start[S any](cfg live.Config[S]) (*live.App[S], error) {
+func Start[S any, I live.IIdentity](cfg live.Config[S, I]) (*live.App[S, I], error) {
 	app, err := live.New(cfg)
 	if err == nil {
 		return app, nil
@@ -183,22 +183,24 @@ the reducer can see is replayable and one that only reaches the wire is not.
 
 <!-- sample: errorhandling/errors.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	if ev.Name != live.EffectFailedEvent {
+func Reducer(reporter *Reporter) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		if ev.Name != live.EffectFailedEvent {
+			return s, nil
+		}
+
+		source := ev.Fields.Get(live.EffectFailedSourceField)
+
+		s.Notice = "could not refresh " + source
+
+		retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
+
+		if retryable && source == SourceFetch && s.Attempts < 3 {
+			s.Attempts++
+			return s, []live.Effect[live.AnonymousIdentity]{reporter.FetchEffect()}
+		}
 		return s, nil
 	}
-
-	source := ev.Fields.Get(live.EffectFailedSourceField)
-
-	s.Notice = "could not refresh " + source
-
-	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
-
-	if retryable && source == (FailedEffect{}).EffectSource() && s.Attempts < 3 {
-		s.Attempts++
-		return s, []live.IEffect{FailedEffect{}}
-	}
-	return s, nil
 }
 ```
 
@@ -240,8 +242,8 @@ that is safe to show.
 
 ### The logging rule, and why the reducer is the wrong place
 
-> **Do not log from inside the reducer.** Log the failure from
-> `Config.Execute`, which is already at the actor boundary.
+> **Do not log from inside the reducer.** Log the failure from the effect's own
+> `Run`, which is already at the actor boundary.
 
 This is not a style preference. FR-16 names *"logging of application data"* as
 I/O and requires it to run on the session actor **after** the reducer returns,
@@ -255,53 +257,54 @@ So the three fields split by what a reducer is allowed to do with them:
 | Field | In the reducer | Where the log line goes |
 |---|---|---|
 | `EffectFailedSourceField` | render it, branch on it | — |
-| `EffectFailedErrorField` | **never render it, never log it** | `Config.Execute`, or the `slog.Handler` you give `Config.Logger` |
+| `EffectFailedErrorField` | **never render it, never log it** | the effect's own `Run`, or the `slog.Handler` you give `Config.Logger` |
 | `EffectFailedRetryableField` | branch on it | — |
 
-The executor holds the error **value**, which is strictly more than the event
+The effect holds the error **value**, which is strictly more than the event
 carries: it can classify it, unwrap it, or pull structured fields off it with
 `errors.As`, none of which survives the flattening into the event's string.
 
 <!-- sample: errorhandling/errors.go -->
 ```go
-func (r *Reporter) Execute(ctx context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
-	if _, ok := effect.(FailedEffect); !ok {
-		return fmt.Errorf("errorhandling: no executor for %T", effect)
-	}
+func (r *Reporter) FetchEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceFetch,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			err := r.Fetch(ctx)
+			if err == nil {
+				return nil
+			}
 
-	err := r.Fetch(ctx)
-	if err == nil {
-		return nil
+			r.Log.ErrorContext(ctx, "effect failed",
+				slog.String("session", sess.ID().String()),
+				slog.String("source", SourceFetch),
+				slog.String("error", err.Error()),
+				slog.Bool("retryable", live.IsRetryable(err)))
+			return err
+		},
 	}
-
-	r.Log.ErrorContext(ctx, "effect failed",
-		slog.String("session", sess.ID().String()),
-		slog.String("source", effect.EffectSource()),
-		slog.String("error", err.Error()),
-		slog.Bool("retryable", live.IsRetryable(err)))
-	return err
 }
 ```
 
-**The library writes no record of an error your executor returns.** It turns the
+**The library writes no record of an error your effect returns.** It turns the
 error into the failure event and counts it in
 `gotthlive_effects_total{result="error"}` when `Config.Metrics` is set — that is
 all. The line above is the only one there will be, which is the concrete reason
-it belongs in the executor rather than in the reducer that reads the event a
+it belongs in the effect rather than in the reducer that reads the event a
 moment later.
 
 **A panicking effect is the other half, and it has a different logger.** It
 never reaches that `return err`: the library recovers it, logs it at error level
 to `Config.Logger` with the session, the effect source, the event that scheduled
 it and the stack, counts `gotthlive_panics_total{site="effect"}`, and
-synthesizes the same failure event classified **terminal**. Setting `Execute`
-and leaving `Logger` nil therefore logs one half of your effect failures and
-drops the other half silently:
+synthesizes the same failure event classified **terminal**. Logging from your
+effects and leaving `Logger` nil therefore logs one half of your effect failures
+and drops the other half silently:
 
 <!-- sample: errorhandling/errors.go -->
 ```go
-func WireLogging(cfg live.Config[State], r *Reporter, logger *slog.Logger) live.Config[State] {
-	cfg.Execute = r.Execute
+func WireLogging(cfg live.Config[State, live.AnonymousIdentity], r *Reporter, logger *slog.Logger) live.Config[State, live.AnonymousIdentity] {
+	cfg.Reduce = Reducer(r)
 	cfg.Logger = logger
 	return cfg
 }

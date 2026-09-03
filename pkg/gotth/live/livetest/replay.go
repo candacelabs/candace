@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/candacelabs/candace/pkg/gotth/live"
@@ -18,9 +19,22 @@ import (
 // fails it, and those three are the whole of what usually goes wrong: nothing
 // else in a pure function of two values can differ between runs.
 //
-// The comparison is deep, so effects declared as data are compared by value —
-// which is why effects must be plain values and not closures over live handles.
-func ReplayN[S any](tb testing.TB, reduce live.Reducer[S], initial S, log []live.Event, n int) {
+// State is compared deeply. Effects are compared by the SEQUENCE OF SOURCES
+// they were declared under, because [live.Effect] carries its behaviour in a
+// function field and Go cannot compare two function values: two closures built
+// by the same line of the same reducer are never equal, so a deep comparison of
+// effects would fail every determinism check rather than passing the honest
+// ones.
+//
+// That is a narrowing, and it is worth stating plainly. Before the 2026-09-03
+// ruling made the effect concrete, an effect was a comparable struct and this
+// harness caught a reducer that scheduled `Change{Delta: 1}` on one run and
+// `Change{Delta: 2}` on the next. It now catches a reducer that scheduled a
+// DIFFERENT effect, or a different number of them, or them in a different
+// order — the shape a clock, a random source or a map range actually produces —
+// and no longer catches the same effect carrying a different argument. An
+// effect worth telling apart is therefore worth naming apart.
+func ReplayN[S any, I live.IIdentity](tb testing.TB, reduce live.Reducer[S, I], initial S, log []live.Event, n int) {
 	tb.Helper()
 
 	if n < 2 {
@@ -41,24 +55,33 @@ func ReplayN[S any](tb testing.TB, reduce live.Reducer[S], initial S, log []live
 				"A reducer must be a pure function of (state, event). The usual causes are a clock, "+
 				"a random source, or ranging over a map.", run, wantState, run, gotState)
 		}
-		if !reflect.DeepEqual(wantEffects, gotEffects) {
-			tb.Fatalf("livetest.ReplayN: replay %d produced different effects than replay 1.\n"+
-				"  replay 1: %#v\n  replay %d: %#v\n"+
-				"Effects must be declared as values a test can compare, never closures over live handles.",
+		if !slices.Equal(wantEffects, gotEffects) {
+			tb.Fatalf("livetest.ReplayN: replay %d scheduled different effects than replay 1.\n"+
+				"  replay 1: %q\n  replay %d: %q\n"+
+				"Effects are compared by the sources they were declared under, because Effect.Run is a "+
+				"function value and Go cannot compare two of those.",
 				run, wantEffects, run, gotEffects)
 		}
 	}
 }
 
-func fold[S any](reduce live.Reducer[S], initial S, log []live.Event) (S, []live.IEffect) {
+// fold runs the log once and returns the final state with the sources of every
+// effect the reducer scheduled, in order.
+//
+// The sources rather than the effects, for the reason ReplayN's own doc gives:
+// a slice of [live.Effect] holds function values, which compare equal only when
+// both are nil.
+func fold[S any, I live.IIdentity](reduce live.Reducer[S, I], initial S, log []live.Event) (S, []string) {
 	state := initial
-	var effects []live.IEffect
+	var sources []string
 	for _, ev := range log {
-		var produced []live.IEffect
+		var produced []live.Effect[I]
 		state, produced = reduce(state, ev)
-		effects = append(effects, produced...)
+		for _, effect := range produced {
+			sources = append(sources, effect.Source)
+		}
 	}
-	return state, effects
+	return state, sources
 }
 
 // AssertDirtyComplete replays a log against a configuration and fails if any
@@ -71,7 +94,7 @@ func fold[S any](reduce live.Reducer[S], initial S, log []live.Event) (S, []live
 //
 // Over-declaring is not a failure: a render whose bytes did not change is
 // suppressed, so declaring too much costs a comparison and nothing else.
-func AssertDirtyComplete[S any](tb testing.TB, cfg live.Config[S], initial S, log []live.Event) {
+func AssertDirtyComplete[S any, I live.IIdentity](tb testing.TB, cfg live.Config[S, I], initial S, log []live.Event) {
 	tb.Helper()
 
 	if len(cfg.Fragments) == 0 {

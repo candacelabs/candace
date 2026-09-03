@@ -274,11 +274,11 @@ The rule therefore divides by whether the person refused has to be told:
 
 <!-- sample: security/security.go -->
 ```go
-func Authorize(_ context.Context, sess live.Session, ev live.Event) error {
-	member, ok := sess.Identity().(Member)
-	if !ok {
-		return &live.FatalDenyError{Reason: "the session identity is not a member of this room"}
-	}
+func Authorize(_ context.Context, sess live.Session[Member], ev live.Event) error {
+	// No assertion. The session is typed by the identity Authenticate produced,
+	// so "the identity is not what I expected" is a compile error rather than a
+	// deny this hook has to remember to write.
+	member := sess.Identity()
 
 	if ev.Name == EventPurge && member.Role != RoleModerator {
 		return &live.DenyError{Reason: member.Name + " is not a moderator and may not purge the room"}
@@ -308,12 +308,11 @@ has to be seen, and it is made in the reducer:
 event that vanished. The reducer stays pure: it sets state and returns no
 effect.
 
-And the same rule is enforced a third time, in the executor, which is **not**
-redundant:
+And the same rule is enforced a third time, inside the effect's own `Run`, which
+is **not** redundant:
 
 <!-- sample: security/security.go -->
 ```go
-	case PostEffect:
 		if member.Role == RoleObserver {
 			return fmt.Errorf("room: %s is an observer and may not post", member.Name)
 		}
@@ -322,8 +321,8 @@ redundant:
 The reducer's refusal is what a reader **sees**; this one is what a reader
 **cannot get past**, and it is here because an effect is reachable from anywhere
 a reducer can be wrong — a new event name, a refactor, a branch nobody replayed.
-The identity is a parameter of `Execute` rather than something to fish out of a
-context, which is what makes an executor that forgot to ask impossible to write.
+The identity is a parameter of `Run` rather than something to fish out of a
+context, which is what makes an effect that forgot to ask impossible to write.
 
 **Rendering the button is courtesy, not enforcement.** A disabled composer and a
 hidden purge button are good UX and no part of the security posture; a browser
@@ -466,7 +465,7 @@ in the file. That is stated in three documents and is a decision, not a gap.
       `0.0.0.0`, no wildcard
 - [ ] Nothing in the deployment reaches for `live.AnyOrigin`; one `grep`
       confirms it
-- [ ] `Authenticate` derives an `IIdentity` whose `Subject()` is stable and is
+- [ ] `Authenticate` derives an identity whose `Subject()` is stable and is
       **not** a token
 - [ ] `CSRF` is a real token bound to the application session, unless the
       application is single-origin **and** `Origins` is a real allowlist

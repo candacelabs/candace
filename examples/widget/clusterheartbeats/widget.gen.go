@@ -7,7 +7,6 @@ package clusterheartbeats
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -85,21 +84,31 @@ type ClusterHeartbeatsState struct {
 }
 
 // ClusterHeartbeats is the generated ClusterHeartbeats widget.
-type ClusterHeartbeats struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type ClusterHeartbeats[I live.IIdentity] struct{}
 
-// NewClusterHeartbeats returns the widget a host registers.
-func NewClusterHeartbeats() *ClusterHeartbeats { return &ClusterHeartbeats{} }
+// NewClusterHeartbeats returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewClusterHeartbeats[I live.IIdentity]() *ClusterHeartbeats[I] { return &ClusterHeartbeats[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[ClusterHeartbeatsState]        = (*ClusterHeartbeats)(nil)
-	_ widget.IDirtyDeclarer[ClusterHeartbeatsState] = (*ClusterHeartbeats)(nil)
+	_ widget.IWidget[ClusterHeartbeatsState, live.AnonymousIdentity] = (*ClusterHeartbeats[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[ClusterHeartbeatsState]                  = (*ClusterHeartbeats[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *ClusterHeartbeats) Register() widget.Registration {
+func (instance *ClusterHeartbeats[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     ClusterHeartbeatsName,
 		Region:   ClusterHeartbeatsRegion,
@@ -126,17 +135,17 @@ func (instance *ClusterHeartbeats) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *ClusterHeartbeats) Mount(
-	ctx context.Context, session live.Session,
-) (ClusterHeartbeatsState, []live.IEffect, error) {
+func (instance *ClusterHeartbeats[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (ClusterHeartbeatsState, []live.Effect[I], error) {
 	return ClusterHeartbeatsState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *ClusterHeartbeats) Reduce(
+func (instance *ClusterHeartbeats[I]) Reduce(
 	state ClusterHeartbeatsState, event live.Event,
-) (ClusterHeartbeatsState, []live.IEffect) {
+) (ClusterHeartbeatsState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case ClusterHeartbeatsEventToggleMotion:
@@ -176,13 +185,13 @@ func (instance *ClusterHeartbeats) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *ClusterHeartbeats) Render(state ClusterHeartbeatsState) templ.Component {
+func (instance *ClusterHeartbeats[I]) Render(state ClusterHeartbeatsState) templ.Component {
 	return ClusterHeartbeatsView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *ClusterHeartbeats) Dirty(previous ClusterHeartbeatsState, next ClusterHeartbeatsState) bool {
+func (instance *ClusterHeartbeats[I]) Dirty(previous ClusterHeartbeatsState, next ClusterHeartbeatsState) bool {
 	return previous.Sequence != next.Sequence ||
 		previous.Connected != next.Connected ||
 		previous.Authoritative != next.Authoritative ||
@@ -195,23 +204,13 @@ func (instance *ClusterHeartbeats) Dirty(previous ClusterHeartbeatsState, next C
 		previous.Degraded != next.Degraded
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *ClusterHeartbeats) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", ClusterHeartbeatsName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *ClusterHeartbeats) Unmount(ctx context.Context, session live.Session, state ClusterHeartbeatsState) {
+func (instance *ClusterHeartbeats[I]) Unmount(ctx context.Context, session live.Session[I], state ClusterHeartbeatsState) {
 }
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *ClusterHeartbeats) Snapshot(state ClusterHeartbeatsState) widget.Snapshot {
+func (instance *ClusterHeartbeats[I]) Snapshot(state ClusterHeartbeatsState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: ClusterHeartbeatsName,
 		Fields: []widget.SnapshotField{

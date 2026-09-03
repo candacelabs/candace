@@ -52,12 +52,12 @@ func text(format string, args ...any) templ.Component {
 // otherwise. Two fragments rather than one, because a single-fragment
 // application cannot exhibit the partial-update behaviour the provenance
 // properties are about.
-func qaConfig() live.Config[tally] {
-	return live.Config[tally]{
-		Init: func(ctx context.Context, session live.Session) (tally, []live.IEffect, error) {
+func qaConfig() live.Config[tally, qaUser] {
+	return live.Config[tally, qaUser]{
+		Init: func(ctx context.Context, session live.Session[qaUser]) (tally, []live.Effect[qaUser], error) {
 			return tally{Label: "hits"}, nil, nil
 		},
-		Reduce: func(state tally, ev live.Event) (tally, []live.IEffect) {
+		Reduce: func(state tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 			switch ev.Name {
 			case "qa.increment":
 				state.N++
@@ -82,8 +82,8 @@ func qaConfig() live.Config[tally] {
 		},
 		Events:       []string{"qa.increment", "qa.relabel", "qa.noop"},
 		Origins:      []string{allowedOrigin},
-		Authenticate: func(request *http.Request) (live.IIdentity, error) { return qaUser("qa"), nil },
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("qa"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }
@@ -233,7 +233,7 @@ func u64s(v any) []uint64 {
 // therefore be killing the session it is measuring — which is exactly the
 // false failure this harness was rewritten to remove.
 type driven struct {
-	app    *live.App[tally]
+	app    *live.App[tally, qaUser]
 	server *httptest.Server
 	conn   *websocket.Conn
 	ctx    context.Context
@@ -252,7 +252,7 @@ type driven struct {
 }
 
 // dial mounts qaConfig, optionally mutated, and connects to it.
-func dial(mutate func(cfg *live.Config[tally])) *driven {
+func dial(mutate func(cfg *live.Config[tally, qaUser])) *driven {
 	GinkgoHelper()
 
 	cfg := qaConfig()

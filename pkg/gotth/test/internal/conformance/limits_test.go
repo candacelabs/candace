@@ -24,7 +24,7 @@ import (
 
 var _ = Describe("An event flood from an authenticated client", func() {
 	It("engages the rate limit, answers typed errors, and closes on sustained abuse", func() {
-		d := dial(func(c *live.Config[tally]) {
+		d := dial(func(c *live.Config[tally, qaUser]) {
 			// A small bucket so the behaviour is reachable in a test rather
 			// than only under a load generator. The shape is the default's.
 			c.Limits.MaxEventsPerSecond = 1
@@ -71,7 +71,7 @@ var _ = Describe("An event flood from an authenticated client", func() {
 	// The error frames a refusal produces must still name the interaction they
 	// refused. An error that cannot be tied to an event is FR-58's defect.
 	It("names the refused interaction on every rejection", func() {
-		d := dial(func(c *live.Config[tally]) {
+		d := dial(func(c *live.Config[tally, qaUser]) {
 			c.Limits.MaxEventsPerSecond = 1
 			c.Limits.EventBurst = 2
 		})
@@ -118,11 +118,11 @@ var _ = Describe("A mailbox at its bound", func() {
 			}
 		}()
 
-		d := dial(func(c *live.Config[tally]) {
+		d := dial(func(c *live.Config[tally, qaUser]) {
 			c.Limits.MailboxDepth = 1
 			c.Limits.MaxEventsPerSecond = 100000
 			c.Limits.EventBurst = 100000
-			c.Reduce = func(s tally, ev live.Event) (tally, []live.IEffect) {
+			c.Reduce = func(s tally, ev live.Event) (tally, []live.Effect[qaUser]) {
 				if ev.Name == "qa.increment" {
 					<-release
 				}
@@ -367,7 +367,7 @@ func mustFrames(d *driven) []*pb.Frame {
 
 var _ = Describe("The coalescing flush trigger an application configures", func() {
 	It("holds P5 at the largest CoalesceFlushAt an application may set", func() {
-		d := dial(func(c *live.Config[tally]) {
+		d := dial(func(c *live.Config[tally, qaUser]) {
 			c.Limits.CoalesceFlushAt = session.MaxCoalesceFlushAt
 			c.Limits.MailboxDepth = 8192
 			c.Limits.MaxEventsPerSecond = 1e6

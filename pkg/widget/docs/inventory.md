@@ -85,7 +85,7 @@ Source: `go/services/candace-cloud/internal/homepage/app.go`.
 | 2.18 | Four-way ordered telemetry text | `TelemetryLabel()` | app.go:120-131 |
 | 2.19 | A numeric field formatted with a fallback | `TermLabel()` — "term —" when disconnected | app.go:133-138 |
 | 2.20 | A pair of numeric fields formatted together | `QuorumLabel()` — "n / m voters alive" | app.go:140-145 |
-| 2.21 | The state transition function | `Reduce(state, event) (State, []live.IEffect)` | app.go:147-182 |
+| 2.21 | The state transition function | `Reducer(feed) live.Reducer[State]` | app.go:147-182 |
 | 2.22 | A toggle transition | `case EventToggleMotion: state.Paused = !state.Paused` | app.go:149-151 |
 | 2.23 | A write-once transition | `case EventBrowserReady:` (ignored when already set) | app.go:153-162 |
 | 2.24 | An external-snapshot transition | `case EventSnapshot: applySnapshot(...)` | app.go:164-165 |
@@ -157,10 +157,10 @@ Source: `go/services/candace-cloud/internal/homepage/home.css`.
 | 5.11 | Region declaration: id, render, dirty | `type Fragment[S any]` | live/core.go:32-50 |
 | 5.12 | Render purity requirement (byte-identical HTML for equal state) | `Fragment.Render` doc | live/core.go:39-43 |
 | 5.13 | Under-declared dirty is a correctness bug | `Fragment.Dirty` doc | live/core.go:45-49 |
-| 5.14 | The transition function's type | `type Reducer[S any] func(state S, ev Event) (S, []IEffect)` | live/core.go:30 |
+| 5.14 | The transition function's type | `type Reducer[S any] func(state S, ev Event) (S, []Effect)` | live/core.go:30 |
 | 5.15 | One inbound interaction | `type Event struct { Name, FragmentID, Fields, At, ID, Contributing }` | live/core.go:57 |
 | 5.16 | Event payload | `type Fields`, `func NewFields(map[string]string)` | live/core.go:120, 139 |
-| 5.17 | A deferred side effect, as a plain value | `type Effect interface { EffectSource() string }` | live/core.go:191-196 |
+| 5.17 | A deferred side effect, as a concrete value carrying its own behaviour | `type Effect struct { Source string; Run func(...) error }` | live/core.go:186-260 |
 | 5.18 | Injecting an event from inside an effect | `type Emitter func(event Event) error` | live/core.go:203 |
 | 5.19 | Failure delivered as an event, not a log line | `EffectFailedEvent`, `EffectFailedSourceField`, `EffectFailedRetryableField` | live/core.go:219, 231, 267 |
 | 5.20 | Backpressure delivered as events | `SlowClientEvent`, `ClientRecoveredEvent` | live/core.go:293-294 |
@@ -201,7 +201,7 @@ so the language can be checked against them.
 | 7.3 | **event in** — an inbound interaction is authorized, then reduced | `Config.Authorize` then `Config.Reduce` (live/config.go:136, 79) |
 | 7.4 | **tick** — an external monotonic advance that is not a user interaction | `Feed.Publish` increments `Sequence` (feed.go:52); `PulseMapID()` turns it into DOM identity (app.go:73) |
 | 7.5 | **state out** — a region re-renders when its dirty predicate says it may have changed | `Fragment.Render` / `Fragment.Dirty` (live/core.go:40-50) |
-| 7.6 | **effect out** — a transition returns plain effect values the host performs | `Reducer` returns `[]IEffect` (live/core.go:30); `Config.Execute` (live/config.go:112) |
+| 7.6 | **effect out** — a transition returns effect values the library performs | `Reducer` returns `[]Effect` (live/core.go:31); `Effect.Run` (live/core.go:252) |
 | 7.7 | **unmount** — per session teardown with the final state | `Config.Teardown` (live/config.go:116); `feed.Leave` (feed.go:80) |
 | 7.8 | **failure in** — a failed effect arrives back as an ordinary event | `EffectFailedEvent` (live/core.go:219); handled at app.go:173 |
 

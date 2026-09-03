@@ -2,22 +2,34 @@ package live
 
 import "github.com/candacelabs/candace/pkg/gotth/internal/livebridge"
 
-// This is the whole of live's side of the livetest session constructor: one
-// assignment, no exported identifier, and nothing a consumer can reach.
+// NewSessionFor builds the [Session] live/livetest hands to a specification.
 //
-// It is an init rather than a var initialiser so that the reason is somewhere a
-// reader will find it. A Session is the pair bound at the handshake, and the
-// reason nothing downstream can mint one is that the fields are unexported —
-// which is also why livetest, a different package, cannot build the Session a
-// spec needs to drive Config.Init, Config.Authorize, Config.Teardown or
-// Config.Execute directly. Exporting a constructor from this package would
-// solve that by putting an identity constructor in every consumer's production
-// import graph, which is the trade the handshake exists to refuse.
+// # Why this is exported, and why exporting it is still safe
 //
-// See internal/livebridge for the containment argument, and internal/arch for
-// the assertion that holds it.
-func init() {
-	livebridge.NewSession = func(id [16]byte, identity livebridge.IIdentity) any {
-		return Session{id: ID(id), identity: identity}
+// A Session is the pair bound at the handshake, and the reason nothing
+// downstream can mint one is that its fields are unexported — which is also why
+// livetest, a different package, cannot build the Session a spec needs to drive
+// Config.Init, Config.Authorize, Config.Teardown or an [Effect.Run] directly.
+//
+// Until 2026-09-03 that was solved by an assignment: live set a function
+// variable in internal/livebridge and livetest read it, so no identifier
+// appeared here at all. A package-level variable cannot be generic, and Session
+// is generic now, so the indirection cannot hold the constructor any more.
+//
+// What replaced it keeps the property rather than the mechanism. The token is
+// obtainable only from internal/livebridge, whose import path is internal to
+// this module and whose importers internal/arch asserts are exactly live and
+// live/livetest. A consumer's handler cannot obtain one, so it cannot call
+// this, which is the same guarantee the old design bought with an `any` and a
+// type assertion — stated in the type system instead of in a comment.
+//
+// It panics on a zero Token rather than returning an error: the only way to
+// hold one is to have composed it from a struct literal, which is a deliberate
+// attempt to reach a constructor this package does not offer.
+func NewSessionFor[I IIdentity](token livebridge.Token, id ID, identity I) Session[I] {
+	if !token.Granted() {
+		panic("gotth-live: live.NewSessionFor was called with a Token nobody granted: " +
+			"a Session is bound at the handshake, and livetest.NewSession is the only way to build one outside it")
 	}
+	return Session[I]{id: id, identity: identity}
 }

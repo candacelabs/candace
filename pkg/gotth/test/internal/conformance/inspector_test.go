@@ -109,13 +109,13 @@ func inspectHTML(s inspectState) string {
 	return b.String()
 }
 
-func inspectConfig() live.Config[inspectState] {
-	return live.Config[inspectState]{
+func inspectConfig() live.Config[inspectState, qaUser] {
+	return live.Config[inspectState, qaUser]{
 		Dev: true, // the switch that serves the inspector and renders its tag
-		Init: func(ctx context.Context, session live.Session) (inspectState, []live.IEffect, error) {
+		Init: func(ctx context.Context, session live.Session[qaUser]) (inspectState, []live.Effect[qaUser], error) {
 			return inspectState{}, nil, nil
 		},
-		Reduce: func(s inspectState, ev live.Event) (inspectState, []live.IEffect) {
+		Reduce: func(s inspectState, ev live.Event) (inspectState, []live.Effect[qaUser]) {
 			if ev.Name == eventBump {
 				s.N++
 			}
@@ -127,8 +127,8 @@ func inspectConfig() live.Config[inspectState] {
 			Dirty:  func(prev, next inspectState) bool { return prev.N != next.N },
 		}},
 		Events:       []string{eventBump},
-		Authenticate: func(request *http.Request) (live.IIdentity, error) { return qaUser("inspector"), nil },
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("inspector"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }

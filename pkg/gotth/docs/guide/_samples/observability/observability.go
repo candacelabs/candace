@@ -32,7 +32,7 @@ import (
 //
 // A nil provider is legal for all three and costs one predictable branch per
 // call site.
-func Instrument[S any](cfg live.Config[S], logger *slog.Logger, mp metric.MeterProvider, tp trace.TracerProvider) live.Config[S] {
+func Instrument[S any, I live.IIdentity](cfg live.Config[S, I], logger *slog.Logger, mp metric.MeterProvider, tp trace.TracerProvider) live.Config[S, I] {
 	cfg.Logger = logger
 	cfg.Metrics = mp
 	cfg.Tracer = tp

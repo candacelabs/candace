@@ -54,9 +54,28 @@ func alertEvent(seq, version uint64, series string, value int) live.Event {
 	})}
 }
 
+// reduce is the reducer under test, bound to a feed the pure specs never reach:
+// the transition builds effects that close over it, and a spec that cares about
+// what an effect DOES builds its own feed and runs the effect.
+var reduce = Reducer(NewFeed(1, time.Hour))
+
+// sources projects what a transition scheduled into the one thing a
+// specification can compare: live.Effect[live.AnonymousIdentity] carries its behaviour in a function
+// field, and Go cannot compare two function values.
+func sources(effects []live.Effect[live.AnonymousIdentity]) []string {
+	if len(effects) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		names = append(names, effect.Source)
+	}
+	return names
+}
+
 var _ = Describe("The reducer", func() {
 	It("folds a reading into the meters and the history", func() {
-		state, effects := Reduce(State{}, sampleEvent(1, baseTime.UnixMilli(), 40, 50, 60))
+		state, effects := reduce(State{}, sampleEvent(1, baseTime.UnixMilli(), 40, 50, 60))
 
 		Expect(effects).To(BeEmpty(), "a reading is data, not a reason to do anything")
 		Expect(state.Reading("cpu")).To(Equal(40))
@@ -69,7 +88,7 @@ var _ = Describe("The reducer", func() {
 
 	It("leaves a paused session's state untouched, which is what makes pausing free", func() {
 		paused := State{Paused: true}
-		next, effects := Reduce(paused, sampleEvent(1, baseTime.UnixMilli(), 40, 50, 60))
+		next, effects := reduce(paused, sampleEvent(1, baseTime.UnixMilli(), 40, 50, 60))
 
 		Expect(effects).To(BeEmpty())
 		// Identity, not equality. An unchanged state is what the library's own
@@ -81,14 +100,14 @@ var _ = Describe("The reducer", func() {
 	})
 
 	It("ignores a reading it has already passed", func() {
-		state, _ := Reduce(State{}, sampleEvent(7, baseTime.UnixMilli(), 40, 50, 60))
-		late, _ := Reduce(state, sampleEvent(3, baseTime.UnixMilli(), 99, 99, 99))
+		state, _ := reduce(State{}, sampleEvent(7, baseTime.UnixMilli(), 40, 50, 60))
+		late, _ := reduce(state, sampleEvent(3, baseTime.UnixMilli(), 99, 99, 99))
 
 		Expect(late).To(Equal(state), "a late or duplicated delivery must not move the meters backwards")
 	})
 
 	It("ignores a reading whose fields are missing or unparseable", func() {
-		state, _ := Reduce(State{}, sampleEvent(1, baseTime.UnixMilli(), 40, 50, 60))
+		state, _ := reduce(State{}, sampleEvent(1, baseTime.UnixMilli(), 40, 50, 60))
 
 		for _, bad := range []live.Event{
 			{Name: EventSample, Fields: live.NewFields(map[string]string{fieldSeq: "not a number"})},
@@ -99,7 +118,7 @@ var _ = Describe("The reducer", func() {
 			{Name: EventSample, Fields: live.NewFields(map[string]string{
 				fieldSeq: "9", fieldAtMilli: "1", "cpu": "10"})},
 		} {
-			next, effects := Reduce(state, bad)
+			next, effects := reduce(state, bad)
 			Expect(effects).To(BeEmpty())
 			Expect(next).To(Equal(state), "a malformed emission must not half-apply")
 		}
@@ -108,7 +127,7 @@ var _ = Describe("The reducer", func() {
 	It("trims the sparkline window and never grows past MaxWindow", func() {
 		state := State{}
 		for i := 1; i <= MaxWindow*2; i++ {
-			state, _ = Reduce(state, sampleEvent(uint64(i), baseTime.UnixMilli(), i%100, 1, 1))
+			state, _ = reduce(state, sampleEvent(uint64(i), baseTime.UnixMilli(), i%100, 1, 1))
 		}
 		Expect(state.Window.values()).To(HaveLen(MaxWindow))
 		Expect(state.Window.values()[MaxWindow-1]).To(Equal((MaxWindow*2)%100),
@@ -116,21 +135,21 @@ var _ = Describe("The reducer", func() {
 	})
 
 	It("folds alerts in feed-revision order and refuses a stale revision", func() {
-		state, _ := Reduce(State{}, alertEvent(4, 9, "cpu", 95))
+		state, _ := reduce(State{}, alertEvent(4, 9, "cpu", 95))
 		Expect(state.AlertEntries()).To(HaveLen(1))
 		Expect(state.AlertVersion()).To(Equal(uint64(9)))
 
-		stale, _ := Reduce(state, alertEvent(2, 5, "memory", 92))
+		stale, _ := reduce(state, alertEvent(2, 5, "memory", 92))
 		Expect(stale).To(Equal(state), "a revision this session has already passed carries nothing new")
 
-		newer, _ := Reduce(state, alertEvent(6, 11, "memory", 92))
+		newer, _ := reduce(state, alertEvent(6, 11, "memory", 92))
 		Expect(newer.AlertEntries()).To(HaveLen(2))
 	})
 
 	It("empties the alert log when somebody clears it, and only on a newer revision", func() {
-		state, _ := Reduce(State{}, alertEvent(4, 9, "cpu", 95))
+		state, _ := reduce(State{}, alertEvent(4, 9, "cpu", 95))
 
-		cleared, effects := Reduce(state, live.Event{Name: EventCleared,
+		cleared, effects := reduce(state, live.Event{Name: EventCleared,
 			Fields: live.NewFields(map[string]string{fieldVersion: "10"})})
 		Expect(effects).To(BeEmpty())
 		Expect(cleared.AlertEntries()).To(BeEmpty())
@@ -138,34 +157,34 @@ var _ = Describe("The reducer", func() {
 	})
 
 	It("turns a probe into an effect carrying the event that asked for it", func() {
-		_, effects := Reduce(State{}, live.Event{Name: EventProbe, ID: 41})
+		_, effects := reduce(State{}, live.Event{Name: EventProbe, ID: 41})
 
-		Expect(effects).To(Equal([]live.IEffect{ProbeEffect{Cause: 41}}),
+		Expect(sources(effects)).To(Equal([]string{SourceProbe}),
 			"without the causal edge the patch that shows the reading names only the subscription")
 	})
 
 	It("turns a clear into an effect carrying the event that asked for it", func() {
-		_, effects := Reduce(State{}, live.Event{Name: EventClear, ID: 42})
-		Expect(effects).To(Equal([]live.IEffect{ClearEffect{Cause: 42}}))
+		_, effects := reduce(State{}, live.Event{Name: EventClear, ID: 42})
+		Expect(sources(effects)).To(Equal([]string{SourceClear}))
 	})
 
 	It("pauses and resumes only this session", func() {
-		paused, _ := Reduce(State{}, live.Event{Name: EventPause})
+		paused, _ := reduce(State{}, live.Event{Name: EventPause})
 		Expect(paused.Paused).To(BeTrue())
 		Expect(paused.FeedLabel()).To(Equal("paused"))
 
-		resumed, _ := Reduce(paused, live.Event{Name: EventResume})
+		resumed, _ := reduce(paused, live.Event{Name: EventResume})
 		Expect(resumed.Paused).To(BeFalse())
 		Expect(resumed.FeedLabel()).To(Equal("live"))
 	})
 
 	It("records the library's backpressure signal and clears it on recovery", func() {
-		degraded, effects := Reduce(State{}, live.Event{Name: live.SlowClientEvent})
+		degraded, effects := reduce(State{}, live.Event{Name: live.SlowClientEvent})
 		Expect(effects).To(BeEmpty())
 		Expect(degraded.Degraded).To(BeTrue())
 		Expect(degraded.StatusLabel()).To(ContainSubstring("falling behind"))
 
-		recovered, _ := Reduce(degraded, live.Event{Name: live.ClientRecoveredEvent})
+		recovered, _ := reduce(degraded, live.Event{Name: live.ClientRecoveredEvent})
 		Expect(recovered.Degraded).To(BeFalse())
 		Expect(recovered.StatusLabel()).To(Equal("keeping up"))
 	})
@@ -180,24 +199,24 @@ var _ = Describe("The reducer", func() {
 		}
 
 		It("re-subscribes when a retryable subscription dies, because a dashboard that stops learning looks right", func() {
-			state, effects := Reduce(State{}, failure(SourceSubscribe, true))
+			state, effects := reduce(State{}, failure(SourceSubscribe, true))
 
-			Expect(effects).To(Equal([]live.IEffect{SubscribeEffect{}}))
+			Expect(sources(effects)).To(Equal([]string{SourceSubscribe}))
 			Expect(state.Notice).To(ContainSubstring(SourceSubscribe))
 		})
 
 		It("does not retry a failure the library did not classify as retryable", func() {
-			_, effects := Reduce(State{}, failure(SourceSubscribe, false))
+			_, effects := reduce(State{}, failure(SourceSubscribe, false))
 			Expect(effects).To(BeEmpty())
 		})
 
 		It("does not retry a different effect even when it is retryable", func() {
-			_, effects := Reduce(State{}, failure(SourceProbe, true))
+			_, effects := reduce(State{}, failure(SourceProbe, true))
 			Expect(effects).To(BeEmpty(), "one probe that failed is not a session that stopped learning")
 		})
 
 		It("keeps the error's own message out of the state that renders", func() {
-			state, _ := Reduce(State{}, failure(SourceSubscribe, true))
+			state, _ := reduce(State{}, failure(SourceSubscribe, true))
 
 			// EffectFailedErrorField carries an error string or a raw panic
 			// value, unredacted, in production, ungated by Config.Dev. The
@@ -211,7 +230,7 @@ var _ = Describe("The reducer", func() {
 
 	It("ignores a synthesized name it has no answer for", func() {
 		state := State{Paused: true}
-		next, effects := Reduce(state, live.Event{Name: "gotth.some_future_signal"})
+		next, effects := reduce(state, live.Event{Name: "gotth.some_future_signal"})
 
 		Expect(effects).To(BeEmpty())
 		Expect(next).To(Equal(state))
@@ -242,7 +261,7 @@ var _ = Describe("Determinism and dirty declarations", func() {
 	}
 
 	It("produces the same state and the same effects on every replay", func() {
-		livetest.ReplayN(GinkgoTB(), Reduce, State{}, log, 32)
+		livetest.ReplayN(GinkgoTB(), reduce, State{}, log, 32)
 	})
 
 	It("declares every fragment that moved", func() {
@@ -393,18 +412,11 @@ var _ = Describe("The feed", func() {
 			"the error has to name the mistake, because the symptom is a dashboard that never updates")
 	})
 
-	It("has no executor for an effect it does not know", func() {
-		feed := NewFeed(1, time.Hour)
-		err := feed.Execute(context.Background(), live.Session{}, unknownEffect{}, func(live.Event) error { return nil })
-
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("no executor"))
-	})
+	// The spec that used to close this block — "has no executor for an effect
+	// it does not know" — went with the executor. An effect this feed does not
+	// own is one this feed cannot be handed, now that a live.Effect[live.AnonymousIdentity] carries its
+	// own Run.
 })
-
-type unknownEffect struct{}
-
-func (unknownEffect) EffectSource() string { return "dashboard.unknown" }
 
 var _ = Describe("Startup", func() {
 	Describe("the Origin allowlist", func() {

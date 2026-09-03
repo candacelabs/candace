@@ -22,7 +22,7 @@ against rather than a substitute for it.
 
 | | |
 |---|---|
-| Error-authoring sites enumerated | **121** at revision 5, **120** at revision 4, **119** at revision 3, **118** at revision 2, **117** as originally walked — in 8 packages of the published module. Every number below except this row and §3.1's, §3.3.1's, §3.3.2's, §3.4's and §5's is the walk's own and is left alone; see the revision notes |
+| Error-authoring sites enumerated | **118** at revision 7, **120** at revision 6, **121** at revision 5, **120** at revision 4, **119** at revision 3, **118** at revision 2, **117** as originally walked — in 8 packages of the published module. Every number below except this row and §3.1's, §3.3.1's, §3.3.2's, §3.4's and §5's is the walk's own and is left alone; see the revision notes |
 | Sites out of scope, each with a reason | **8 packages** — §2.3 |
 | Enumerated sites that failed at least one applicable clause | **25** — the rows marked "**was …**" in §3 |
 | Fixed in code | **25**, all of them, plus **4** defects this walk found that are not error-authoring sites: three log records dropping a causal identifier they were holding, and one error path that logged nothing at all. **29 changes**, at `ba5ce082` (27) and `4d28146f` (2) |
@@ -39,6 +39,32 @@ and still returns 117 at `091dbae8`. **No verdict QA-1 checked has been reversed
 in either revision.** Revision 3 does rewrite the `S` column of five §3.4 rows,
 and the reason is QA-1's own F-1: the code moved so that what those cells claim
 is true of every path, and the cells now say which path each clause is met on.
+
+**Revision 7 — 2026-09-03, the second removal of the same day, and the one with
+the sharper argument.** `live.Session` became generic in the application's
+identity type (operator ruling: *"`func (s Session) Identity() IIdentity` RETURN
+TYPE IS IIDENTITY FUCK YOU"*), so `Config.Authenticate` returns the
+APPLICATION's own type and "returned no identity and no error" stopped being a
+result it can produce. **Two** errors answered that shape and both are gone:
+`live/app.go`'s authenticate adapter, deleted with the adapter, and
+`live/page.go`'s `errNoIdentity`. **The count is 120 − 2 = 118**, the census
+moves 39 → 37 for `live`, and §3.1 loses one row while §3.2's adapter row goes
+with the adapter. A type parameter deleting two error messages is the strongest
+form of the argument for it: the failure is not handled better, it is
+unreachable.
+
+**Revision 6 — 2026-09-03, and it is the census firing on a REMOVAL, which it
+had not done before.** `live.Config.Execute` was deleted when `live.Effect`
+became a concrete struct carrying its own `Run` (operator ruling, 2026-09-03;
+`docs/lab/2026-09-03-effects-concrete/entry.md`), and the one error that hook
+authored — *"a reducer returned an effect but Config.Execute is nil"* — went
+with it. **The count is 121 − 1 = 120**, `internal/arch/errors_test.go`'s census
+moves 40 → 39 for `live` in the same commit, and §3.2 records what left and why
+rather than dropping the row silently. **The fifth time the guard has fired**,
+and the first on a deletion: the census is symmetric, which is the property that
+makes it a census rather than a floor. The failure that error described did not
+disappear — it moved to `internal/session`, which refuses an effect whose `Run`
+is nil with a deterministic failure event, and that site was already enumerated.
 
 **Revision 5 — 2026-08-05, DEV-1, and the new error is the repair for a review
 finding rather than a new feature.** L9-1's gate on the page shell
@@ -300,21 +326,22 @@ precisely because *"the error text is more actionable (FR-58) than an
 | `live/app.go:379` | `&session.FatalDenyError{Reason: …}` — translation of the application's own `FatalDenyError` across the adapter boundary. Renders through `internal/session`'s copy (§3.6) | ↑ via `ingress.go:182`'s `Error` record: `session_id`, `subject`, `event_name`, `event_id` | ↑ via the same record | ✓ *"event denied, closing the connection: <reason>"* | PASS |
 | `live/app.go:383` | `&session.DenyError{Reason: …}` — same, survivable | ↑ via `ingress.go:192`'s record, which is `Warn` rather than `Error` because a survivable denial is the authorization hook working | ↑ via the same record: `event_name`, `event_id` | ✓ | PASS |
 | `live/app.go:388` | `&session.DenyError{Reason: err.Error()}` — an authorization hook that returned an unrecognised error shape is treated as a denial, so a hook cannot fail open | ↑ via the same `Warn` record | ↑ via the same record | ✓ — the hook's own message is carried through verbatim as the reason | PASS |
-| `live/app.go:398` | *"gotth-live: a reducer returned an effect but Config.Execute is nil: set it, or return no effects"* | n/a — see below | n/a — see below | ✓ | PASS |
 | `live/app.go:412` | *"gotth-live: session `<id>`: an event emitted by an effect scheduled by event N set Event.ID to M: causal identifiers are minted by the server, so leave it zero…"* | ✓ | ✓ | ✓ | PASS — **was ✗ on S and C**, §4.1 |
 | `live/app.go:418` | *"…set Event.At: the actor boundary stamps it, so leave it zero"* | ✓ | ✓ | ✓ | PASS — **was ✗ on S and C**, §4.1 |
 | `live/app.go:436` | *"…listed N identifiers in Event.Contributing, above the limit of 64: name the events whose state changes this event carries, not every event the session has seen"* | ✓ | ✓ | ✓ | PASS — **was ✗ on S and C**, §4.1 |
 | `live/app.go:444` | *"…listed 0 in Event.Contributing: list the identifiers of real events, or leave the field nil"* | ✓ | ✓ | ✓ | PASS — **was ✗ on S and C**, §4.1 |
-| `live/app.go:574` | *"gotth-live: the authentication hook returned no identity and no error: return one or the other"* | n/a (pre-session) | n/a (pre-session) | ✓ | PASS |
 | `live/app.go:595` | *"gotth-live: fragment %q rendered no component: return a templ component rather than nil — an empty one for the state that has nothing to show"* | ↑ via the actor's render-failure record, which carries `session_id`, `fragment_id`, `event_id` and `transition_id` | ↑ via the same record | ✓ | PASS — **the fragment was unnamed**, §4.4 |
 
-**`live/app.go:398`'s inapplicability is worth stating, because it is the one
-row where "no session" is a judgement rather than an observation.** A session
-exists when this fires — a reducer returned an effect, so a connection is open.
-But the fact being reported is that `Config.Execute` is `nil`, which is a
-property of the Config and identical on every session in the process; naming one
-would suggest the mistake is that session's. This is the row a reviewer should
-push back on first if they disagree with any of them.
+**One row left this section on 2026-09-03, and it is worth recording rather
+than deleting silently.** `live/app.go`'s *"a reducer returned an effect but
+Config.Execute is nil"* was the one row where "no session" was a judgement
+rather than an observation — a session existed when it fired, but the fact
+reported was a property of the Config and identical on every session in the
+process. It is gone because `Config.Execute` is gone: since the effect became a
+concrete struct carrying its own `Run`, a reducer cannot return an effect with
+no executor, and the failure that error described is now
+`internal/session`'s refusal of an effect whose `Run` is nil (§3.7). `live`'s
+census moves **40 → 39** with it.
 
 ### 3.3 `live` — `Script`'s mount-path refusals (`live/templ.go`)
 
@@ -351,7 +378,6 @@ reason: no event, no transition, nothing to be caused by.
 
 | Site | Message as it reads today | S | C | N | Verdict |
 |---|---|---|---|---|---|
-| `live/page.go:153` | *"gotth-live: Config.Authenticate returned no identity and no error on a page request: return one or the other"* | n/a (page request) | n/a (page request) | ✓ — names the hook and the only two legal returns | PASS |
 | `live/page.go:155` | *"gotth-live: the page function returned no component on a page request: return a templ component rather than nil — an empty one for the state that has nothing to show"* | n/a (page request) | n/a (page request) | ✓ — and it answers the follow-up question, which is what to return when there is nothing to show | PASS |
 
 **2 PASS, 0 FAIL.** Both are `errors.New` rather than a private string type

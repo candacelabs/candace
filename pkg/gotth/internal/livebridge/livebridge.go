@@ -29,28 +29,39 @@
 // claim is how one quietly stops being true.
 package livebridge
 
-// IIdentity is live.IIdentity, redeclared because this package cannot import
-// live: live imports this one, to assign NewSession.
+// Token is the capability that makes live's session constructor unreachable
+// from a consumer.
 //
-// The duplication is safe in the direction that matters. Go interfaces are
-// structural, so any live.IIdentity satisfies this and vice versa; if live.IIdentity
-// ever grows a method, this one keeps compiling and keeps meaning less, which
-// the assignment in live/livebridge.go would then have to widen deliberately.
-type IIdentity interface {
-	// Subject is the stable identifier for the authenticated principal, and
-	// the only thing this package needs from an identity: it is what the
-	// per-identity session cap counts and what a log record names.
-	Subject() string
+// # Why the bridge changed shape on 2026-09-03
+//
+// It used to be a function VARIABLE that live assigned at init and livetest
+// read. That worked because live.Session was one type. It is now
+// live.Session[I], parameterized on the application's own identity type
+// (operator ruling: `Identity() IIdentity` was the last erasure in the public
+// surface), and **a package-level variable cannot be generic in Go** — there is
+// no way to store one function that builds a Session[I] for an I the assignment
+// does not know.
+//
+// So the direction inverted. live exports the constructor as a generic
+// function, and this package exports the token it demands. The containment
+// argument is unchanged and is now carried by the token rather than by the
+// indirection: this package's import path is internal to the module, so only
+// live and live/livetest can obtain a Token, and internal/arch asserts that
+// those two are the only importers. A handler in a consumer's own package
+// cannot name the parameter type, so it cannot call the constructor — which is
+// the property the old design bought with an `any` and a type assertion.
+type Token struct {
+	// granted is unexported and unset by anything outside this package, so a
+	// Token cannot be composed from a struct literal elsewhere.
+	granted bool
 }
 
-// NewSession builds a live.Session from a session identifier and an identity.
-// It is set by live at init.
-//
-// The result is an any because live.Session is live's type and this package
-// cannot name it. That is the whole cost of the indirection, it is paid once,
-// and livetest asserts it back immediately — an assertion that cannot fail,
-// because live is the only package that assigns this and the architecture test
-// is what keeps that true.
-//
-// The id is a live.ID, which is a [16]byte.
-var NewSession func(id [16]byte, identity IIdentity) any
+// Grant returns the Token. It is callable only from live and live/livetest,
+// because nothing else in the module may import this package and nothing
+// outside the module can.
+func Grant() Token { return Token{granted: true} }
+
+// Granted reports whether a Token came from Grant rather than from a zero
+// value, so the constructor can refuse a fabricated one loudly rather than
+// building a Session for it.
+func (token Token) Granted() bool { return token.granted }

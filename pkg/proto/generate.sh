@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the pinned protobuf toolchain and regenerate or verify the Liquid Proto
-# contracts owned by the public module's pkg/ tree: liquidproto, boundedbuffer
-# and cron. No host Go/protoc installation is used.
+# contracts owned by the public module's pkg/ tree: liquidproto, boundedbuffer,
+# cron and widget/refinement. No host Go/protoc installation is used.
 #
 # This chain owns the `candace/pkg` -I root. The `candace/<domain>/v1` contract
 # tree has its own chain under go/proto, which reuses the toolchain image built

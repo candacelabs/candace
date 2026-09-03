@@ -14,6 +14,7 @@ go_library(
 go_test(
     name = "patience_test",
     srcs = [
+        "export_test.go",
         "patience_suite_test.go",
         "patience_test.go",
     ],

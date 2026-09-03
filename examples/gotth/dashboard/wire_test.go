@@ -154,7 +154,7 @@ func (p *provenanceLog) eventIDFor(clientRef uint64) (uint64, bool) {
 }
 
 type mounted struct {
-	app    *live.App[State]
+	app    *live.App[State, live.AnonymousIdentity]
 	feed   *Feed
 	meters *Meters
 	prov   *provenanceLog
@@ -168,7 +168,7 @@ type mounted struct {
 // drives feed.Sample itself controls exactly how many server-initiated
 // transitions happen, which is what lets an assertion be "this patch carried
 // these fragments" rather than "eventually something like this arrived".
-func mount(mutate func(*live.Config[State])) *mounted {
+func mount(mutate func(*live.Config[State, live.AnonymousIdentity])) *mounted {
 	GinkgoHelper()
 
 	feed := NewFeed(1, time.Hour)
@@ -522,7 +522,7 @@ var _ = Describe("Batching and debounce", func() {
 	// patches. Everything else is the library's default.
 	const ackWindow = 4
 
-	slowWindow := func(cfg *live.Config[State]) { cfg.Limits.AckWindow = ackWindow }
+	slowWindow := func(cfg *live.Config[State, live.AnonymousIdentity]) { cfg.Limits.AckWindow = ackWindow }
 
 	It("coalesces once the window fills, and the coalesced patch names every contributing event", func() {
 		m := mount(slowWindow)
@@ -656,7 +656,7 @@ func describeAll(frames []*livetest.Frame) []string {
 var _ = Describe("Backpressure under a slow client", func() {
 	const ackWindow = 4
 
-	slowWindow := func(cfg *live.Config[State]) {
+	slowWindow := func(cfg *live.Config[State, live.AnonymousIdentity]) {
 		cfg.Limits.AckWindow = ackWindow
 		// Long enough that the session is not evicted mid-spec: eviction is the
 		// ladder's third stage and QA-2's chaos suite is where it belongs. What

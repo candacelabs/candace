@@ -20,7 +20,7 @@ import (
 func card(view PoolView, sent ...live.Event) widgettest.Rendered {
 	GinkgoHelper()
 
-	mounted, mountError := widgettest.Mount(context.Background(), NewColdstart())
+	mounted, mountError := widgettest.Mount(context.Background(), NewColdstart[live.AnonymousIdentity]())
 	Expect(mountError).ToNot(HaveOccurred())
 	Expect(mounted.Apply(append(
 		[]live.Event{widgettest.Deliver(ColdstartEventPoolReport, ReportFields(view))},
@@ -41,7 +41,7 @@ func serving(sequence uint64) PoolView {
 
 var _ = Describe("The Coldstart card", func() {
 	It("registers one command and one stream-owned event", func() {
-		registration := NewColdstart().Register()
+		registration := NewColdstart[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Events).To(ConsistOf(ColdstartEventPrewarm))
 		Expect(registration.Internal).To(ConsistOf(ColdstartEventPoolReport))

@@ -7,7 +7,6 @@ package blobfish
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -77,21 +76,31 @@ type BlobfishState struct {
 }
 
 // Blobfish is the generated Blobfish widget.
-type Blobfish struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type Blobfish[I live.IIdentity] struct{}
 
-// NewBlobfish returns the widget a host registers.
-func NewBlobfish() *Blobfish { return &Blobfish{} }
+// NewBlobfish returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewBlobfish[I live.IIdentity]() *Blobfish[I] { return &Blobfish[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[BlobfishState]        = (*Blobfish)(nil)
-	_ widget.IDirtyDeclarer[BlobfishState] = (*Blobfish)(nil)
+	_ widget.IWidget[BlobfishState, live.AnonymousIdentity] = (*Blobfish[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[BlobfishState]                  = (*Blobfish[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *Blobfish) Register() widget.Registration {
+func (instance *Blobfish[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     BlobfishName,
 		Region:   BlobfishRegion,
@@ -116,17 +125,17 @@ func (instance *Blobfish) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *Blobfish) Mount(
-	ctx context.Context, session live.Session,
-) (BlobfishState, []live.IEffect, error) {
+func (instance *Blobfish[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (BlobfishState, []live.Effect[I], error) {
 	return BlobfishState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *Blobfish) Reduce(
+func (instance *Blobfish[I]) Reduce(
 	state BlobfishState, event live.Event,
-) (BlobfishState, []live.IEffect) {
+) (BlobfishState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case BlobfishEventReplicaReport:
@@ -161,13 +170,13 @@ func (instance *Blobfish) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *Blobfish) Render(state BlobfishState) templ.Component {
+func (instance *Blobfish[I]) Render(state BlobfishState) templ.Component {
 	return BlobfishView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *Blobfish) Dirty(previous BlobfishState, next BlobfishState) bool {
+func (instance *Blobfish[I]) Dirty(previous BlobfishState, next BlobfishState) bool {
 	return previous.Generation != next.Generation ||
 		previous.StorageClass != next.StorageClass ||
 		previous.Objects != next.Objects ||
@@ -178,22 +187,13 @@ func (instance *Blobfish) Dirty(previous BlobfishState, next BlobfishState) bool
 		previous.CatchingUp != next.CatchingUp
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *Blobfish) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", BlobfishName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *Blobfish) Unmount(ctx context.Context, session live.Session, state BlobfishState) {}
+func (instance *Blobfish[I]) Unmount(ctx context.Context, session live.Session[I], state BlobfishState) {
+}
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *Blobfish) Snapshot(state BlobfishState) widget.Snapshot {
+func (instance *Blobfish[I]) Snapshot(state BlobfishState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: BlobfishName,
 		Fields: []widget.SnapshotField{

@@ -39,10 +39,12 @@ type State struct{ N int }
 // Config is a complete, minimal application, built by a function so the
 // production knobs below have something real to be applied to and a spec can
 // hand the result to live.New.
-func Config(origins []string) live.Config[State] {
-	return live.Config[State]{
-		Init:   func(context.Context, live.Session) (State, []live.IEffect, error) { return State{}, nil, nil },
-		Reduce: func(s State, ev live.Event) (State, []live.IEffect) { s.N++; return s, nil },
+func Config(origins []string) live.Config[State, live.AnonymousIdentity] {
+	return live.Config[State, live.AnonymousIdentity]{
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
+			return State{}, nil, nil
+		},
+		Reduce: func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) { s.N++; return s, nil },
 		Fragments: []live.Fragment[State]{{
 			ID: FragmentValue,
 			Render: func(s State) templ.Component {
@@ -56,7 +58,7 @@ func Config(origins []string) live.Config[State] {
 		Events:       []string{EventTick},
 		Origins:      origins,
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	}
 }
@@ -87,7 +89,7 @@ const MaxHeartbeatInterval = 5 * time.Minute
 // floor and live.New refuses the Config naming Limits.HeartbeatInterval. A
 // path that closes an idle connection in under three seconds is a path to fix
 // rather than a heartbeat to tune.
-func Production[S any](cfg live.Config[S], proxyIdle time.Duration, maxSessions int) live.Config[S] {
+func Production[S any, I live.IIdentity](cfg live.Config[S, I], proxyIdle time.Duration, maxSessions int) live.Config[S, I] {
 	// Dev gates three things — the panic value and stack in an Error frame,
 	// the session inspector's route and script tag, and dev reload's route and
 	// script tag. All three are developer tools and none of them belongs in
@@ -163,7 +165,7 @@ type Deployment struct {
 	// still being drained.
 	Ready *Readiness
 
-	// DrainSessions is (*live.App[S]).Close, whose signature this is. It is a
+	// DrainSessions is (*live.App[S, live.AnonymousIdentity]).Close, whose signature this is. It is a
 	// function rather than the App itself so that one Deployment can drain
 	// several applications and so that this type needs no type parameter.
 	DrainSessions func(context.Context) error

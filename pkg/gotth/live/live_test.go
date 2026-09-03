@@ -58,9 +58,13 @@ type user string
 
 func (u user) Subject() string { return string(u) }
 
-type logEffect struct{ Message string }
-
-func (e logEffect) EffectSource() string { return "test.log" }
+// logEffect is the effect these specs schedule. The source is fixed, because
+// several of them assert on the origin "effect:test.log"; the behaviour is
+// whatever the spec hands it, which is exactly the shape an application's own
+// effect constructor has since live.Effect[user] became a concrete struct.
+func logEffect(run func(ctx context.Context, session live.Session[user], emit live.Emitter) error) live.Effect[user] {
+	return live.Effect[user]{Source: "test.log", Run: run}
+}
 
 func text(format string, args ...any) templ.Component {
 	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
@@ -69,12 +73,12 @@ func text(format string, args ...any) templ.Component {
 	})
 }
 
-func validConfig() live.Config[counter] {
-	return live.Config[counter]{
-		Init: func(ctx context.Context, session live.Session) (counter, []live.IEffect, error) {
+func validConfig() live.Config[counter, user] {
+	return live.Config[counter, user]{
+		Init: func(ctx context.Context, session live.Session[user]) (counter, []live.Effect[user], error) {
 			return counter{Label: "hits"}, nil, nil
 		},
-		Reduce: func(state counter, ev live.Event) (counter, []live.IEffect) {
+		Reduce: func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 			switch ev.Name {
 			case "counter.increment":
 				state.N++
@@ -90,8 +94,8 @@ func validConfig() live.Config[counter] {
 		}},
 		Events:       []string{"counter.increment", "counter.relabel"},
 		Origins:      []string{"https://app.example"},
-		Authenticate: func(request *http.Request) (live.IIdentity, error) { return user("tester"), nil },
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (user, error) { return user("tester"), nil },
+		Authorize:    live.AllowAll[user],
 		CSRF:         live.NoCSRFCheck,
 	}
 }
@@ -102,7 +106,7 @@ var _ = Describe("New", func() {
 	// startup is the difference between a failed deploy and a session that
 	// misbehaves in production.
 	DescribeTable("refuses an incomplete configuration, naming the field",
-		func(field string, break_ func(cfg *live.Config[counter])) {
+		func(field string, break_ func(cfg *live.Config[counter, user])) {
 			cfg := validConfig()
 			break_(&cfg)
 
@@ -117,13 +121,13 @@ var _ = Describe("New", func() {
 		// Init is deliberately not an entry: it is the one optional field of
 		// the eight, and the spec directly below is what holds the default it
 		// takes instead.
-		Entry("no reducer", "Reduce", func(c *live.Config[counter]) { c.Reduce = nil }),
-		Entry("no fragments", "Fragments", func(c *live.Config[counter]) { c.Fragments = nil }),
-		Entry("no events", "Events", func(c *live.Config[counter]) { c.Events = nil }),
-		Entry("no origins", "Origins", func(c *live.Config[counter]) { c.Origins = nil }),
-		Entry("no authentication", "Authenticate", func(c *live.Config[counter]) { c.Authenticate = nil }),
-		Entry("no authorization", "Authorize", func(c *live.Config[counter]) { c.Authorize = nil }),
-		Entry("no CSRF hook", "CSRF", func(c *live.Config[counter]) { c.CSRF = nil }),
+		Entry("no reducer", "Reduce", func(c *live.Config[counter, user]) { c.Reduce = nil }),
+		Entry("no fragments", "Fragments", func(c *live.Config[counter, user]) { c.Fragments = nil }),
+		Entry("no events", "Events", func(c *live.Config[counter, user]) { c.Events = nil }),
+		Entry("no origins", "Origins", func(c *live.Config[counter, user]) { c.Origins = nil }),
+		Entry("no authentication", "Authenticate", func(c *live.Config[counter, user]) { c.Authenticate = nil }),
+		Entry("no authorization", "Authorize", func(c *live.Config[counter, user]) { c.Authorize = nil }),
+		Entry("no CSRF hook", "CSRF", func(c *live.Config[counter, user]) { c.CSRF = nil }),
 	)
 
 	// Config.Init is the one field of the eight New fills in rather than
@@ -222,8 +226,8 @@ var _ = Describe("New", func() {
 	It("accepts the named escape hatches in place of real hooks", func() {
 		cfg := validConfig()
 		cfg.Origins = []string{live.AnyOrigin}
-		cfg.Authenticate = live.Anonymous
-		cfg.Authorize = live.AllowAll
+		cfg.Authenticate = func(request *http.Request) (user, error) { return user("tester"), nil }
+		cfg.Authorize = live.AllowAll[user]
 		cfg.CSRF = live.NoCSRFCheck
 
 		app, err := live.New(cfg)
@@ -266,8 +270,8 @@ var _ = Describe("Fields", func() {
 	// The distinction between an absent key and an empty value is the one that
 	// matters in practice: an unchecked checkbox sends nothing at all.
 	It("distinguishes an absent key from an empty value", func() {
-		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 				if _, ok := ev.Fields.Lookup("checked"); ok {
 					state.Label = "present"
 				} else {
@@ -287,8 +291,8 @@ var _ = Describe("Fields", func() {
 
 	It("iterates in wire order and stops when asked", func() {
 		var seen []string
-		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 				seen = nil
 				ev.Fields.All(func(k, v string) bool {
 					seen = append(seen, k+"="+v)
@@ -689,8 +693,8 @@ var _ = Describe("An application end to end", func() {
 	})
 
 	It("denies an event when the hook says so, without closing the connection", func() {
-		app := mount(func(c *live.Config[counter]) {
-			c.Authorize = func(_ context.Context, s live.Session, ev live.Event) error {
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Authorize = func(_ context.Context, s live.Session[user], ev live.Event) error {
 				Expect(s.Identity().Subject()).To(Equal("tester"))
 				Expect(s.ID().String()).To(HaveLen(32))
 				return &live.DenyError{Reason: "read-only session"}
@@ -704,8 +708,8 @@ var _ = Describe("An application end to end", func() {
 	})
 
 	It("treats an unrecognised authorization error as a denial rather than an allow", func() {
-		app := mount(func(c *live.Config[counter]) {
-			c.Authorize = func(ctx context.Context, session live.Session, event live.Event) error {
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Authorize = func(ctx context.Context, session live.Session[user], event live.Event) error {
 				return errors.New("the policy service is down")
 			}
 		})
@@ -717,21 +721,21 @@ var _ = Describe("An application end to end", func() {
 	})
 
 	It("performs an effect and folds its result back in", func() {
-		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+		relabel := func(_ context.Context, _ live.Session[user], emit live.Emitter) error {
+			return emit(live.Event{
+				Name:   "counter.relabel",
+				Fields: live.Event{}.Fields,
+			})
+		}
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.IEffect{logEffect{Message: "done"}}
+					return state, []live.Effect[user]{logEffect(relabel)}
 				case "counter.relabel":
 					state.Label = ev.Fields.Get("label")
 				}
 				return state, nil
-			}
-			c.Execute = func(_ context.Context, _ live.Session, e live.IEffect, emit live.Emitter) error {
-				return emit(live.Event{
-					Name:   "counter.relabel",
-					Fields: live.Event{}.Fields,
-				})
 			}
 		})
 		defer app.stop()
@@ -747,24 +751,24 @@ var _ = Describe("An application end to end", func() {
 	// be the last hook that did: by the time the effect it permitted actually
 	// ran, the only thing left was the effect value, so an application that
 	// needed the publisher had to smuggle it into the effect itself. The
-	// session Execute receives is the same one every other hook receives, for
-	// the same connection.
+	// session an effect's Run receives is the same one every other hook
+	// receives, for the same connection.
 	It("hands an effect the session it is running for", func() {
-		seen := make(chan live.Session, 1)
-		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
-				return state, []live.IEffect{logEffect{Message: "who"}}
-			}
-			c.Execute = func(_ context.Context, s live.Session, _ live.IEffect, _ live.Emitter) error {
-				seen <- s
-				return nil
+		seen := make(chan live.Session[user], 1)
+		record := func(_ context.Context, s live.Session[user], _ live.Emitter) error {
+			seen <- s
+			return nil
+		}
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
+				return state, []live.Effect[user]{logEffect(record)}
 			}
 		})
 		defer app.stop()
 
 		app.send("counter.increment", nil)
 
-		var s live.Session
+		var s live.Session[user]
 		Eventually(seen).Should(Receive(&s))
 		Expect(s.Identity().Subject()).To(Equal("tester"))
 		Expect(s.ID().String()).To(Equal(hex.EncodeToString(app.id)),
@@ -780,11 +784,14 @@ var _ = Describe("An application end to end", func() {
 	// really synthesises the event, and the reducer's own branch is what
 	// produces the patch this spec reads.
 	It("turns a failed effect into an event the reducer can handle", func() {
-		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+		refuse := func(_ context.Context, _ live.Session[user], _ live.Emitter) error {
+			return errors.New("upstream refused")
+		}
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.IEffect{logEffect{Message: "boom"}}
+					return state, []live.Effect[user]{logEffect(refuse)}
 				case live.EffectFailedEvent:
 					retryable, err := strconv.ParseBool(
 						ev.Fields.Get(live.EffectFailedRetryableField))
@@ -795,9 +802,6 @@ var _ = Describe("An application end to end", func() {
 						retryable)
 				}
 				return state, nil
-			}
-			c.Execute = func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-				return errors.New("upstream refused")
 			}
 		})
 		defer app.stop()
@@ -820,28 +824,28 @@ var _ = Describe("An application end to end", func() {
 			return attempts
 		}
 
-		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+		flaky := func(_ context.Context, _ live.Session[user], _ live.Emitter) error {
+			mu.Lock()
+			attempts++
+			n := attempts
+			mu.Unlock()
+			if n < 3 {
+				return live.Retryable(errors.New("the broker is reconnecting"))
+			}
+			return nil
+		}
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.IEffect{logEffect{Message: "boom"}}
+					return state, []live.Effect[user]{logEffect(flaky)}
 				case live.EffectFailedEvent:
 					if retryable, _ := strconv.ParseBool(
 						ev.Fields.Get(live.EffectFailedRetryableField)); retryable {
-						return state, []live.IEffect{logEffect{Message: "again"}}
+						return state, []live.Effect[user]{logEffect(flaky)}
 					}
 				}
 				return state, nil
-			}
-			c.Execute = func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-				mu.Lock()
-				attempts++
-				n := attempts
-				mu.Unlock()
-				if n < 3 {
-					return live.Retryable(errors.New("the broker is reconnecting"))
-				}
-				return nil
 			}
 		})
 		defer app.stop()
@@ -855,8 +859,8 @@ var _ = Describe("An application end to end", func() {
 
 	It("runs the teardown hook with the final state", func() {
 		done := make(chan counter, 1)
-		app := mount(func(c *live.Config[counter]) {
-			c.Teardown = func(_ context.Context, _ live.Session, s counter) { done <- s }
+		app := mount(func(c *live.Config[counter, user]) {
+			c.Teardown = func(_ context.Context, _ live.Session[user], s counter) { done <- s }
 		})
 
 		app.send("counter.increment", nil)
@@ -947,10 +951,10 @@ var _ = Describe("The error boundary", func() {
 	})
 })
 
-func panickingReducer(dev bool) func(cfg *live.Config[counter]) {
-	return func(c *live.Config[counter]) {
+func panickingReducer(dev bool) func(cfg *live.Config[counter, user]) {
+	return func(c *live.Config[counter, user]) {
 		c.Dev = dev
-		c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+		c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 			if ev.Name == "counter.increment" {
 				panic("the reducer exploded")
 			}
@@ -960,8 +964,8 @@ func panickingReducer(dev bool) func(cfg *live.Config[counter]) {
 	}
 }
 
-func panickingFragment(dev bool) func(cfg *live.Config[counter]) {
-	return func(c *live.Config[counter]) {
+func panickingFragment(dev bool) func(cfg *live.Config[counter, user]) {
+	return func(c *live.Config[counter, user]) {
 		c.Dev = dev
 		c.Fragments = append(c.Fragments, live.Fragment[counter]{
 			ID: "bad",
@@ -977,7 +981,7 @@ func panickingFragment(dev bool) func(cfg *live.Config[counter]) {
 // mounted is a live application behind a real HTTP server and a real dialled
 // client, so every spec above crosses the handshake and the wire.
 type mounted struct {
-	app      *live.App[counter]
+	app      *live.App[counter, user]
 	server   *httptest.Server
 	conn     *websocket.Conn
 	ctx      context.Context
@@ -986,11 +990,11 @@ type mounted struct {
 	ref      uint64
 }
 
-func mount(mutate func(cfg *live.Config[counter])) *mounted {
+func mount(mutate func(cfg *live.Config[counter, user])) *mounted {
 	return mountAt("/", mutate)
 }
 
-func mountAt(prefix string, mutate func(cfg *live.Config[counter])) *mounted {
+func mountAt(prefix string, mutate func(cfg *live.Config[counter, user])) *mounted {
 	GinkgoHelper()
 
 	cfg := validConfig()
@@ -1157,7 +1161,7 @@ var _ = Describe("The backpressure vocabulary", func() {
 		var mu sync.Mutex
 		var seen []string
 
-		app := mount(func(c *live.Config[counter]) {
+		app := mount(func(c *live.Config[counter, user]) {
 			// Two unacknowledged patches is the whole window, so a handful of
 			// events overruns it. The grace period is long because eviction is
 			// the ladder's third stage and is not what this spec is about.
@@ -1165,7 +1169,7 @@ var _ = Describe("The backpressure vocabulary", func() {
 			c.Limits.SlowClientGrace = time.Minute
 
 			reduce := c.Reduce
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect[user]) {
 				mu.Lock()
 				seen = append(seen, ev.Name)
 				mu.Unlock()

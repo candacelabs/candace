@@ -139,11 +139,18 @@ func (registration Registration) Payload(event string) ([]string, bool) {
 // different S at once, and that is the host's problem rather than the author's.
 // [Register] is where it is solved, exactly once and under a comment saying so.
 //
-// The seven methods are the lifecycle phases of docs/ontology.md, in the order
-// a session drives them — register, mount, event, render, effect, unmount —
-// plus the one projection a host can read without knowing the widget's type.
-// The set is closed by the ontology rather than by convenience: a widget cannot
-// invent a phase, and a generator emits code for these and no others.
+// The six methods are the lifecycle phases of docs/ontology.md, in the order
+// a session drives them — register, mount, event, render, unmount — plus the
+// one projection a host can read without knowing the widget's type. The set is
+// closed by the ontology rather than by convenience: a widget cannot invent a
+// phase, and a generator emits code for these and no others.
+//
+// `effect` is the second phase with no method of its own, and it lost one on
+// 2026-09-03 rather than never having had one. A [live.Effect] is a concrete
+// struct carrying its own Run, so an effect a widget schedules already holds
+// the closure that performs it — over whatever that widget owns — and a method
+// the host called to hand the effect back had nothing left to decide. The phase
+// is still the widget's: it is spelled in the effects Mount and Reduce return.
 //
 // `tick` is the one phase with no method of its own, and its absence is the
 // ontology's own reading rather than an omission. A tick is what a Stream
@@ -153,9 +160,10 @@ func (registration Registration) Payload(event string) ([]string, bool) {
 // replayable.
 //
 // Nothing here is called concurrently with itself for one session: a session is
-// one goroutine, and Reduce and Render run on it. Effect runs on its own
-// goroutine and is the only method that may perform I/O.
-type IWidget[S any] interface {
+// one goroutine, and Reduce and Render run on it. An effect's own Run is the
+// only application code that may perform I/O, and the library runs it on a
+// goroutine of its own.
+type IWidget[S any, I live.IIdentity] interface {
 	// Register declares the widget, once per process and before any session.
 	// It must be pure and must return the same registration on every call.
 	Register() Registration
@@ -163,28 +171,22 @@ type IWidget[S any] interface {
 	// Mount opens one session's copy of the widget and returns its initial
 	// state together with any effects that start it. It is the first phase of a
 	// session and happens exactly once.
-	Mount(ctx context.Context, session live.Session) (S, []live.IEffect, error)
+	Mount(ctx context.Context, session live.Session[I]) (S, []live.Effect[I], error)
 
 	// Reduce is the event phase: the pure transition from one state to the
 	// next. Given equal state and an equal event it must return equal state and
 	// equal effects, perform no I/O, read no clock, and mutate nothing it was
 	// given.
-	Reduce(state S, event live.Event) (S, []live.IEffect)
+	Reduce(state S, event live.Event) (S, []live.Effect[I])
 
 	// Render draws the widget's live region. It must be a pure function of
 	// state — equal state renders byte-identical markup — because that
 	// comparison is what suppresses a patch nobody needs.
 	Render(state S) templ.Component
 
-	// Effect performs one effect this widget's own Reduce or Mount returned. It
-	// runs at the actor boundary, off the session's goroutine, and is the only
-	// method allowed to perform I/O. A returned error reaches Reduce as an
-	// event rather than as a log line.
-	Effect(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error
-
 	// Unmount releases whatever the session held. It is the last phase of a
 	// session and happens exactly once, after which no other phase occurs.
-	Unmount(ctx context.Context, session live.Session, state S)
+	Unmount(ctx context.Context, session live.Session[I], state S)
 
 	// Snapshot projects state into ordered name/value pairs, so a host, a test
 	// or an operator can read a widget's state without knowing its type.
@@ -250,10 +252,6 @@ var (
 	// ErrNoWidgets is returned when a host asks a registry holding nothing for
 	// a configuration, which would serve a page with no live region on it.
 	ErrNoWidgets = errors.New("widget: a host needs at least one registered widget")
-	// ErrHostEffect is returned by a host that was handed an effect it has no
-	// executor for. It is an error rather than a silent success because an
-	// effect that never runs is a change that never happens.
-	ErrHostEffect = errors.New("widget: no executor for this effect")
 )
 
 // regionPattern is the ontology's region identity: stable across releases,

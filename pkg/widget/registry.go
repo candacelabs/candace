@@ -30,8 +30,8 @@ import (
 // widgets of several different state types in one ordered sequence, which is
 // the heterogeneity CS-7 § 2 is about: it is erased exactly once, in [Register],
 // into the unexported adapter below.
-type Registry struct {
-	widgets       []iErasedWidget
+type Registry[I live.IIdentity] struct {
+	widgets       []iErasedWidget[I]
 	registrations []Registration
 	byName        map[string]int
 	byRegion      map[string]int
@@ -39,8 +39,8 @@ type Registry struct {
 }
 
 // NewRegistry returns an empty registry.
-func NewRegistry() *Registry {
-	return &Registry{
+func NewRegistry[I live.IIdentity]() *Registry[I] {
+	return &Registry[I]{
 		byName:   map[string]int{},
 		byRegion: map[string]int{},
 		byWire:   map[string]int{},
@@ -56,15 +56,14 @@ func NewRegistry() *Registry {
 // untyped state through it. That containment is the point — CS-7 permits
 // erasure where heterogeneity genuinely forces it, on the condition that it
 // happens in one audited place inside the library that owns the collection.
-type iErasedWidget interface {
-	// register, mount, reduce, render, effect, unmount and snapshot are the
-	// seven phases of [IWidget], with S replaced by `any`.
+type iErasedWidget[I live.IIdentity] interface {
+	// register, mount, reduce, render, unmount and snapshot are the six
+	// phases of [IWidget], with S replaced by `any`.
 	register() Registration
-	mount(ctx context.Context, session live.Session) (any, []live.IEffect, error)
-	reduce(state any, event live.Event) (any, []live.IEffect)
+	mount(ctx context.Context, session live.Session[I]) (any, []live.Effect[I], error)
+	reduce(state any, event live.Event) (any, []live.Effect[I])
 	render(state any) templ.Component
-	effect(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error
-	unmount(ctx context.Context, session live.Session, state any)
+	unmount(ctx context.Context, session live.Session[I], state any)
 	snapshot(state any) Snapshot
 
 	// dirty answers "did this transition reach my region", from the widget's
@@ -89,41 +88,35 @@ type iErasedWidget interface {
 // which the zero S is the right answer and is what the failed assertion yields.
 // Nothing else can construct an erasedWidget, because [Register] is the only
 // function that does and it takes an IWidget[S] to do it.
-type erasedWidget[S any] struct {
-	widget IWidget[S]
+type erasedWidget[S any, I live.IIdentity] struct {
+	widget IWidget[S, I]
 }
 
-func (adapter erasedWidget[S]) register() Registration { return adapter.widget.Register() }
+func (adapter erasedWidget[S, I]) register() Registration { return adapter.widget.Register() }
 
-func (adapter erasedWidget[S]) mount(
-	ctx context.Context, session live.Session,
-) (any, []live.IEffect, error) {
+func (adapter erasedWidget[S, I]) mount(
+	ctx context.Context, session live.Session[I],
+) (any, []live.Effect[I], error) {
 	return adapter.widget.Mount(ctx, session)
 }
 
-func (adapter erasedWidget[S]) reduce(state any, event live.Event) (any, []live.IEffect) {
+func (adapter erasedWidget[S, I]) reduce(state any, event live.Event) (any, []live.Effect[I]) {
 	return adapter.widget.Reduce(stateOf[S](state), event)
 }
 
-func (adapter erasedWidget[S]) render(state any) templ.Component {
+func (adapter erasedWidget[S, I]) render(state any) templ.Component {
 	return adapter.widget.Render(stateOf[S](state))
 }
 
-func (adapter erasedWidget[S]) effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return adapter.widget.Effect(ctx, session, effect, emit)
-}
-
-func (adapter erasedWidget[S]) unmount(ctx context.Context, session live.Session, state any) {
+func (adapter erasedWidget[S, I]) unmount(ctx context.Context, session live.Session[I], state any) {
 	adapter.widget.Unmount(ctx, session, stateOf[S](state))
 }
 
-func (adapter erasedWidget[S]) snapshot(state any) Snapshot {
+func (adapter erasedWidget[S, I]) snapshot(state any) Snapshot {
 	return adapter.widget.Snapshot(stateOf[S](state))
 }
 
-func (adapter erasedWidget[S]) dirty(previous any, next any) bool {
+func (adapter erasedWidget[S, I]) dirty(previous any, next any) bool {
 	declarer, declares := adapter.widget.(IDirtyDeclarer[S])
 	if !declares {
 		// Through the same assertion the declaring branch below uses, and then
@@ -148,7 +141,7 @@ func (adapter erasedWidget[S]) dirty(previous any, next any) bool {
 	return declarer.Dirty(stateOf[S](previous), stateOf[S](next))
 }
 
-func (adapter erasedWidget[S]) instance() any { return adapter.widget }
+func (adapter erasedWidget[S, I]) instance() any { return adapter.widget }
 
 // stateOf is the assertion itself, written once so that the audited site is one
 // function rather than seven copies of one line. See [erasedWidget].
@@ -170,17 +163,17 @@ func stateOf[S any](state any) S {
 // and a duplicated wire name is an event delivered to the wrong widget. Both
 // are mistakes in a literal somebody wrote, and startup is where a mistake in a
 // literal belongs.
-func Register[S any](registry *Registry, instance IWidget[S]) error {
+func Register[S any, I live.IIdentity](registry *Registry[I], instance IWidget[S, I]) error {
 	if instance == nil {
 		return fmt.Errorf("%w: a nil widget has no registration", ErrEmptyName)
 	}
-	return registry.add(erasedWidget[S]{widget: instance})
+	return registry.add(erasedWidget[S, I]{widget: instance})
 }
 
 // MustRegister is [Register] for a caller with nowhere to put the error:
 // package initialisation and main, where the registration is a literal in the
 // source and every fault Register reports is a mistake in that literal.
-func MustRegister[S any](registry *Registry, instance IWidget[S]) {
+func MustRegister[S any, I live.IIdentity](registry *Registry[I], instance IWidget[S, I]) {
 	if registrationError := Register(registry, instance); registrationError != nil {
 		panic(registrationError)
 	}
@@ -188,7 +181,7 @@ func MustRegister[S any](registry *Registry, instance IWidget[S]) {
 
 // add is the untyped half of registration: everything that does not depend on
 // the widget's state type, which is everything except the erasure above.
-func (registry *Registry) add(adapter iErasedWidget) error {
+func (registry *Registry[I]) add(adapter iErasedWidget[I]) error {
 	registration := adapter.register()
 	if validationError := registration.Validate(); validationError != nil {
 		return validationError
@@ -222,7 +215,7 @@ func (registry *Registry) add(adapter iErasedWidget) error {
 //
 // The slice is a copy, so a caller enumerating the host's widgets — a status
 // page, a test, an operator command — cannot reorder what the host renders.
-func (registry *Registry) List() []Registration {
+func (registry *Registry[I]) List() []Registration {
 	return slices.Clone(registry.registrations)
 }
 
@@ -234,7 +227,7 @@ func (registry *Registry) List() []Registration {
 // is a second erasure site for a question — "what does this widget declare" —
 // that the registration already answers. [LookupWidget] is there for a caller
 // that genuinely holds the widget's own type.
-func (registry *Registry) Lookup(name string) (Registration, bool) {
+func (registry *Registry[I]) Lookup(name string) (Registration, bool) {
 	index, known := registry.byName[name]
 	if !known {
 		return Registration{}, false
@@ -248,12 +241,12 @@ func (registry *Registry) Lookup(name string) (Registration, bool) {
 // reports false for a name nobody registered and for a widget whose state type
 // is not the one asked for. That is deliberate — asking the wrong type is a
 // question with no answer, and a package that panicked would be answering it.
-func LookupWidget[S any](registry *Registry, name string) (IWidget[S], bool) {
+func LookupWidget[S any, I live.IIdentity](registry *Registry[I], name string) (IWidget[S, I], bool) {
 	index, known := registry.byName[name]
 	if !known {
 		return nil, false
 	}
-	typed, matches := registry.widgets[index].instance().(IWidget[S])
+	typed, matches := registry.widgets[index].instance().(IWidget[S, I])
 	return typed, matches
 }
 
@@ -277,7 +270,7 @@ func (state HostState) Len() int { return len(state.states) }
 // It is what a test asserts on and what an operator reads: a host that could
 // not describe its own widgets' state without knowing their types would have to
 // be recompiled to answer the question.
-func (registry *Registry) Snapshots(state HostState) []Snapshot {
+func (registry *Registry[I]) Snapshots(state HostState) []Snapshot {
 	snapshots := make([]Snapshot, 0, len(registry.widgets))
 	for index, adapter := range registry.widgets {
 		if index >= len(state.states) {
@@ -294,26 +287,29 @@ func (registry *Registry) Snapshots(state HostState) []Snapshot {
 // None of it has a defensible default that a library could pick — an allowlist
 // a library chose would be an allowlist nobody read — so the four hooks are
 // passed straight through to the live configuration, which refuses a nil one.
-type MountOptions struct {
+type MountOptions[I live.IIdentity] struct {
 	// Origins is the browser Origin allowlist, passed through unchanged.
 	Origins []string
 
 	// Authenticate, Authorize and CSRF are the live library's three security
 	// hooks. Pass live.Anonymous, live.AllowAll and live.NoCSRFCheck to opt
 	// out deliberately; a nil one is refused rather than defaulted.
-	Authenticate func(request *http.Request) (live.IIdentity, error)
-	Authorize    func(ctx context.Context, session live.Session, event live.Event) error
+	Authenticate func(request *http.Request) (I, error)
+	Authorize    func(ctx context.Context, session live.Session[I], event live.Event) error
 	CSRF         func(request *http.Request) error
 
 	// Init schedules the host's own startup effects for a session, alongside
 	// the effects each widget's Mount returned. It is where a host opens the
 	// sources its widgets' declared streams name.
-	Init func(ctx context.Context, session live.Session) ([]live.IEffect, error)
-
-	// Execute performs an effect no widget owns — a host effect, including
-	// every effect Init returned. An effect arriving here with no executor set
-	// fails with ErrHostEffect rather than silently succeeding.
-	Execute func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error
+	//
+	// There is no Execute beside it, and there was one until 2026-09-03. A
+	// [live.Effect] carries its own Run, so a host effect is performed by the
+	// closure the host built it with — over the source, broker or pool that
+	// host owns — and the executor that used to type-switch an effect back to
+	// its owner had nothing left to decide. What that executor guaranteed is
+	// now the library's: an effect that names itself and carries no behaviour
+	// fails deterministically rather than succeeding at nothing.
+	Init func(ctx context.Context, session live.Session[I]) ([]live.Effect[I], error)
 
 	// Logger and Dev are passed through to the live configuration.
 	Logger *slog.Logger
@@ -337,9 +333,9 @@ type MountOptions struct {
 // goroutines the library already schedules — one per session, plus one per
 // effect — which is what the monolithic-microservices claim actually cashes out
 // to. There is no per-widget process, port or connection.
-func (registry *Registry) LiveConfig(options MountOptions) (live.Config[HostState], error) {
+func (registry *Registry[I]) LiveConfig(options MountOptions[I]) (live.Config[HostState, I], error) {
 	if len(registry.widgets) == 0 {
-		return live.Config[HostState]{}, ErrNoWidgets
+		return live.Config[HostState, I]{}, ErrNoWidgets
 	}
 
 	fragments := make([]live.Fragment[HostState], 0, len(registry.widgets))
@@ -349,12 +345,11 @@ func (registry *Registry) LiveConfig(options MountOptions) (live.Config[HostStat
 		events = append(events, registry.registrations[index].Events...)
 	}
 
-	return live.Config[HostState]{
+	return live.Config[HostState, I]{
 		Init:         registry.initialiser(options),
 		Reduce:       registry.reduce,
 		Fragments:    fragments,
 		Events:       events,
-		Execute:      registry.executor(options),
 		Teardown:     registry.teardown,
 		Origins:      options.Origins,
 		Authenticate: options.Authenticate,
@@ -369,7 +364,7 @@ func (registry *Registry) LiveConfig(options MountOptions) (live.Config[HostStat
 //
 // Dirty compares the widget's own state and nothing else, so a transition
 // touching one widget re-renders one region.
-func (registry *Registry) fragment(index int, adapter iErasedWidget) live.Fragment[HostState] {
+func (registry *Registry[I]) fragment(index int, adapter iErasedWidget[I]) live.Fragment[HostState] {
 	return live.Fragment[HostState]{
 		ID: registry.registrations[index].Region,
 		Render: func(state HostState) templ.Component {
@@ -394,12 +389,12 @@ func stateAt(state HostState, index int) any {
 
 // initialiser runs the `mount` phase for every widget, in registration order,
 // and collects their effects behind the host's own.
-func (registry *Registry) initialiser(
-	options MountOptions,
-) func(ctx context.Context, session live.Session) (HostState, []live.IEffect, error) {
-	return func(ctx context.Context, session live.Session) (HostState, []live.IEffect, error) {
+func (registry *Registry[I]) initialiser(
+	options MountOptions[I],
+) func(ctx context.Context, session live.Session[I]) (HostState, []live.Effect[I], error) {
+	return func(ctx context.Context, session live.Session[I]) (HostState, []live.Effect[I], error) {
 		state := HostState{states: make([]any, len(registry.widgets))}
-		var effects []live.IEffect
+		var effects []live.Effect[I]
 
 		if options.Init != nil {
 			hostEffects, initError := options.Init(ctx, session)
@@ -415,7 +410,7 @@ func (registry *Registry) initialiser(
 				return HostState{}, nil, fmt.Errorf("widget %s: mount: %w", registry.registrations[index].Name, mountError)
 			}
 			state.states[index] = mounted
-			effects = append(effects, scope(index, widgetEffects)...)
+			effects = append(effects, widgetEffects...)
 		}
 		return state, effects, nil
 	}
@@ -432,28 +427,28 @@ func (registry *Registry) initialiser(
 // client-recovered events — is delivered to every widget, which is the
 // ontology's rule that a failure re-enters `event` rather than becoming a log
 // line: each widget decides for itself whether the notice was about it.
-func (registry *Registry) reduce(state HostState, event live.Event) (HostState, []live.IEffect) {
+func (registry *Registry[I]) reduce(state HostState, event live.Event) (HostState, []live.Effect[I]) {
 	next := HostState{states: slices.Clone(state.states)}
 	for len(next.states) < len(registry.widgets) {
 		next.states = append(next.states, nil)
 	}
-	var effects []live.IEffect
+	var effects []live.Effect[I]
 
 	if index, addressed := registry.route(event); addressed {
 		next.states[index], effects = registry.widgets[index].reduce(next.states[index], event)
-		return next, scope(index, effects)
+		return next, effects
 	}
 
 	for index, adapter := range registry.widgets {
 		reduced, widgetEffects := adapter.reduce(next.states[index], event)
 		next.states[index] = reduced
-		effects = append(effects, scope(index, widgetEffects)...)
+		effects = append(effects, widgetEffects...)
 	}
 	return next, effects
 }
 
 // route returns the widget one event names, and whether it named one at all.
-func (registry *Registry) route(event live.Event) (int, bool) {
+func (registry *Registry[I]) route(event live.Event) (int, bool) {
 	if index, known := registry.byRegion[event.FragmentID]; known {
 		return index, true
 	}
@@ -461,55 +456,11 @@ func (registry *Registry) route(event live.Event) (int, bool) {
 	return index, known
 }
 
-// executor performs one effect: the owning widget's if the effect came from a
-// widget, the host's otherwise.
-func (registry *Registry) executor(
-	options MountOptions,
-) func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-	return func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-		if scoped, owned := effect.(scopedEffect); owned {
-			return registry.widgets[scoped.widget].effect(ctx, session, scoped.inner, emit)
-		}
-		if options.Execute == nil {
-			return fmt.Errorf("%w: %s", ErrHostEffect, effect.EffectSource())
-		}
-		return options.Execute(ctx, session, effect, emit)
-	}
-}
-
 // teardown runs the `unmount` phase for every widget, in reverse registration
 // order: a widget registered later may have been mounted against something an
 // earlier one owns.
-func (registry *Registry) teardown(ctx context.Context, session live.Session, state HostState) {
+func (registry *Registry[I]) teardown(ctx context.Context, session live.Session[I], state HostState) {
 	for index := len(registry.widgets) - 1; index >= 0; index-- {
 		registry.widgets[index].unmount(ctx, session, stateAt(state, index))
 	}
-}
-
-// scopedEffect is one widget's effect, tagged with its owner so the executor
-// can hand it back to the widget that asked for it.
-//
-// The tag is the index rather than the name because it is the index everything
-// else in this file addresses a widget by, and because an index cannot be
-// spelled wrong by a widget that constructs one for itself: this type is
-// unexported, so only the registry ever makes one.
-type scopedEffect struct {
-	widget int
-	inner  live.IEffect
-}
-
-// EffectSource passes the widget's own name for the effect straight through, so
-// provenance names what the widget called it rather than naming this wrapper.
-func (effect scopedEffect) EffectSource() string { return effect.inner.EffectSource() }
-
-// scope tags a widget's effects with their owner.
-func scope(index int, effects []live.IEffect) []live.IEffect {
-	if len(effects) == 0 {
-		return nil
-	}
-	scoped := make([]live.IEffect, 0, len(effects))
-	for _, effect := range effects {
-		scoped = append(scoped, scopedEffect{widget: index, inner: effect})
-	}
-	return scoped
 }

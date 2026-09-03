@@ -29,22 +29,18 @@ import (
 // sessions — that is what Limits.MaxSessionsPerIdentity is about — so two tabs
 // belonging to one user need two identifiers and one identity.
 //
-// A nil identity is a fatal test failure rather than a returned value. It is
-// the trap the zero Session already sets, and scaffolding that reproduces the
-// trap is not scaffolding.
+// The nil-identity guard this used to carry is gone, and the type parameter is
+// why. Since 2026-09-03 the identity is the application's OWN type rather than
+// an interface, so "identity is nil" is not a value a caller can pass unless it
+// chose a pointer type and passed a nil of it — which is its own bug, in its own
+// Subject(), rather than a trap this constructor sets.
 //
 // It takes a [testing.TB] first, matching ReplayN and AssertDirtyComplete, and
 // that is a guard and not decoration: reaching this constructor from production
 // code means importing a package that links testing and then fabricating a
-// testing.TB, which is a visible and absurd act rather than an accident.
-func NewSession(tb testing.TB, id live.ID, identity live.IIdentity) live.Session {
+// testing.TB, which is a visible and absurd act rather than an accident. The
+// second guard is the token, which only live and live/livetest can obtain.
+func NewSession[I live.IIdentity](tb testing.TB, id live.ID, identity I) live.Session[I] {
 	tb.Helper()
-	if identity == nil {
-		tb.Fatalf("livetest.NewSession: identity is nil. A Session whose Identity() is nil is the " +
-			"trap live.Session{} already sets; pass the identity the hook under test will read.")
-		return live.Session{}
-	}
-	// The assertion cannot fail: live is the only package that assigns this,
-	// and internal/arch asserts that it is the only one that can.
-	return livebridge.NewSession(id, identity).(live.Session)
+	return live.NewSessionFor(livebridge.Grant(), id, identity)
 }

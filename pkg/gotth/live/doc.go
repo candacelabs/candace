@@ -61,7 +61,7 @@
 // a second path to the same disclosure and carries no such discipline, because
 // only the application knows what its own effects put in their errors.
 // [EffectFailedSourceField] is the value that is safe to render: it is a name
-// the application itself chose, from [IEffect.EffectSource].
+// the application itself chose, from [Effect.Source].
 //
 // # Error boundaries
 //

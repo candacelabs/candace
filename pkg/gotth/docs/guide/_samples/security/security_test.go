@@ -146,17 +146,17 @@ type stranger struct{}
 
 func (stranger) Subject() string { return "stranger" }
 
-// session builds the live.Session a Config hook is called with. Session's
+// session builds the live.Session[security.Member] a Config hook is called with. Session's
 // fields are unexported — identity is bound at the handshake and nothing
 // downstream may mint one — so livetest.NewSession is the way a spec calls a
 // hook directly instead of through a running server.
-func session(b byte, identity live.IIdentity) live.Session {
+func session(b byte, identity security.Member) live.Session[security.Member] {
 	GinkgoHelper()
 	return livetest.NewSession(GinkgoTB(), live.ID{b}, identity)
 }
 
 var _ = Describe("the three places one rule is enforced", func() {
-	var observer, ada live.Session
+	var observer, ada live.Session[security.Member]
 
 	BeforeEach(func() {
 		observer = session(1, security.Member{Name: "obs", Role: security.RoleObserver})
@@ -176,20 +176,18 @@ var _ = Describe("the three places one rule is enforced", func() {
 			Expect(err).To(BeAssignableToTypeOf(deny))
 		})
 
-		It("closes the session for an identity that is not a member of this application", func() {
-			err := security.Authorize(context.Background(),
-				session(3, stranger{}), live.Event{Name: security.EventPost})
-
-			var fatal *live.FatalDenyError
-			Expect(err).To(BeAssignableToTypeOf(fatal))
-		})
+		// "closes the session for an identity that is not a member" is gone.
+		// A live.Session is typed by the identity Authenticate produced since
+		// 2026-09-03, so an identity of another shape is a compile error at the
+		// call site rather than a runtime deny — which means the failure mode
+		// this spec guarded against is one the hook can no longer have.
 	})
 
-	Describe("Reduce, which is where the refusal becomes markup", func() {
+	Describe("the reducer, which is where the refusal becomes markup", func() {
 		It("renders the observer's refusal and schedules no effect", func() {
 			state := security.State{Me: "obs", Role: security.RoleObserver}
 
-			next, effects := security.Reduce(state, live.Event{
+			next, effects := security.Reducer(&security.Room{})(state, live.Event{
 				Name:   security.EventPost,
 				Fields: live.NewFields(map[string]string{security.FieldBody: "hello"}),
 			})
@@ -201,22 +199,23 @@ var _ = Describe("the three places one rule is enforced", func() {
 		It("schedules the write for an identity that may post", func() {
 			state := security.State{Me: "ada", Role: security.RoleMember}
 
-			next, effects := security.Reduce(state, live.Event{
+			next, effects := security.Reducer(&security.Room{})(state, live.Event{
 				Name:   security.EventPost,
 				Fields: live.NewFields(map[string]string{security.FieldBody: "hello"}),
 			})
 
 			Expect(next.Notice).To(BeEmpty())
-			Expect(effects).To(ConsistOf(security.PostEffect{Author: "ada", Body: "hello"}))
+			Expect(effects).To(HaveLen(1))
+			Expect(effects[0].Source).To(Equal("room.post"))
 		})
 	})
 
-	Describe("Execute, which is what a wrong reducer cannot get past", func() {
+	Describe("the effect's own Run, which is what a wrong reducer cannot get past", func() {
 		It("refuses an observer's post even when the effect reaches it", func() {
 			room := &security.Room{}
 
-			err := room.Execute(context.Background(), observer,
-				security.PostEffect{Author: "obs", Body: "hello"}, nil)
+			err := room.PostEffect("obs", "hello").
+				Run(context.Background(), observer, func(live.Event) error { return nil })
 
 			Expect(err).To(HaveOccurred())
 			Expect(room.Posted).To(BeEmpty())
@@ -225,8 +224,8 @@ var _ = Describe("the three places one rule is enforced", func() {
 		It("performs it for an identity that may post", func() {
 			room := &security.Room{}
 
-			Expect(room.Execute(context.Background(), ada,
-				security.PostEffect{Author: "ada", Body: "hello"}, nil)).To(Succeed())
+			Expect(room.PostEffect("ada", "hello").
+				Run(context.Background(), ada, func(live.Event) error { return nil })).To(Succeed())
 			Expect(room.Posted).To(ConsistOf("ada: hello"))
 		})
 	})

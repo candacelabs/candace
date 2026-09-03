@@ -327,15 +327,15 @@ var _ = Describe("Backpressure", func() {
 
 			widest := newTestApp()
 			widest.events = map[string]bool{"counter.increment": true, "schedule": true}
-			widest.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+			widest.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
 				s := state.(counterState)
 				s.N++
 				if ev.Name == "schedule" {
-					return s, []session.IEffect{testEffect{Source: "test.wait"}}
+					return s, []session.Effect[subject]{widest.effect(testEffect{Source: "test.wait"})}
 				}
 				return s, nil
 			}
-			widest.execute = func(_ context.Context, _ session.Peer, _ session.IEffect, emit session.Emit) error {
+			widest.execute = func(_ context.Context, _ session.Peer[subject], _ testEffect, emit session.Emit) error {
 				<-release
 				// Identifiers no client event minted, so none of them is already
 				// in the deferred set and the union is the sum rather than less.
@@ -479,7 +479,7 @@ var _ = Describe("Backpressure", func() {
 			})
 			refused.initState = wide{}
 			refused.events = map[string]bool{"bump": true, "go.huge": true, "go.small": true}
-			refused.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+			refused.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
 				s := state.(wide)
 				switch ev.Name {
 				case "bump":
@@ -545,7 +545,7 @@ var _ = Describe("Backpressure", func() {
 		It("drops rather than blocks when it is full, and says so with a typed error", func() {
 			block := make(chan struct{})
 			blocked := newTestApp()
-			blocked.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+			blocked.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
 				if ev.Name == "counter.relabel" {
 					<-block
 				}
@@ -588,7 +588,7 @@ var _ = Describe("Backpressure", func() {
 		It("drops an acknowledgement rather than blocking, because acknowledgements are cumulative", func() {
 			block := make(chan struct{})
 			blocked := newTestApp()
-			blocked.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+			blocked.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
 				if ev.Name == "counter.relabel" {
 					<-block
 				}

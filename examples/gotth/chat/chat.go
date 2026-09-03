@@ -338,40 +338,46 @@ func Validate(body string) string {
 	return ""
 }
 
-// Reduce is the pure state transition.
+// Reducer returns the pure state transition, bound to the room its effects act
+// on.
 //
-// It reads no clock, performs no I/O, and cannot reach the room. Sending a
-// message does not append one: it returns a PostEffect, the library performs
-// it at the actor boundary, the room stamps and numbers it, and this session
-// learns the result the same way every other session does — through an event
-// the room pushed. That is what makes two tabs unable to disagree, and it is
-// why the author on a message is not something this function gets to choose.
-func Reduce(state State, ev live.Event) (State, []live.IEffect) {
-	switch ev.Name {
-	case EventDraft:
-		return applyDraft(state, ev.Fields.Get(fieldBody)), nil
-	case EventClear:
-		return applyClear(state), nil
-	case EventSend:
-		return applySend(state, ev)
-	case EventPurge:
-		state.Notice = ""
-		return state, []live.IEffect{PurgeEffect{Cause: ev.ID}}
-	case EventPosted:
-		return applyPosted(state, ev), nil
-	case EventPresence:
-		return applyPresence(state, ev), nil
-	case EventPurged:
-		return applyPurged(state, ev), nil
-	case live.EffectFailedEvent:
-		return applyFailure(state, ev)
-	}
+// It is a constructor because a live.Effect[Member] carries its own behaviour since the
+// 2026-09-03 ruling, so a reducer that schedules one has to hold what that
+// effect closes over. It still reads no clock, performs no I/O, and reaches the
+// room not at all: sending a message does not append one, it returns the room's
+// post effect, the library performs it at the actor boundary, the room stamps
+// and numbers it, and this session learns the result the same way every other
+// session does — through an event the room pushed. That is what makes two tabs
+// unable to disagree, and it is why the author on a message is not something
+// this function gets to choose.
+func Reducer(room *Room) live.Reducer[State, Member] {
+	return func(state State, ev live.Event) (State, []live.Effect[Member]) {
+		switch ev.Name {
+		case EventDraft:
+			return applyDraft(state, ev.Fields.Get(fieldBody)), nil
+		case EventClear:
+			return applyClear(state), nil
+		case EventSend:
+			return applySend(room, state, ev)
+		case EventPurge:
+			state.Notice = ""
+			return state, []live.Effect[Member]{room.PurgeEffect(Purge{Cause: ev.ID})}
+		case EventPosted:
+			return applyPosted(state, ev), nil
+		case EventPresence:
+			return applyPresence(state, ev), nil
+		case EventPurged:
+			return applyPurged(state, ev), nil
+		case live.EffectFailedEvent:
+			return applyFailure(room, state, ev)
+		}
 
-	// An unregistered name cannot reach here from a browser — the library
-	// refuses one before the reducer runs — so anything arriving here is
-	// something the library synthesised that this application has no answer
-	// for. Ignoring it is correct.
-	return state, nil
+		// An unregistered name cannot reach here from a browser — the library
+		// refuses one before the reducer runs — so anything arriving here is
+		// something the library synthesised that this application has no
+		// answer for. Ignoring it is correct.
+		return state, nil
+	}
 }
 
 // applyDraft folds a keystroke into this session's own state.
@@ -414,7 +420,7 @@ func applyClear(state State) State {
 }
 
 // applySend handles the form submission.
-func applySend(state State, ev live.Event) (State, []live.IEffect) {
+func applySend(room *Room, state State, ev live.Event) (State, []live.Effect[Member]) {
 	raw := ev.Fields.Get(fieldBody)
 	body := strings.TrimSpace(raw)
 
@@ -432,7 +438,7 @@ func applySend(state State, ev live.Event) (State, []live.IEffect) {
 		// actor boundary. It comes back as an ordinary event, which is why the
 		// notice below is rendered by applyFailure and not from here.
 		state.Draft, state.DraftError = "", ""
-		return state, []live.IEffect{PanicEffect{Cause: ev.ID}}
+		return state, []live.Effect[Member]{room.PanicEffect()}
 
 	case CmdPanicRender:
 		// FR-23's third site, armed for this session only.
@@ -453,7 +459,7 @@ func applySend(state State, ev live.Event) (State, []live.IEffect) {
 	state.Draft = ""
 	state.DraftError = ""
 	state.Notice = ""
-	return state, []live.IEffect{PostEffect{Body: body, Cause: ev.ID}}
+	return state, []live.Effect[Member]{room.PostEffect(Post{Body: body, Cause: ev.ID})}
 }
 
 // applyPosted folds a message the room pushed.
@@ -526,13 +532,13 @@ func applyPurged(state State, ev live.Event) State {
 // The one failure worth retrying is a dead subscription, because a session
 // without one keeps rendering the last log it saw and stops learning about
 // anybody else — it looks right while being wrong.
-func applyFailure(state State, ev live.Event) (State, []live.IEffect) {
+func applyFailure(room *Room, state State, ev live.Event) (State, []live.Effect[Member]) {
 	source := ev.Fields.Get(live.EffectFailedSourceField)
 	state.Notice = "something went wrong on the server: " + source
 
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && source == SourceSubscribe {
-		return state, []live.IEffect{SubscribeEffect{}}
+		return state, []live.Effect[Member]{room.SubscribeEffect()}
 	}
 	return state, nil
 }
@@ -601,14 +607,14 @@ func (d Directory) Names() []string {
 // allocated. The message names no untrusted input: it is an error an operator
 // reads, and echoing back the cookie value would put whatever a client chose
 // to send into a server log.
-func (d Directory) Authenticate(r *http.Request) (live.IIdentity, error) {
+func (d Directory) Authenticate(r *http.Request) (Member, error) {
 	cookie, err := r.Cookie(IdentityCookie)
 	if err != nil {
-		return nil, fmt.Errorf("chat: no %s cookie on the upgrade request: sign in at /login?user=alice first", IdentityCookie)
+		return Member{}, fmt.Errorf("chat: no %s cookie on the upgrade request: sign in at /login?user=alice first", IdentityCookie)
 	}
 	member, ok := d[cookie.Value]
 	if !ok {
-		return nil, fmt.Errorf("chat: the %s cookie does not name a member of this room", IdentityCookie)
+		return Member{}, fmt.Errorf("chat: the %s cookie does not name a member of this room", IdentityCookie)
 	}
 	return member, nil
 }
@@ -625,15 +631,12 @@ func (d Directory) Authenticate(r *http.Request) (live.IIdentity, error) {
 // The reason strings are operator-facing. The client is told the event was not
 // permitted and nothing more, because an authorization reason is an
 // authorization input.
-func Authorize(_ context.Context, s live.Session, ev live.Event) error {
-	member, ok := s.Identity().(Member)
-	if !ok {
-		// Unreachable through Authenticate above, which returns a Member or an
-		// error. It is here because "the identity is not what I expected" is a
-		// deny, and the one thing an authorization hook must never do is fail
-		// open on a shape it did not anticipate.
-		return &live.FatalDenyError{Reason: "the session identity is not a chat member"}
-	}
+func Authorize(_ context.Context, s live.Session[Member], ev live.Event) error {
+	// No assertion, and none possible: the session is typed by the identity
+	// Authenticate produced, so a shape this hook did not anticipate is a
+	// compile error rather than a runtime branch. The "unreachable" deny that
+	// used to stand here is what the type parameter replaced.
+	member := s.Identity()
 
 	if member.Role == RoleBanned {
 		return &live.FatalDenyError{Reason: member.Name + " is banned from this room"}
@@ -666,27 +669,24 @@ func Authorize(_ context.Context, s live.Session, ev live.Event) error {
 // Everything security-relevant is set here and nothing is left to a default,
 // because live.New refuses a Config with a hole in it rather than starting
 // with one.
-func Config(room *Room, dir Directory, origins []string) live.Config[State] {
-	return live.Config[State]{
+func Config(room *Room, dir Directory, origins []string) live.Config[State, Member] {
+	return live.Config[State, Member]{
 		// Init is the mount hook, and it is where FR-56's subscribe-on-mount
 		// happens. Join registers this session for pushes and reads the room
 		// under one lock — split in two, a message landing between them is
 		// either shown twice or missed entirely, and the window is exactly as
 		// wide as a page load.
-		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
-			member, ok := s.Identity().(Member)
-			if !ok {
-				return State{}, nil, fmt.Errorf("chat: the session identity is %T, not a Member", s.Identity())
-			}
+		Init: func(ctx context.Context, s live.Session[Member]) (State, []live.Effect[Member], error) {
+			member := s.Identity()
 			return State{
 				Self: s.ID(),
 				Me:   member.Name,
 				Role: member.Role,
 				Room: room.Join(s.ID(), member.Name),
-			}, []live.IEffect{SubscribeEffect{}}, nil
+			}, []live.Effect[Member]{room.SubscribeEffect()}, nil
 		},
 
-		Reduce: Reduce,
+		Reduce: Reducer(room),
 
 		Fragments: []live.Fragment[State]{
 			{
@@ -728,13 +728,11 @@ func Config(room *Room, dir Directory, origins []string) live.Config[State] {
 		// see their doc comment.
 		Events: []string{EventSend, EventDraft, EventClear, EventPurge},
 
-		Execute: room.Execute,
-
 		// FR-56's other half. Teardown runs after the session's goroutine has
 		// exited, with the final state, so a session that dropped its
 		// connection does not leave a subscription behind. The leak test in
 		// chat_test.go is what holds it.
-		Teardown: func(_ context.Context, s live.Session, _ State) { room.Leave(s.ID()) },
+		Teardown: func(_ context.Context, s live.Session[Member], _ State) { room.Leave(s.ID()) },
 
 		// A real allowlist, not live.AnyOrigin. main.go derives it from the
 		// listen address; production lists the scheme and host the app is

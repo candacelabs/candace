@@ -7,7 +7,6 @@ package dashbored
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -85,21 +84,31 @@ type DashboredState struct {
 }
 
 // Dashbored is the generated Dashbored widget.
-type Dashbored struct{}
+//
+// I is the HOST's identity type, threaded through and never read: a widget
+// document names no host, no address and no credential, so nothing here can
+// look at an identity. It is a type parameter because the SDK's contract
+// carries one — live.Session stopped erasing the application's identity type
+// on 2026-09-03 — and a generated widget must fit whatever host registers it.
+type Dashbored[I live.IIdentity] struct{}
 
-// NewDashbored returns the widget a host registers.
-func NewDashbored() *Dashbored { return &Dashbored{} }
+// NewDashbored returns the widget a host registers, instantiated on that
+// host's own identity type.
+func NewDashbored[I live.IIdentity]() *Dashbored[I] { return &Dashbored[I]{} }
 
+// The contract, asserted at one instantiation. Anonymous is the identity a
+// host with no accounts uses, and any other I satisfies the same interfaces:
+// nothing below branches on it.
 var (
-	_ widget.IWidget[DashboredState]        = (*Dashbored)(nil)
-	_ widget.IDirtyDeclarer[DashboredState] = (*Dashbored)(nil)
+	_ widget.IWidget[DashboredState, live.AnonymousIdentity] = (*Dashbored[live.AnonymousIdentity])(nil)
+	_ widget.IDirtyDeclarer[DashboredState]                  = (*Dashbored[live.AnonymousIdentity])(nil)
 )
 
 // Register declares the widget, once per process and before any session.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
-func (instance *Dashbored) Register() widget.Registration {
+func (instance *Dashbored[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     DashboredName,
 		Region:   DashboredRegion,
@@ -126,17 +135,17 @@ func (instance *Dashbored) Register() widget.Registration {
 // Mount opens one session's copy of the widget. It schedules no effect: the
 // streams this widget declared are the host's to open, because a widget document
 // names no host, no address and no credential.
-func (instance *Dashbored) Mount(
-	ctx context.Context, session live.Session,
-) (DashboredState, []live.IEffect, error) {
+func (instance *Dashbored[I]) Mount(
+	ctx context.Context, session live.Session[I],
+) (DashboredState, []live.Effect[I], error) {
 	return DashboredState{}, nil, nil
 }
 
 // Reduce is the pure transition from one state to the next. It performs no I/O,
 // reads no clock and mutates nothing it was given.
-func (instance *Dashbored) Reduce(
+func (instance *Dashbored[I]) Reduce(
 	state DashboredState, event live.Event,
-) (DashboredState, []live.IEffect) {
+) (DashboredState, []live.Effect[I]) {
 	current := state
 	switch event.Name {
 	case DashboredEventToggleSilence:
@@ -176,13 +185,13 @@ func (instance *Dashbored) Reduce(
 
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
-func (instance *Dashbored) Render(state DashboredState) templ.Component {
+func (instance *Dashbored[I]) Render(state DashboredState) templ.Component {
 	return DashboredView(state)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
 // state fields its bindings, its predicates and its tick read, and no others.
-func (instance *Dashbored) Dirty(previous DashboredState, next DashboredState) bool {
+func (instance *Dashbored[I]) Dirty(previous DashboredState, next DashboredState) bool {
 	return previous.ScrapeSequence != next.ScrapeSequence ||
 		previous.FiringAlert != next.FiringAlert ||
 		previous.CollectorsUp != next.CollectorsUp ||
@@ -195,22 +204,13 @@ func (instance *Dashbored) Dirty(previous DashboredState, next DashboredState) b
 		previous.QueryLag != next.QueryLag
 }
 
-// Effect performs an effect this widget scheduled. It schedules none, so an
-// effect arriving here was routed wrongly — which is reported rather than
-// silently succeeded at, because an effect that never runs is a change that
-// never happens.
-func (instance *Dashbored) Effect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	return fmt.Errorf("%s: schedules no effect, but %s arrived", DashboredName, effect.EffectSource())
-}
-
 // Unmount releases what the session held. This widget holds nothing.
-func (instance *Dashbored) Unmount(ctx context.Context, session live.Session, state DashboredState) {}
+func (instance *Dashbored[I]) Unmount(ctx context.Context, session live.Session[I], state DashboredState) {
+}
 
 // Snapshot projects state into ordered name/value pairs, in state-field
 // declaration order.
-func (instance *Dashbored) Snapshot(state DashboredState) widget.Snapshot {
+func (instance *Dashbored[I]) Snapshot(state DashboredState) widget.Snapshot {
 	return widget.Snapshot{
 		Widget: DashboredName,
 		Fields: []widget.SnapshotField{

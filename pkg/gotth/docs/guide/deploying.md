@@ -210,7 +210,7 @@ Two details that decide whether the rule works:
 
 <!-- sample: deploying/deploying.go -->
 ```go
-func Production[S any](cfg live.Config[S], proxyIdle time.Duration, maxSessions int) live.Config[S] {
+func Production[S any, I live.IIdentity](cfg live.Config[S, I], proxyIdle time.Duration, maxSessions int) live.Config[S, I] {
 	cfg.Dev = false
 	cfg.DevBuildID = ""
 
@@ -393,7 +393,7 @@ func (d *Deployment) Run(ctx context.Context) error {
 }
 ```
 
-`DrainSessions` is `(*live.App[S]).Close`, whose signature that is. The order is
+`DrainSessions` is `(*live.App[S, I]).Close`, whose signature that is. The order is
 the whole content of the function, and the sample's spec asserts it: readiness
 fails **before** the sessions are drained, and the drain happens exactly once.
 

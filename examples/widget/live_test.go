@@ -80,14 +80,13 @@ func probeCluster() *raftdemo.Cluster {
 // only region anything can move, which is what lets a specification assert that
 // an election's patch carried that region and nothing else — the independent
 // live regions property, stated against the wire rather than against a reducer.
-func probeApp(cluster *raftdemo.Cluster) *live.App[widget.HostState] {
+func probeApp(cluster *raftdemo.Cluster) *live.App[widget.HostState, live.AnonymousIdentity] {
 	GinkgoHelper()
 
 	options := probeOptions()
-	options.Init = func(ctx context.Context, session live.Session) ([]live.IEffect, error) {
-		return []live.IEffect{clusterSource{cluster: cluster}}, nil
+	options.Init = func(ctx context.Context, session live.Session[live.AnonymousIdentity]) ([]live.Effect[live.AnonymousIdentity], error) {
+		return []live.Effect[live.AnonymousIdentity]{clusterSourceEffect(cluster)}, nil
 	}
-	options.Execute = executeHostEffect
 	config, configError := hostWidgets().LiveConfig(options)
 	Expect(configError).ToNot(HaveOccurred())
 
@@ -105,17 +104,17 @@ func probeApp(cluster *raftdemo.Cluster) *live.App[widget.HostState] {
 // that need a running cluster. It is separate from probeApp so that a spec
 // asserting on the configuration rather than on the wire — which browser-
 // sendable names it declares, say — builds one without starting an election.
-func probeOptions() widget.MountOptions {
-	return widget.MountOptions{
+func probeOptions() widget.MountOptions[live.AnonymousIdentity] {
+	return widget.MountOptions[live.AnonymousIdentity]{
 		Origins:      []string{probeOrigin},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	}
 }
 
 // dialProbe opens one session against the handler, exactly as a browser does.
-func dialProbe(app *live.App[widget.HostState]) *livetest.Client {
+func dialProbe(app *live.App[widget.HostState, live.AnonymousIdentity]) *livetest.Client {
 	GinkgoHelper()
 	return livetest.NewClient(GinkgoTB(), app.Handler(), livetest.ClientOptions{
 		Path:    probePath,

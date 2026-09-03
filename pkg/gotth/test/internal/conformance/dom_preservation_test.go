@@ -94,7 +94,7 @@ func raw(s string) templ.Component {
 // only knowable once the socket is bound. httptest.NewUnstartedServer binds at
 // construction, which is what makes the ordering possible without weakening
 // the check to live.AnyOrigin.
-func serveLive[S any](cfg live.Config[S], routes map[string]http.HandlerFunc) *httptest.Server {
+func serveLive[S any](cfg live.Config[S, qaUser], routes map[string]http.HandlerFunc) *httptest.Server {
 	GinkgoHelper()
 
 	ts := httptest.NewUnstartedServer(nil)
@@ -299,12 +299,12 @@ func domPage(s domState) string {
 			panelHTML(s))
 }
 
-func domConfig() live.Config[domState] {
-	return live.Config[domState]{
-		Init: func(ctx context.Context, session live.Session) (domState, []live.IEffect, error) {
+func domConfig() live.Config[domState, qaUser] {
+	return live.Config[domState, qaUser]{
+		Init: func(ctx context.Context, session live.Session[qaUser]) (domState, []live.Effect[qaUser], error) {
 			return domState{}, nil, nil
 		},
-		Reduce: func(s domState, ev live.Event) (domState, []live.IEffect) {
+		Reduce: func(s domState, ev live.Event) (domState, []live.Effect[qaUser]) {
 			switch ev.Name {
 			case eventTick:
 				s.Tick++
@@ -319,8 +319,8 @@ func domConfig() live.Config[domState] {
 			Dirty:  func(prev, next domState) bool { return prev != next },
 		}},
 		Events:       []string{eventTick, eventAlt},
-		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("qa"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }
@@ -361,39 +361,38 @@ func silenceWAV(seconds int) []byte {
 // patch is the only way to get a morph to land on a composing input, which is
 // also the situation the requirement is describing: somebody else's change,
 // arriving while you are half-way through typing a word.
-type tickEffect struct{ every time.Duration }
-
-func (tickEffect) EffectSource() string { return "qa.ticker" }
-
-// domTickingConfig is domConfig plus that ticker.
-func domTickingConfig(every time.Duration) live.Config[domState] {
-	cfg := domConfig()
-	cfg.Init = func(ctx context.Context, session live.Session) (domState, []live.IEffect, error) {
-		return domState{}, []live.IEffect{tickEffect{every: every}}, nil
-	}
-	cfg.Execute = func(ctx context.Context, _ live.Session, e live.IEffect, emit live.Emitter) error {
-		t, ok := e.(tickEffect)
-		if !ok {
-			return fmt.Errorf("conformance: no executor for effect %T", e)
-		}
-		ticker := time.NewTicker(t.every)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				// The library owns this goroutine and waits for it at
-				// shutdown, so returning promptly on cancellation is the
-				// contract, not politeness.
-				return ctx.Err()
-			case <-ticker.C:
-				if err := emit(live.Event{Name: eventTick}); err != nil {
-					// A refused emit means the session is saturated or
-					// closing. Neither is this effect's failure and neither is
-					// worth an Error frame in a preservation spec.
-					return nil
+func tickEffect(every time.Duration) live.Effect[qaUser] {
+	return live.Effect[qaUser]{
+		Source: "qa.ticker",
+		Run: func(ctx context.Context, session live.Session[qaUser], emit live.Emitter) error {
+			ticker := time.NewTicker(every)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					// The library owns this goroutine and waits for it at
+					// shutdown, so returning promptly on cancellation is the
+					// contract, not politeness.
+					return ctx.Err()
+				case <-ticker.C:
+					if err := emit(live.Event{Name: eventTick}); err != nil {
+						// A refused emit means the session is saturated or
+						// closing. Neither is this effect's failure and
+						// neither is worth an Error frame in a preservation
+						// spec.
+						return nil
+					}
 				}
 			}
-		}
+		},
+	}
+}
+
+// domTickingConfig is domConfig plus that ticker.
+func domTickingConfig(every time.Duration) live.Config[domState, qaUser] {
+	cfg := domConfig()
+	cfg.Init = func(ctx context.Context, session live.Session[qaUser]) (domState, []live.Effect[qaUser], error) {
+		return domState{}, []live.Effect[qaUser]{tickEffect(every)}, nil
 	}
 	return cfg
 }
@@ -410,7 +409,7 @@ func startDOMTickingApp(every time.Duration) *httptest.Server {
 	return startDOMAppWith(domTickingConfig(every))
 }
 
-func startDOMAppWith(cfg live.Config[domState]) *httptest.Server {
+func startDOMAppWith(cfg live.Config[domState, qaUser]) *httptest.Server {
 	GinkgoHelper()
 
 	wav := silenceWAV(2)

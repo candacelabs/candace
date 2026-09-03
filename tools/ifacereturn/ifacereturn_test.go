@@ -69,7 +69,7 @@ var _ = Describe("the ifacereturn analyzer", Ordered, func() {
 		// empty corpus would produce a clean run over nothing.
 		Expect(results).To(HaveLen(1), "one Result per analyzed root package; `subject` is the only one")
 		Expect(results[0].Err).NotTo(HaveOccurred())
-		Expect(results[0].Diagnostics).To(HaveLen(7))
+		Expect(results[0].Diagnostics).To(HaveLen(12))
 	})
 
 	It("renders each finding in source order, with the exact text Message produces", func() {
@@ -84,6 +84,11 @@ var _ = Describe("the ifacereturn analyzer", Ordered, func() {
 			"OpenSink returns the interface thirdparty.Sink",
 			"Load returns the interface subject.IStore (result 1 of 2)",
 			"Decode returns the interface any",
+			"AllStores returns the interface subject.IStore",
+			"NewView returns View.Store, which is the interface subject.IStore",
+			"NewViews returns View.Store, which is the interface subject.IStore",
+			"NewInner returns Inner.View.Store, which is the interface subject.IStore",
+			"NewRecursive returns Recursive.Store, which is the interface subject.IStore",
 			"(Registry).Store returns the interface subject.IStore",
 			"(*Registry).Reader returns the interface io.Reader",
 		}))
@@ -124,6 +129,33 @@ var _ = Describe("Finding.Message", func() {
 			Interface:   "io.Reader",
 		}
 		Expect(finding.Message()).To(Equal("(*Registry).Load returns the interface io.Reader (result 2 of 3)"))
+	})
+
+	It("names the path when the interface is reached through a struct's field", func() {
+		// CS-8's 2026-09-03 amendment: a struct that is returned and carries an
+		// interface returns that interface, and "somewhere inside this struct"
+		// is not an actionable diagnostic. The path is the whole difference.
+		finding := ifacereturn.Finding{
+			Declaration: "NewView",
+			Position:    1,
+			Arity:       1,
+			Interface:   "subject.IStore",
+			Path:        "View.Store",
+		}
+		Expect(finding.Message()).To(
+			Equal("NewView returns View.Store, which is the interface subject.IStore"))
+	})
+
+	It("names the path and the result position together", func() {
+		finding := ifacereturn.Finding{
+			Declaration: "NewView",
+			Position:    1,
+			Arity:       2,
+			Interface:   "subject.IStore",
+			Path:        "View.Inner.Store",
+		}
+		Expect(finding.Message()).To(Equal(
+			"NewView returns View.Inner.Store, which is the interface subject.IStore (result 1 of 2)"))
 	})
 
 	It("renders positions past nine, which the package's hand-rolled itoa reaches by a different path", func() {

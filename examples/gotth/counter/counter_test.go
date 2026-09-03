@@ -34,23 +34,41 @@ var (
 // so it is a constant rather than a fixture.
 var baseTime = time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 
-// session builds the live.Session a Config hook is called with.
+// session builds the live.Session[live.AnonymousIdentity] a Config hook is called with.
 //
 // This is what livetest.NewSession is for. Before it existed, Store.Execute had
 // to be an adapter over an unexported method taking a live.ID, because a
-// live.Session cannot be built outside the library and a hook taking one was
+// live.Session[live.AnonymousIdentity] cannot be built outside the library and a hook taking one was
 // reachable only through a running server. The adapter is gone; the specs call
 // the exported hook the library calls.
-func session(id live.ID) live.Session {
+func session(id live.ID) live.Session[live.AnonymousIdentity] {
 	GinkgoHelper()
-	return livetest.NewSession(GinkgoTB(), id, anonymous{})
+	return livetest.NewSession(GinkgoTB(), id, live.AnonymousIdentity{})
 }
 
-// anonymous is the identity this example runs under: Config.Authenticate is
-// live.Anonymous, so every session shares one subject.
-type anonymous struct{}
+// sources projects what a transition scheduled into the one thing a
+// specification can compare.
+//
+// live.Effect[live.AnonymousIdentity] carries its behaviour in a function field and Go cannot compare
+// two function values, so a spec asserts on the names the reducer chose. Where
+// the behaviour is the point, the spec runs the effect instead — see the click
+// table, which reads the decision off the store the effect wrote to.
+func sources(effects []live.Effect[live.AnonymousIdentity]) []string {
+	if len(effects) == 0 {
+		// nil rather than an empty slice, so "scheduled nothing" compares equal
+		// to the nil a reducer returns for it.
+		return nil
+	}
+	names := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		names = append(names, effect.Source)
+	}
+	return names
+}
 
-func (anonymous) Subject() string { return "anonymous" }
+// noEmit is the Emitter handed to an effect whose emissions a spec does not
+// read.
+func noEmit(live.Event) error { return nil }
 
 // click builds the event the client runtime would send for one button.
 func click(name string, id uint64, at time.Time) live.Event {
@@ -73,19 +91,28 @@ var _ = Describe("The reducer", func() {
 	// change the shared counter and this session finds out the same way every
 	// other tab does.
 	DescribeTable("turns a click into an effect and changes nothing itself",
-		func(event string, want ChangeEffect) {
+		func(event string, want int64) {
+			store := NewStore()
+			store.Join(tabA)
 			state := State{Self: tabA, Value: 41, Version: 7}
 
-			next, effects := Reduce(state, click(event, 1, baseTime))
+			next, effects := Reducer(store)(state, click(event, 1, baseTime))
 
-			Expect(effects).To(Equal([]live.IEffect{want}))
+			Expect(sources(effects)).To(Equal([]string{SourceChange}))
 			Expect(next.Value).To(Equal(int64(41)), "a reducer must not apply the change itself")
 			Expect(next.Version).To(Equal(uint64(7)))
+
+			// What the reducer decided is read by RUNNING the effect, because
+			// the decision now lives in a closure rather than in comparable
+			// fields. The store is where it becomes visible, which is also the
+			// only place it was ever meant to be visible.
+			Expect(effects[0].Run(context.Background(), session(tabA), noEmit)).To(Succeed())
+			Expect(store.Snapshot().Value).To(Equal(want))
 		},
-		Entry("+1", EventIncrement, ChangeEffect{Op: OpAdd, Delta: 1, By: tabA, Cause: 1}),
-		Entry("-1", EventDecrement, ChangeEffect{Op: OpAdd, Delta: -1, By: tabA, Cause: 1}),
-		Entry("+10", EventIncrement10, ChangeEffect{Op: OpAdd, Delta: 10, By: tabA, Cause: 1}),
-		Entry("reset", EventReset, ChangeEffect{Op: OpReset, By: tabA, Cause: 1}),
+		Entry("+1", EventIncrement, int64(1)),
+		Entry("-1", EventDecrement, int64(-1)),
+		Entry("+10", EventIncrement10, int64(10)),
+		Entry("reset", EventReset, int64(0)),
 	)
 
 	It("folds a store snapshot into this session's view", func() {
@@ -98,7 +125,7 @@ var _ = Describe("The reducer", func() {
 			ChangedAtUnixMilli: baseTime.UnixMilli(),
 		}
 
-		next, effects := Reduce(state, pushed(snap, baseTime.Add(4*time.Second)))
+		next, effects := Reducer(NewStore())(state, pushed(snap, baseTime.Add(4*time.Second)))
 
 		Expect(effects).To(BeEmpty(), "applying a snapshot is not itself a reason to do I/O")
 		Expect(next.Value).To(Equal(int64(12)))
@@ -115,7 +142,7 @@ var _ = Describe("The reducer", func() {
 	It("ignores a snapshot older than the one it holds", func() {
 		state := State{Self: tabA, Value: 9, Version: 5}
 
-		next, _ := Reduce(state, pushed(Snapshot{Value: 2, Version: 4}, baseTime))
+		next, _ := Reducer(NewStore())(state, pushed(Snapshot{Value: 2, Version: 4}, baseTime))
 
 		Expect(next.Value).To(Equal(int64(9)))
 		Expect(next.Version).To(Equal(uint64(5)))
@@ -133,7 +160,7 @@ var _ = Describe("The reducer", func() {
 				fieldTabs:    "2",
 			}),
 		}
-		next, _ := Reduce(state, malformed)
+		next, _ := Reducer(NewStore())(state, malformed)
 
 		Expect(next.Value).To(Equal(int64(9)))
 		Expect(next.Version).To(Equal(uint64(5)))
@@ -146,7 +173,7 @@ var _ = Describe("The reducer", func() {
 	It("leaves state alone for a name it does not handle", func() {
 		state := State{Self: tabA, Value: 3, Version: 1, ChangedAtUnixMilli: baseTime.UnixMilli()}
 
-		next, effects := Reduce(state, live.Event{Name: "counter.nothing_emits_this", At: baseTime})
+		next, effects := Reducer(NewStore())(state, live.Event{Name: "counter.nothing_emits_this", At: baseTime})
 
 		Expect(effects).To(BeEmpty())
 		Expect(next.Value).To(Equal(int64(3)))
@@ -160,10 +187,10 @@ var _ = Describe("The reducer", func() {
 	// while proving nothing. live.EffectFailedEvent exists so the name is not
 	// something an application has to remember.
 	DescribeTable("acts on a failed effect only when the library says a retry is safe",
-		func(source, retryable string, want []live.IEffect) {
+		func(source, retryable string, want []string) {
 			state := State{Self: tabA, Value: 3, Version: 1}
 
-			next, effects := Reduce(state, live.Event{
+			next, effects := Reducer(NewStore())(state, live.Event{
 				Name: live.EffectFailedEvent,
 				At:   baseTime,
 				Fields: live.NewFields(map[string]string{
@@ -173,11 +200,11 @@ var _ = Describe("The reducer", func() {
 				}),
 			})
 
-			Expect(effects).To(Equal(want))
+			Expect(sources(effects)).To(Equal(want))
 			Expect(next.Value).To(Equal(int64(3)), "a failed effect is not a change to the counter")
 		},
 		Entry("a transient subscription failure is re-subscribed",
-			SourceWatch, "true", []live.IEffect{WatchEffect{}}),
+			SourceWatch, "true", []string{SourceWatch}),
 		Entry("a terminal subscription failure is not",
 			SourceWatch, "false", nil),
 		Entry("an unreadable classification is terminal",
@@ -192,7 +219,7 @@ var _ = Describe("The reducer", func() {
 	It("refreshes the relative timestamp on every transition", func() {
 		state := State{Self: tabA, ChangedAtUnixMilli: baseTime.UnixMilli()}
 
-		next, _ := Reduce(state, click(EventIncrement, 1, baseTime.Add(90*time.Second)))
+		next, _ := Reducer(NewStore())(state, click(EventIncrement, 1, baseTime.Add(90*time.Second)))
 
 		Expect(next.Age).To(Equal(90 * time.Second))
 		Expect(next.AgeLabel()).To(Equal("1m ago"))
@@ -262,13 +289,13 @@ var _ = Describe("Determinism", func() {
 	// fail it; nothing else in a pure function of two values can differ
 	// between runs.
 	It("replays the whole session to the same state and the same effects", func() {
-		livetest.ReplayN(GinkgoTB(), Reduce, initial, mixedLog(), 25)
+		livetest.ReplayN(GinkgoTB(), Reducer(NewStore()), initial, mixedLog(), 25)
 	})
 
 	It("replays to the value the log describes", func() {
 		state := initial
 		for _, ev := range mixedLog() {
-			state, _ = Reduce(state, ev)
+			state, _ = Reducer(NewStore())(state, ev)
 		}
 		Expect(state.Value).To(Equal(int64(0)))
 		Expect(state.Version).To(Equal(uint64(4)))
@@ -314,7 +341,7 @@ var _ = Describe("The shared store", func() {
 	It("registers a session and reads the counter under one lock", func() {
 		Expect(store.Join(tabA)).To(Equal(Snapshot{Tabs: 1}))
 
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 4, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 4, By: tabA})
 
 		Expect(store.Join(tabB)).To(Equal(Snapshot{
 			Value:              4,
@@ -327,7 +354,7 @@ var _ = Describe("The shared store", func() {
 
 	It("gives a joining session the value a reload must preserve", func() {
 		store.Join(tabA)
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 7, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 7, By: tabA})
 		store.Leave(tabA)
 
 		// The reload: a brand-new session, and the count is still there
@@ -345,8 +372,8 @@ var _ = Describe("The shared store", func() {
 
 	It("resets to zero and keeps counting revisions", func() {
 		store.Join(tabA)
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 5, By: tabA})
-		snap := store.Apply(ChangeEffect{Op: OpReset, By: tabB})
+		store.Apply(Change{Op: OpAdd, Delta: 5, By: tabA})
+		snap := store.Apply(Change{Op: OpReset, By: tabB})
 
 		Expect(snap.Value).To(BeZero())
 		Expect(snap.Version).To(Equal(uint64(2)))
@@ -357,7 +384,7 @@ var _ = Describe("The shared store", func() {
 		store.Join(tabA)
 		store.Join(tabB)
 
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 3, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 3, By: tabA})
 
 		for _, id := range []live.ID{tabA, tabB} {
 			sub := store.subs[id]
@@ -372,24 +399,22 @@ var _ = Describe("The shared store", func() {
 	It("collapses changes a subscriber has not read yet", func() {
 		store.Join(tabA)
 
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 1, By: tabA})
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 1, By: tabA})
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 1, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 1, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 1, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 1, By: tabA})
 
 		sub := store.subs[tabA]
 		Expect(sub.snapshot().Value).To(Equal(int64(3)))
 		Expect(sub.wake).To(HaveLen(1))
 	})
 
-	It("refuses an effect it has no executor for", func() {
-		Expect(store.Execute(GinkgoT().Context(), session(tabA), unknownEffect{}, nil)).
-			To(MatchError(ContainSubstring("no executor")))
-	})
+	// There is no "refuses an effect it has no executor for" spec any more, and
+	// its absence is the point: since live.Effect[live.AnonymousIdentity] became a concrete struct with
+	// its own Run, an effect this store does not own is an effect this store
+	// cannot be handed. The failure that spec covered — an effect that names
+	// itself and performs nothing — is the library's now, and live's own suite
+	// is where it is held.
 })
-
-type unknownEffect struct{}
-
-func (unknownEffect) EffectSource() string { return "counter.unknown" }
 
 var _ = Describe("The subscription pump", func() {
 	// The end-to-end shape of the push channel, with the library's Emitter
@@ -406,7 +431,7 @@ var _ = Describe("The subscription pump", func() {
 
 		emitted := make(chan live.Event, 8)
 		go func() {
-			_ = store.Execute(ctx, session(tabB), WatchEffect{}, func(ev live.Event) error {
+			_ = store.WatchEffect().Run(ctx, session(tabB), func(ev live.Event) error {
 				emitted <- ev
 				return nil
 			})
@@ -416,7 +441,7 @@ var _ = Describe("The subscription pump", func() {
 		// already returned it as the initial state — so nothing has been
 		// emitted yet. The change comes from the other tab.
 		Consistently(emitted, 50*time.Millisecond).ShouldNot(Receive())
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 6, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 6, By: tabA})
 
 		var ev live.Event
 		Eventually(emitted).Should(Receive(&ev))
@@ -425,7 +450,7 @@ var _ = Describe("The subscription pump", func() {
 		Expect(ev.Fields.Get(fieldChangedBy)).To(Equal(tabA.String()))
 
 		// And the event a reducer receives folds to the value tabA set.
-		next, _ := Reduce(State{Self: tabB}, live.Event{Name: ev.Name, Fields: ev.Fields, At: baseTime})
+		next, _ := Reducer(NewStore())(State{Self: tabB}, live.Event{Name: ev.Name, Fields: ev.Fields, At: baseTime})
 		Expect(next.Value).To(Equal(int64(6)))
 	})
 
@@ -440,7 +465,7 @@ var _ = Describe("The subscription pump", func() {
 		accepted := make(chan live.Event, 4)
 		refusals := 0
 		go func() {
-			_ = store.Execute(ctx, session(tabA), WatchEffect{}, func(ev live.Event) error {
+			_ = store.WatchEffect().Run(ctx, session(tabA), func(ev live.Event) error {
 				if refusals < 2 {
 					refusals++
 					return errSaturated
@@ -450,7 +475,7 @@ var _ = Describe("The subscription pump", func() {
 			})
 		}()
 
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 2, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 2, By: tabA})
 
 		var ev live.Event
 		Eventually(accepted, 2*time.Second).Should(Receive(&ev))
@@ -472,10 +497,10 @@ var _ = Describe("The subscription pump", func() {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- store.Execute(ctx, session(tabA), WatchEffect{}, func(live.Event) error { return errSaturated })
+			done <- store.WatchEffect().Run(ctx, session(tabA), func(live.Event) error { return errSaturated })
 		}()
 
-		store.Apply(ChangeEffect{Op: OpAdd, Delta: 1, By: tabA})
+		store.Apply(Change{Op: OpAdd, Delta: 1, By: tabA})
 
 		var err error
 		Eventually(done, 5*time.Second).Should(Receive(&err))
@@ -489,7 +514,7 @@ var _ = Describe("The subscription pump", func() {
 		ctx, cancel := context.WithCancel(GinkgoT().Context())
 		done := make(chan error, 1)
 		go func() {
-			done <- store.Execute(ctx, session(tabA), WatchEffect{}, func(live.Event) error { return nil })
+			done <- store.WatchEffect().Run(ctx, session(tabA), func(live.Event) error { return nil })
 		}()
 
 		cancel()
@@ -499,7 +524,7 @@ var _ = Describe("The subscription pump", func() {
 	It("reports a session that was never joined rather than blocking forever", func() {
 		store := NewStore()
 
-		err := store.Execute(GinkgoT().Context(), session(tabA), WatchEffect{}, func(live.Event) error { return nil })
+		err := store.WatchEffect().Run(GinkgoT().Context(), session(tabA), func(live.Event) error { return nil })
 
 		Expect(err).To(MatchError(ContainSubstring("not subscribed")))
 	})
@@ -616,7 +641,7 @@ func page(s State) templ.Component {
 // devApp is this example's application with Dev set either way. The page needs
 // one because app.Document is a method — what it puts in the head depends on
 // this Config.
-func devApp(dev bool) *live.App[State] {
+func devApp(dev bool) *live.App[State, live.AnonymousIdentity] {
 	GinkgoHelper()
 
 	app, err := live.New(devConfig(dev))
@@ -625,7 +650,7 @@ func devApp(dev bool) *live.App[State] {
 }
 
 // devConfig is this example's config with Dev set either way.
-func devConfig(dev bool) live.Config[State] {
+func devConfig(dev bool) live.Config[State, live.AnonymousIdentity] {
 	cfg := Config(NewStore(), []string{"http://127.0.0.1:8080"})
 	cfg.Dev = dev
 	return cfg
@@ -642,7 +667,7 @@ var _ = Describe("The mounted application", func() {
 	const origin = "http://127.0.0.1:8080"
 
 	var (
-		app    *live.App[State]
+		app    *live.App[State, live.AnonymousIdentity]
 		server *httptest.Server
 	)
 

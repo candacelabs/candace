@@ -11,15 +11,15 @@ Compiled source: [`_samples/lifecycle`](_samples/lifecycle).
 ## Three hooks, and the whole session
 
 ```text
-upgrade  ─▶  Authenticate(*http.Request) (IIdentity, error)      before any session memory
+upgrade  ─▶  Authenticate(*http.Request) (I, error)              before any session memory
              CSRF(*http.Request) error
    │
    ▼
-mount    ─▶  Init(ctx, Session) (S, []IEffect, error)            once, first transition
+mount    ─▶  Init(ctx, Session) (S, []Effect, error)             once, first transition
    │
    ▼
 each event ▶ Authorize(ctx, Session, Event) error               single mailbox ingress
-             Reduce(S, Event) (S, []IEffect)
+             Reduce(S, Event) (S, []Effect)
    │
    ▼
 exit     ─▶  Teardown(ctx, Session, S)                          after the actor has exited
@@ -55,11 +55,11 @@ way.
 
 <!-- sample: lifecycle/lifecycle.go -->
 ```go
-func Init(topic *Topic) func(context.Context, live.Session) (State, []live.IEffect, error) {
-	return func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
+func Init(topic *Topic) func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
+	return func(ctx context.Context, sess live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 		subject := sess.Identity().Subject()
 		topic.Join(sess.ID(), subject)
-		return State{Me: sess.ID(), Subject: subject}, []live.IEffect{WatchEffect{}}, nil
+		return State{Me: sess.ID(), Subject: subject}, []live.Effect[live.AnonymousIdentity]{topic.WatchEffect()}, nil
 	}
 }
 ```
@@ -84,7 +84,8 @@ memory line item, and a context value is the idiomatic Go answer with zero API
 surface.
 
 `Session` carries exactly two things: `ID() live.ID`, sixteen bytes minted by
-the server and carried in every frame, and `Identity() live.IIdentity`, bound at
+the server and carried in every frame, and `Identity() I` — the application's
+own identity type, not an interface — bound at
 the handshake and immutable for the connection's life. There is no
 re-authentication and no privilege change mid-session.
 
@@ -94,7 +95,7 @@ re-authentication and no privilege change mid-session.
 
 <!-- sample: lifecycle/lifecycle.go -->
 ```go
-func Authorize(_ context.Context, sess live.Session, ev live.Event) error {
+func Authorize(_ context.Context, sess live.Session[live.AnonymousIdentity], ev live.Event) error {
 	if ev.Name == "room.purge" && sess.Identity().Subject() != "admin" {
 		return &live.DenyError{Reason: "only an admin may purge the room"}
 	}
@@ -131,8 +132,8 @@ about who may do what, and grep for it before you ship.
 
 <!-- sample: lifecycle/lifecycle.go -->
 ```go
-func Teardown(topic *Topic) func(context.Context, live.Session, State) {
-	return func(_ context.Context, sess live.Session, _ State) {
+func Teardown(topic *Topic) func(context.Context, live.Session[live.AnonymousIdentity], State) {
+	return func(_ context.Context, sess live.Session[live.AnonymousIdentity], _ State) {
 		topic.Leave(sess.ID())
 	}
 }

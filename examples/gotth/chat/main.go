@@ -172,7 +172,7 @@ const MountPath = "/chat/live"
 // It is a plain *http.ServeMux and the live handler is a plain http.Handler,
 // which is the point — mounting a live application is one Handle call under
 // whatever router the application already has.
-func NewMux(app *live.App[State], room *Room, dir Directory) *http.ServeMux {
+func NewMux(app *live.App[State, Member], room *Room, dir Directory) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Both patterns are registered because MountPath is the WebSocket endpoint

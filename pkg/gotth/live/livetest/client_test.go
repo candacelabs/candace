@@ -42,14 +42,14 @@ const (
 // probeApp is the smallest application that can answer every question this
 // suite asks: two independent regions so "which fragments did that patch
 // carry" has an answer, and two events so one can move each.
-func probeApp() *live.App[counter] {
+func probeApp() *live.App[counter, live.AnonymousIdentity] {
 	GinkgoHelper()
 
-	app, err := live.New(live.Config[counter]{
-		Init: func(ctx context.Context, session live.Session) (counter, []live.IEffect, error) {
+	app, err := live.New(live.Config[counter, live.AnonymousIdentity]{
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (counter, []live.Effect[live.AnonymousIdentity], error) {
 			return counter{}, nil, nil
 		},
-		Reduce: func(state counter, ev live.Event) (counter, []live.IEffect) {
+		Reduce: func(state counter, ev live.Event) (counter, []live.Effect[live.AnonymousIdentity]) {
 			switch ev.Name {
 			case eventIncrement:
 				state.N++
@@ -73,7 +73,7 @@ func probeApp() *live.App[counter] {
 		Events:       []string{eventIncrement, eventRelabel},
 		Origins:      []string{testOrigin},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 	Expect(err).NotTo(HaveOccurred())
@@ -86,7 +86,7 @@ func probeApp() *live.App[counter] {
 	return app
 }
 
-func dial(app *live.App[counter]) *livetest.Client {
+func dial(app *live.App[counter, live.AnonymousIdentity]) *livetest.Client {
 	GinkgoHelper()
 	return livetest.NewClient(GinkgoTB(), app.Handler(), livetest.ClientOptions{
 		Path:    "/",

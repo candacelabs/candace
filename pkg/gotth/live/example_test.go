@@ -50,15 +50,15 @@ func Example() {
 		})
 	}
 
-	reduce := func(s state, ev live.Event) (state, []live.IEffect) {
+	reduce := func(s state, ev live.Event) (state, []live.Effect[live.AnonymousIdentity]) {
 		if ev.Name == "counter.increment" {
 			s.Count++
 		}
 		return s, nil
 	}
 
-	app, err := live.New(live.Config[state]{
-		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
+	app, err := live.New(live.Config[state, live.AnonymousIdentity]{
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (state, []live.Effect[live.AnonymousIdentity], error) {
 			return state{}, nil, nil
 		},
 		Reduce: reduce,
@@ -73,7 +73,7 @@ func Example() {
 		// deliberately greppable opt-outs. An application that meant them
 		// would still have had to write them.
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 	if err != nil {
@@ -135,12 +135,12 @@ func exampleRender(s exampleState) templ.Component {
 //
 // The security hooks are the deliberately greppable opt-outs. An application
 // that meant them would still have to write them.
-func exampleApp(dev bool) *live.App[exampleState] {
-	app, err := live.New(live.Config[exampleState]{
-		Init: func(ctx context.Context, session live.Session) (exampleState, []live.IEffect, error) {
+func exampleApp(dev bool) *live.App[exampleState, live.AnonymousIdentity] {
+	app, err := live.New(live.Config[exampleState, live.AnonymousIdentity]{
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (exampleState, []live.Effect[live.AnonymousIdentity], error) {
 			return exampleState{}, nil, nil
 		},
-		Reduce: func(s exampleState, ev live.Event) (exampleState, []live.IEffect) {
+		Reduce: func(s exampleState, ev live.Event) (exampleState, []live.Effect[live.AnonymousIdentity]) {
 			if ev.Name == "counter.increment" {
 				s.N++
 			}
@@ -154,7 +154,7 @@ func exampleApp(dev bool) *live.App[exampleState] {
 		Events:       []string{"counter.increment"},
 		Origins:      []string{"https://app.example"},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 		Dev:          dev,
 	})
@@ -193,7 +193,7 @@ func ExampleScript() {
 // scripts run in document order, and the inspector has to wrap the WebSocket
 // constructor before the runtime opens a socket with it.
 func ExampleApp_InspectorScript() {
-	page := func(app *live.App[exampleState], w io.Writer) error {
+	page := func(app *live.App[exampleState, live.AnonymousIdentity], w io.Writer) error {
 		if err := app.InspectorScript("/live").Render(context.Background(), w); err != nil {
 			return err
 		}
@@ -230,17 +230,19 @@ func ExampleApp_InspectorScript() {
 func ExampleApp_PageHandler() {
 	loaded := 41
 
-	app, err := live.New(live.Config[exampleState]{
+	app, err := live.New(live.Config[exampleState, live.AnonymousIdentity]{
 		// The loader. Its answer changes; the frozen page's cannot.
-		Init: func(ctx context.Context, session live.Session) (exampleState, []live.IEffect, error) {
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (exampleState, []live.Effect[live.AnonymousIdentity], error) {
 			return exampleState{N: loaded}, nil, nil
 		},
-		Reduce:       func(s exampleState, _ live.Event) (exampleState, []live.IEffect) { return s, nil },
+		Reduce: func(s exampleState, _ live.Event) (exampleState, []live.Effect[live.AnonymousIdentity]) {
+			return s, nil
+		},
 		Fragments:    []live.Fragment[exampleState]{{ID: "counter", Render: exampleRender}},
 		Events:       []string{"counter.increment"},
 		Origins:      []string{"https://app.example"},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 	if err != nil {
@@ -308,13 +310,15 @@ func ExampleApp_Mux() {
 // Nothing is lost but the choice of what to do next: the panic value is the
 // *ConfigError New would have returned, naming the field and what to set it to.
 func ExampleMustNew() {
-	app := live.MustNew(live.Config[exampleState]{
-		Reduce:       func(s exampleState, _ live.Event) (exampleState, []live.IEffect) { return s, nil },
+	app := live.MustNew(live.Config[exampleState, live.AnonymousIdentity]{
+		Reduce: func(s exampleState, _ live.Event) (exampleState, []live.Effect[live.AnonymousIdentity]) {
+			return s, nil
+		},
 		Fragments:    []live.Fragment[exampleState]{{ID: "counter", Render: exampleRender}},
 		Events:       []string{"counter.increment"},
 		Origins:      []string{"https://app.example"},
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
 	})
 	fmt.Println("mounted:", app.Handler() != nil)
@@ -324,7 +328,7 @@ func ExampleMustNew() {
 	// process stops, which is the point.
 	func() {
 		defer func() { fmt.Println("refused:", recover()) }()
-		live.MustNew(live.Config[exampleState]{})
+		live.MustNew(live.Config[exampleState, live.AnonymousIdentity]{})
 	}()
 
 	// Output:

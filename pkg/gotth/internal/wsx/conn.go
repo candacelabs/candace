@@ -18,16 +18,16 @@ import (
 )
 
 // conn is one connection: two goroutines, both owned and both waited for.
-type conn struct {
-	h     *Handler
+type conn[I session.IIdentity] struct {
+	h     *Handler[I]
 	ws    *websocket.Conn
-	peer  session.Peer
-	actor *session.Actor
+	peer  session.Peer[I]
+	actor *session.Actor[I]
 	fr    *protocol.Framer
 	done  chan struct{}
 
 	// idStr and idAttr are this session's identifier rendered once, for the
-	// same reason session.Actor holds them: Peer.ID.String() hex-encodes into a
+	// same reason session.Actor holds them: session.Peer.ID.String() hex-encodes into a
 	// fresh string, and the read pump reaches it on EVERY inbound frame. It
 	// does not change for the life of the connection.
 	idStr  string
@@ -49,9 +49,9 @@ type conn struct {
 // entered is already closeable and already waited for: `ws` is set, so
 // `Close`'s `c.close(...)` reaches the socket, and `done` is created here, so
 // `Close`'s `<-c.done` has something to wait on.
-func (h *Handler) newConn(ws *websocket.Conn, peer session.Peer) *conn {
+func (h *Handler[I]) newConn(ws *websocket.Conn, peer session.Peer[I]) *conn[I] {
 	id := peer.ID.String()
-	return &conn{
+	return &conn[I]{
 		h:      h,
 		ws:     ws,
 		peer:   peer,
@@ -74,7 +74,7 @@ func (h *Handler) newConn(ws *websocket.Conn, peer session.Peer) *conn {
 // The count in RFC-0001 §3.4 is unchanged — this goroutine IS the read pump,
 // and net/http's has gone home — but net/http's recover went home with it, so
 // the teardown below carries a guard of its own.
-func (h *Handler) serve(ctx context.Context, c *conn, app session.IApp) {
+func (h *Handler[I]) serve(ctx context.Context, c *conn[I], app session.IApp[I]) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -153,7 +153,7 @@ func (h *Handler) serve(ctx context.Context, c *conn, app session.IApp) {
 
 	ticker = time.NewTicker(h.opts.Limits.HeartbeatInterval)
 
-	c.actor = session.New(session.Options{
+	c.actor = session.New(session.Options[I]{
 		Peer:    peer,
 		App:     app,
 		Limits:  h.opts.Limits,
@@ -188,7 +188,7 @@ func (h *Handler) serve(ctx context.Context, c *conn, app session.IApp) {
 // answered on this goroutine, because blocking here would stall the
 // connection's own liveness handling — the failure the bounds exist to
 // prevent, reached by a different route.
-func (c *conn) readPump(ctx context.Context) {
+func (c *conn[I]) readPump(ctx context.Context) {
 	limits := protocol.Limits{MaxInboundFrameBytes: c.h.opts.Limits.MaxInboundFrameBytes}
 
 	for {
@@ -253,7 +253,7 @@ func (c *conn) readPump(ctx context.Context) {
 }
 
 // rejected answers a refused frame and reports whether the connection is over.
-func (c *conn) rejected(ctx context.Context, err error) bool {
+func (c *conn[I]) rejected(ctx context.Context, err error) bool {
 	var rej *protocol.RejectError
 	if !errors.As(err, &rej) {
 		// Unreachable while ParseInbound and CheckSessionID return only
@@ -293,7 +293,7 @@ func (c *conn) rejected(ctx context.Context, err error) bool {
 	return false
 }
 
-func (c *conn) noteReadError(ctx context.Context, err error) {
+func (c *conn[I]) noteReadError(ctx context.Context, err error) {
 	if errors.Is(err, context.Canceled) || websocket.CloseStatus(err) != -1 {
 		return
 	}
@@ -304,7 +304,7 @@ func (c *conn) noteReadError(ctx context.Context, err error) {
 // close ends the connection with an enumerated code. It is idempotent and safe
 // from any goroutine; the first code named is the one recorded, because it is
 // the one that describes why.
-func (c *conn) close(code protocol.CloseCode, reason string) {
+func (c *conn[I]) close(code protocol.CloseCode, reason string) {
 	c.closeOnce.Do(func() {
 		c.closeCode.Store(int64(code))
 		if len(reason) > 120 {
@@ -314,7 +314,7 @@ func (c *conn) close(code protocol.CloseCode, reason string) {
 	})
 }
 
-func (c *conn) finalCode() protocol.CloseCode {
+func (c *conn[I]) finalCode() protocol.CloseCode {
 	if code := protocol.CloseCode(c.closeCode.Load()); code.Valid() {
 		return code
 	}

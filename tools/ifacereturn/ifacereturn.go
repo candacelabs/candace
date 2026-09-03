@@ -1,5 +1,20 @@
-// Package ifacereturn reports every function and method declaration whose
-// declared result type is an interface.
+// Package ifacereturn reports every function and method declaration through
+// whose results an interface reaches a caller.
+//
+// # Running it
+//
+// In this monorepo, through the CLI, which is the only invocation an operator
+// here should need:
+//
+//	candace style ifacereturn
+//
+// That wraps tools/check-ifacereturn.sh, which knows where this monorepo's
+// modules are and sweeps every one of them in the pinned toolchain container.
+//
+// For consumers of the published candacelabs/candace module, who have no
+// private CLI, the portable form is a go run from a module root:
+//
+//	go run github.com/candacelabs/candace/tools/ifacereturn/cmd/ifacereturn ./...
 //
 // It is the wide half of a two-lane enforcement of house rule CS-8, "return
 // concrete implementations, only accept interfaces". The narrow lane is a
@@ -20,6 +35,20 @@
 // cases visible is what the lane is for, so it flags and never blocks, and a
 // ruled case is answered in the rule's own exceptions record rather than
 // silenced here. There is no marker comment and no exclusion list.
+//
+// Since 2026-09-03 it also descends: a result that is a struct, or a pointer,
+// slice, array, map or channel of one, is walked field by field, and an
+// interface reached that way is reported with the path that reaches it
+// (`NewView returns View.Store, which is the interface subject.IStore`).
+// Operator ruling of that date: returning a struct that carries interface-typed
+// fields is returning those interfaces, and the wrapper is not a boundary. A
+// visited set makes a recursive type terminate and maxDepth caps a wide one; a
+// func-typed field is deliberately not followed, because a callback a struct
+// carries is a contract rather than an implementation handed over.
+//
+// Direction is a property of the walk rather than a filter on it: only RESULTS
+// are ever walked, so the parameter position CS-8 asks an interface to live in
+// is unreachable from here by construction.
 //
 // The one exemption is error. Go's own contract, implemented by everything,
 // matched by errors.Is and errors.As, and returned by roughly every function
@@ -44,7 +73,7 @@ import (
 // Doc is the analyzer's one-line description, and the text `-help` prints.
 const Doc = "report every function or method result whose declared type is an interface (house rule CS-8, flagging lane; error is the only exemption)"
 
-// Finding is one result position whose declared type is an interface.
+// Finding is one result position through which an interface reaches a caller.
 type Finding struct {
 	// Pos is the offending result type expression, so a report points at the
 	// type rather than at the declaration's name.
@@ -57,21 +86,36 @@ type Finding struct {
 	// which one is meant.
 	Position int
 	Arity    int
-	// Interface is the result type's full name, package path included
+	// Interface is the interface's full name, package path included
 	// (`github.com/candacelabs/candace/services/warden.IClock`, `io.Reader`,
 	// `any`).
 	Interface string
+	// Path is how the interface is reached from the result, when it is not the
+	// result itself: `View.Store`, or `View.Inner.Store` one level deeper. It
+	// is empty for a result that IS the interface.
+	//
+	// Operator ruling, 2026-09-03: returning a struct that carries
+	// interface-typed fields is returning those interfaces. A caller that
+	// receives the struct receives every interface reachable from it, so the
+	// wrapper is not a boundary and this lane says so by naming the way
+	// through.
+	Path string
 }
 
 // Message is the diagnostic text for one finding, and the string the analyzer
 // reports. It names the whole signature position because "returns an
-// interface" is not actionable without knowing which result.
+// interface" is not actionable without knowing which result, and it names the
+// path because "somewhere inside this struct" is not actionable either.
 func (finding Finding) Message() string {
 	place := ""
 	if finding.Arity > 1 {
 		place = " (result " + itoa(finding.Position) + " of " + itoa(finding.Arity) + ")"
 	}
-	return finding.Declaration + " returns the interface " + finding.Interface + place
+	if finding.Path == "" {
+		return finding.Declaration + " returns the interface " + finding.Interface + place
+	}
+	return finding.Declaration + " returns " + finding.Path + ", which is the interface " +
+		finding.Interface + place
 }
 
 // itoa is strconv.Itoa for small non-negative counts, kept local so this
@@ -104,7 +148,7 @@ var Analyzer = &analysis.Analyzer{
 // function, which is precisely the library-pass-through class CS-8 exempts by
 // ruling and this lane reports anyway.
 func run(pass *analysis.Pass) (any, error) {
-	for _, finding := range Inspect(pass.Files, pass.TypesInfo) {
+	for _, finding := range InspectIn(pass.Files, pass.TypesInfo, pass.Pkg) {
 		pass.Reportf(finding.Pos, "%s", finding.Message())
 	}
 	return nil, nil
@@ -117,6 +161,16 @@ func run(pass *analysis.Pass) (any, error) {
 // cannot be resolved is skipped rather than guessed at, because a lint that
 // invents a finding from an unresolved type is worse than one that misses it.
 func Inspect(files []*ast.File, info *types.Info) []Finding {
+	return InspectIn(files, info, nil)
+}
+
+// InspectIn is Inspect told which package it is analyzing.
+//
+// The package decides whether an UNEXPORTED field of a returned struct counts
+// as handed over: in-package it is reachable, out-of-package it is not. Inspect
+// passes nil, which is the conservative reading — only exported fields are
+// followed — and the analyzer passes pass.Pkg.
+func InspectIn(files []*ast.File, info *types.Info, scope *types.Package) []Finding {
 	var findings []Finding
 	for _, file := range files {
 		for _, declaration := range file.Decls {
@@ -124,31 +178,145 @@ func Inspect(files []*ast.File, info *types.Info) []Finding {
 			if !ok || function.Type == nil || function.Type.Results == nil {
 				continue
 			}
-			findings = append(findings, resultFindings(function, info)...)
+			findings = append(findings, resultFindings(function, info, scope)...)
 		}
 	}
 	return findings
 }
 
-// resultFindings reports the interface-typed results of one declaration.
-func resultFindings(function *ast.FuncDecl, info *types.Info) []Finding {
+// maxDepth bounds the descent through named structs.
+//
+// It is a cap rather than a limit anybody has reached: the visited set already
+// makes the walk terminate on a recursive type, and this is the second guard,
+// for the pathological wide-and-deep tree where termination is not the problem
+// and the number of paths is. Six levels is well past anything in this
+// repository — the deepest real path measured on landing is two — and a
+// diagnostic naming a seven-hop path would not be actionable anyway.
+const maxDepth = 6
+
+// resultFindings reports every interface one declaration's results carry.
+func resultFindings(function *ast.FuncDecl, info *types.Info, scope *types.Package) []Finding {
 	results := flattenResults(function.Type.Results)
 	name := declarationName(function)
 	var findings []Finding
 	for index, expression := range results {
 		resultType := info.TypeOf(expression)
-		if resultType == nil || !isReportable(resultType) {
+		if resultType == nil {
 			continue
 		}
-		findings = append(findings, Finding{
-			Pos:         expression.Pos(),
-			Declaration: name,
-			Position:    index + 1,
-			Arity:       len(results),
-			Interface:   types.TypeString(resultType, nil),
-		})
+		for _, reached := range reachableInterfaces(resultType, scope) {
+			findings = append(findings, Finding{
+				Pos:         expression.Pos(),
+				Declaration: name,
+				Position:    index + 1,
+				Arity:       len(results),
+				Interface:   reached.name,
+				Path:        reached.path,
+			})
+		}
 	}
 	return findings
+}
+
+// reached is one interface a result hands over, and the way it is reached.
+type reached struct {
+	name string
+	path string // empty when the result IS the interface
+}
+
+// reachableInterfaces walks one result type and returns every interface a
+// caller receives through it.
+//
+// It descends through the wrappers that hand their contents over unchanged — a
+// pointer, a slice, an array, a map's key and value, a channel — and through
+// the FIELDS of a named or anonymous struct, which is the 2026-09-03 amendment.
+// A func-typed field is not followed: a callback the struct carries is a
+// contract the caller supplies or invokes rather than an implementation handed
+// over, and following one would report every options struct in the tree twice.
+//
+// Direction is a property of the walk rather than a filter on it: this is only
+// ever called on RESULTS, so a parameter of interface type — the position CS-8
+// asks for — is never reachable from here.
+func reachableInterfaces(resultType types.Type, scope *types.Package) []reached {
+	var found []reached
+	visited := map[*types.Named]bool{}
+	var walk func(current types.Type, path string, depth int)
+	walk = func(current types.Type, path string, depth int) {
+		if current == nil || depth > maxDepth {
+			return
+		}
+		if isReportable(current) {
+			found = append(found, reached{name: types.TypeString(current, nil), path: path})
+			return
+		}
+		if named, ok := types.Unalias(current).(*types.Named); ok {
+			if visited[named] {
+				return // a recursive type, and one visit is the whole of it
+			}
+			visited[named] = true
+			if structure, isStruct := named.Underlying().(*types.Struct); isStruct {
+				owner := named.Obj().Pkg()
+				// The path so far when there is one, so a nested struct reads
+				// `View.Inner.Store` rather than restarting at `Inner.Store`.
+				// At the top of a walk there is no path yet and the type's own
+				// name is the honest start of one.
+				holder := path
+				if holder == "" {
+					holder = named.Obj().Name()
+				}
+				walkFields(structure, holder, depth, owner == scope, walk)
+			}
+			return
+		}
+		switch underlying := types.Unalias(current).(type) {
+		case *types.Struct:
+			// An anonymous struct written in the analyzed file: every field of
+			// it is as reachable as the result itself.
+			walkFields(underlying, path, depth, true, walk)
+		case *types.Pointer:
+			walk(underlying.Elem(), path, depth)
+		case *types.Slice:
+			walk(underlying.Elem(), path, depth)
+		case *types.Array:
+			walk(underlying.Elem(), path, depth)
+		case *types.Chan:
+			walk(underlying.Elem(), path, depth)
+		case *types.Map:
+			walk(underlying.Key(), path, depth)
+			walk(underlying.Elem(), path, depth)
+		}
+	}
+	walk(resultType, "", 0)
+	return found
+}
+
+// walkFields descends into one struct's fields, naming the path as it goes.
+//
+// `inScope` says whether the struct was declared in the package under analysis.
+// An unexported field of a struct from ANOTHER package is not reachable by the
+// caller that receives it, so it is not something the declaration hands over,
+// and following it is how this lane went from 407 findings to 9,459 the first
+// time it was run: every protobuf message carries a `state
+// protoimpl.MessageState`, every metric bundle an unexported counter, and none
+// of it is anything a caller could touch. Exported fields of a foreign struct
+// ARE reachable, and are still followed.
+func walkFields(
+	structure *types.Struct,
+	holder string,
+	depth int,
+	inScope bool,
+	walk func(current types.Type, path string, depth int),
+) {
+	for index := 0; index < structure.NumFields(); index++ {
+		field := structure.Field(index)
+		if !field.Exported() && !inScope {
+			continue
+		}
+		if _, isFunc := field.Type().Underlying().(*types.Signature); isFunc {
+			continue
+		}
+		walk(field.Type(), holder+"."+field.Name(), depth+1)
+	}
 }
 
 // flattenResults expands a result list into one type expression per result, so

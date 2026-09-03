@@ -144,16 +144,16 @@ func keyPanelHTML(s keyState) string {
 	return b.String()
 }
 
-func keyConfig() live.Config[keyState] {
-	return live.Config[keyState]{
-		Init: func(ctx context.Context, session live.Session) (keyState, []live.IEffect, error) {
+func keyConfig() live.Config[keyState, qaUser] {
+	return live.Config[keyState, qaUser]{
+		Init: func(ctx context.Context, session live.Session[qaUser]) (keyState, []live.Effect[qaUser], error) {
 			return keyState{}, nil, nil
 		},
 		// Every accepted event moves Events and Log, so every one of them
 		// produces a patch. A spec can therefore wait for the arrival of an
 		// event that changes nothing else, which is what makes "no event was
 		// raised" assertable rather than merely unobserved.
-		Reduce: func(s keyState, ev live.Event) (keyState, []live.IEffect) {
+		Reduce: func(s keyState, ev live.Event) (keyState, []live.Effect[qaUser]) {
 			s.Events++
 			s.Log = strings.TrimSpace(s.Log + " " + ev.Name)
 			switch ev.Name {
@@ -174,8 +174,8 @@ func keyConfig() live.Config[keyState] {
 			Dirty:  func(prev, next keyState) bool { return prev != next },
 		}},
 		Events:       []string{eventInc, eventDec, eventDraft, eventClear, eventEnter, eventAny, eventNever},
-		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("qa"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }

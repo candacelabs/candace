@@ -33,24 +33,39 @@ const (
 
 // ApplyEffect asks the store to add Delta.
 //
-// An effect is a plain value. No channels, no connections, no closures over
-// live handles: that is what lets a test assert on what a reducer decided to
-// do without performing it, and it is what makes livetest.ReplayN's deep
-// comparison of emitted effects mean something.
-type ApplyEffect struct {
-	Delta int64
+// An effect is a concrete live.Effect[live.AnonymousIdentity]: a source, which is what provenance and
+// metrics see, and a Run, which is what the library performs at the actor
+// boundary. Both constructors below close over the store, which is why this
+// application has no central executor — an effect performs itself.
 
-	// Cause is the event that asked for this change. It is carried through so
-	// the emission the store produces can name it — see Pump.
-	Cause uint64
+// ApplyEffect asks the store to change the shared counter by delta.
+//
+// cause is the event that asked. It is carried through so the emission the
+// store produces can name it — see Pump.
+func (s *Store) ApplyEffect(delta int64, cause uint64) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceApply,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			s.apply(delta)
+			return nil
+		},
+	}
 }
 
-func (ApplyEffect) EffectSource() string { return SourceApply }
-
 // WatchEffect subscribes this session to the store for as long as it lives.
-type WatchEffect struct{}
-
-func (WatchEffect) EffectSource() string { return SourceWatch }
+//
+// The live.Session[live.AnonymousIdentity] is a parameter of Run and not something to fish out of the
+// context: an effect's identity is an input to what the effect does, and a
+// signature that omitted it would invite the effect to carry addressing
+// information the library already has.
+func (s *Store) WatchEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: SourceWatch,
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return s.Pump(ctx, sess.ID(), emit)
+		},
+	}
+}
 
 // State is one session's view of the shared counter.
 type State struct {
@@ -58,23 +73,29 @@ type State struct {
 	Version uint64
 }
 
-// Reduce never changes Value. It returns an effect and learns the result the
+// Reducer never changes Value. It returns an effect and learns the result the
 // same way every other session does, which is what "server-authoritative"
 // means concretely and why two tabs cannot disagree.
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	switch ev.Name {
-	case EventInc:
-		return s, []live.IEffect{ApplyEffect{Delta: 1, Cause: ev.ID}}
+//
+// It is a constructor over the store because an effect carries its own Run, so
+// a reducer that schedules one has to be able to build it. The transition still
+// touches the store not at all.
+func Reducer(store *Store) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		switch ev.Name {
+		case EventInc:
+			return s, []live.Effect[live.AnonymousIdentity]{store.ApplyEffect(1, ev.ID)}
 
-	case EventSync:
-		return applySync(s, ev), nil
+		case EventSync:
+			return applySync(s, ev), nil
 
-	case live.EffectFailedEvent:
-		// A failed or panicking effect arrives here as an ordinary event
-		// rather than being logged and dropped, so the failure is replayable.
-		return s, retryWatch(ev)
+		case live.EffectFailedEvent:
+			// A failed or panicking effect arrives here as an ordinary event
+			// rather than being logged and dropped, so the failure is replayable.
+			return s, retryWatch(store, ev)
+		}
+		return s, nil
 	}
-	return s, nil
 }
 
 // applySync folds a store snapshot in, and drops one older than the snapshot
@@ -104,10 +125,10 @@ func applySync(s State, ev live.Event) State {
 // classification is a claim the code that performed the effect is in a
 // position to make and this reducer is not. An absent or unreadable value
 // parses as false, and unclassified is terminal.
-func retryWatch(ev live.Event) []live.IEffect {
+func retryWatch(store *Store, ev live.Event) []live.Effect[live.AnonymousIdentity] {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceWatch {
-		return []live.IEffect{WatchEffect{}}
+		return []live.Effect[live.AnonymousIdentity]{store.WatchEffect()}
 	}
 	return nil
 }
@@ -121,25 +142,6 @@ type Store struct {
 }
 
 func NewStore() *Store { return &Store{subs: map[live.ID]chan struct{}{}} }
-
-// Execute performs one effect at the actor boundary, for the session whose
-// transition returned it.
-//
-// The Session is a parameter and not something to fish out of the context: an
-// effect's identity is an input to what the effect does, and a signature that
-// omitted it would invite the effect value to carry addressing information the
-// library already has.
-func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	switch e := effect.(type) {
-	case ApplyEffect:
-		s.apply(e.Delta)
-		return nil
-	case WatchEffect:
-		return s.Pump(ctx, sess.ID(), emit)
-	default:
-		return fmt.Errorf("effects: no executor for %T", effect)
-	}
-}
 
 // Pump delivers snapshots to one session until its context is cancelled.
 //

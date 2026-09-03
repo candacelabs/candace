@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/candacelabs/candace/pkg/gotth/live"
 	"github.com/candacelabs/candace/pkg/widget"
 	"github.com/candacelabs/candace/pkg/widget/widgettest"
 )
@@ -22,7 +23,7 @@ import (
 func card(run RunView, quota QuotaView) widgettest.Rendered {
 	GinkgoHelper()
 
-	mounted, mountError := widgettest.Mount(context.Background(), NewYakshave())
+	mounted, mountError := widgettest.Mount(context.Background(), NewYakshave[live.AnonymousIdentity]())
 	Expect(mountError).ToNot(HaveOccurred())
 	Expect(mounted.Apply(
 		widgettest.Deliver(YakshaveEventRunAdvance, RunFields(run)),
@@ -44,7 +45,7 @@ func green(sequence uint64) RunView {
 
 var _ = Describe("The Yakshave card", func() {
 	It("declares the two streams and the two events they deliver", func() {
-		registration := NewYakshave().Register()
+		registration := NewYakshave[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Region).To(Equal("widget.candaws.yakshave"))
 		Expect(registration.Events).To(BeEmpty(),
@@ -162,7 +163,7 @@ var _ = Describe("The Yakshave card", func() {
 	})
 
 	It("declares dirty for every transition that moves its markup", func() {
-		instance := NewYakshave()
+		instance := NewYakshave[live.AnonymousIdentity]()
 		before := YakshaveState{}
 		after, _ := instance.Reduce(before,
 			widgettest.Deliver(YakshaveEventRunAdvance, RunFields(green(1))))

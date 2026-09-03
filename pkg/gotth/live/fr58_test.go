@@ -114,7 +114,7 @@ var _ = Describe("FR-58: the errors an application holds", func() {
 		// with no next step is the exact defect FR-58 names — the reader is
 		// holding a file they have to change one line of.
 		DescribeTable("name the field at fault and what to set it to",
-			func(mutate func(cfg *live.Config[counter]), field, nextStep string) {
+			func(mutate func(cfg *live.Config[counter, user]), field, nextStep string) {
 				cfg := validConfig()
 				mutate(&cfg)
 
@@ -141,28 +141,28 @@ var _ = Describe("FR-58: the errors an application holds", func() {
 			// FR-58's three clauses. The error this row used to check is gone
 			// rather than weakened, and live_test.go's "accepts a Config with
 			// no mount hook" is what now says so.
-			Entry("no reducer", func(c *live.Config[counter]) { c.Reduce = nil },
+			Entry("no reducer", func(c *live.Config[counter, user]) { c.Reduce = nil },
 				"Reduce", "set the reducer that advances state"),
-			Entry("no live regions", func(c *live.Config[counter]) { c.Fragments = nil },
+			Entry("no live regions", func(c *live.Config[counter, user]) { c.Fragments = nil },
 				"Fragments", "declare at least one live region"),
-			Entry("no registered events", func(c *live.Config[counter]) { c.Events = nil },
+			Entry("no registered events", func(c *live.Config[counter, user]) { c.Events = nil },
 				"Events", "unknown names are refused"),
-			Entry("no allowed origins", func(c *live.Config[counter]) { c.Origins = nil },
+			Entry("no allowed origins", func(c *live.Config[counter, user]) { c.Origins = nil },
 				"Origins", "or set live.AnyOrigin for local development"),
-			Entry("no authentication hook", func(c *live.Config[counter]) { c.Authenticate = nil },
+			Entry("no authentication hook", func(c *live.Config[counter, user]) { c.Authenticate = nil },
 				"Authenticate", "or live.Anonymous to opt out"),
-			Entry("no authorization hook", func(c *live.Config[counter]) { c.Authorize = nil },
-				"Authorize", "or live.AllowAll to opt out"),
-			Entry("no CSRF hook", func(c *live.Config[counter]) { c.CSRF = nil },
+			Entry("no authorization hook", func(c *live.Config[counter, user]) { c.Authorize = nil },
+				"Authorize", "or live.AllowAll[YourIdentity] to opt out"),
+			Entry("no CSRF hook", func(c *live.Config[counter, user]) { c.CSRF = nil },
 				"CSRF", "or live.NoCSRFCheck to opt out"),
 			Entry("a negative limit",
-				func(c *live.Config[counter]) { c.Limits.MailboxDepth = -1 },
+				func(c *live.Config[counter, user]) { c.Limits.MailboxDepth = -1 },
 				"Limits.MailboxDepth", "leave it zero to take the documented default"),
 			Entry("a fragment identity the wire schema cannot carry",
-				func(c *live.Config[counter]) { c.Fragments[0].ID = strings.Repeat("x", 65) },
+				func(c *live.Config[counter, user]) { c.Fragments[0].ID = strings.Repeat("x", 65) },
 				"Fragments", "shorten it"),
 			Entry("a build identity that cannot equal itself",
-				func(c *live.Config[counter]) { c.DevBuildID = " abc " },
+				func(c *live.Config[counter, user]) { c.DevBuildID = " abc " },
 				"DevBuildID", "trim it here"),
 		)
 	})

@@ -1,26 +1,26 @@
-package patience
+package patience_test
 
 import (
 	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
+	. "github.com/onsi/gomega"
 )
 
 func TestPatience(t *testing.T) {
-	gomega.RegisterFailHandler(Fail)
+	RegisterFailHandler(Fail)
 	RunSpecs(t, "pkg/patience suite")
 }
 
-// gomega is imported under its own name rather than dot-imported, which is the
-// convention everywhere else in this module. It has to be here: this package
-// declares Consistently itself, and a dot import would be a redeclaration.
-// That collision is worth leaving in place rather than renaming around — the
-// two names mean the same thing on purpose, and this package is the typed
-// shell over that one.
+// This suite is a black-box test — package patience_test, not package patience —
+// so it can dot-import both ginkgo and gomega the way every other suite in the
+// module does (CS-11). An in-package test could not: patience declares
+// Consistently itself, and dot-importing gomega, which also exports
+// Consistently, would be a redeclaration. Reaching interval, the one unexported
+// thing a spec needs, goes through export_test.go's BudgetInterval.
 
-// recordingReporter is an [IReporter] that records instead of aborting.
+// recordingReporter is a patience.IReporter that records instead of aborting.
 //
 // This is the reason IReporter exists rather than the signatures taking
 // testing.TB: testing.TB cannot be implemented outside the standard library,

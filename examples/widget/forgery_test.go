@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/candacelabs/candace/examples/widget/clusterheartbeats"
+	"github.com/candacelabs/candace/pkg/gotth/live"
 	"github.com/candacelabs/candace/pkg/gotth/live/livetest"
 )
 
@@ -135,7 +136,7 @@ var _ = Describe("A browser forging a stream-delivered event", func() {
 		// stream-delivered ones by hand, and this demo did not — so the hole was
 		// in whichever host forgot, which is exactly the wrong place for it to
 		// depend on.
-		registration := clusterheartbeats.NewClusterHeartbeats().Register()
+		registration := clusterheartbeats.NewClusterHeartbeats[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Internal).To(ContainElement(
 			clusterheartbeats.ClusterHeartbeatsEventSnapshot))

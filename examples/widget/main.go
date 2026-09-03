@@ -51,7 +51,7 @@
 //
 // # Security posture
 //
-// The three escape hatches are live.Anonymous, live.AllowAll and
+// The three escape hatches are live.Anonymous, live.AllowAll[live.AnonymousIdentity] and
 // live.NoCSRFCheck, each because a single-page demo has no accounts to check
 // against. Origins is a real allowlist derived from the listen address rather
 // than live.AnyOrigin, because that one has a production replacement worth
@@ -150,19 +150,18 @@ func run() error {
 		return paletteError
 	}
 
-	config, configError := registry.LiveConfig(widget.MountOptions{
+	config, configError := registry.LiveConfig(widget.MountOptions[live.AnonymousIdentity]{
 		Origins:      hosting.BrowserOrigins(*address),
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 		CSRF:         live.NoCSRFCheck,
-		Init: func(ctx context.Context, session live.Session) ([]live.IEffect, error) {
-			return []live.IEffect{
-				clusterSource{cluster: cluster},
-				healthSource{interval: *health},
+		Init: func(ctx context.Context, session live.Session[live.AnonymousIdentity]) ([]live.Effect[live.AnonymousIdentity], error) {
+			return []live.Effect[live.AnonymousIdentity]{
+				clusterSourceEffect(cluster),
+				healthSourceEffect(*health),
 			}, nil
 		},
-		Execute: executeHostEffect,
-		Dev:     true,
+		Dev: true,
 	})
 	if configError != nil {
 		return configError
@@ -197,49 +196,42 @@ func run() error {
 // in run because a specification asserting on this host's live path has to
 // register the same set, and a second literal is a second set the day one of
 // them changes.
-func hostWidgets() *widget.Registry {
-	registry := widget.NewRegistry()
-	widget.MustRegister(registry, clusterheartbeats.NewClusterHeartbeats())
-	widget.MustRegister(registry, nodestatus.NewNodeStatus())
+func hostWidgets() *widget.Registry[live.AnonymousIdentity] {
+	registry := widget.NewRegistry[live.AnonymousIdentity]()
+	widget.MustRegister(registry, clusterheartbeats.NewClusterHeartbeats[live.AnonymousIdentity]())
+	widget.MustRegister(registry, nodestatus.NewNodeStatus[live.AnonymousIdentity]())
 	return registry
 }
 
 // The two stand-ins for the data plane the widgets' declared streams name. One
 // of them is no longer a stand-in.
-type (
-	// healthSource delivers the node card's health check. It is a ticker,
-	// because that widget has nothing behind it yet.
-	healthSource struct {
-		interval time.Duration
+//
+// Each is a constructor returning a concrete live.Effect[live.AnonymousIdentity] rather than a value
+// implementing an effect interface, and the source it stamps is what provenance
+// carries: "effect:widgetdemo.health_source" on every patch that effect causes.
+// There is no host executor beside them any more — an effect performs itself,
+// so the switch that used to find the right arm has nothing to decide.
+
+// healthSourceEffect delivers the node card's health check. It is a ticker,
+// because that widget has nothing behind it yet.
+func healthSourceEffect(interval time.Duration) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: "widgetdemo.health_source",
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return runHealthSource(ctx, interval, emit)
+		},
 	}
+}
 
-	// clusterSource delivers the raft card's fleet view. It is a subscription
-	// on the election running in this process: one cluster, one subscription
-	// per session, so every browser watching watches the same protocol.
-	clusterSource struct {
-		cluster *raftdemo.Cluster
-	}
-)
-
-// EffectSource names each effect for provenance: it becomes the origin source
-// "effect:widgetdemo.health_source" on every patch that effect causes.
-func (source healthSource) EffectSource() string  { return "widgetdemo.health_source" }
-func (source clusterSource) EffectSource() string { return "widgetdemo.cluster_source" }
-
-// executeHostEffect performs the effects this host owns. The registry never
-// routes a widget's own effect here — it hands those back to the widget that
-// asked for them — so anything arriving is the host's, and an effect the host
-// does not recognise is reported rather than silently succeeded at.
-func executeHostEffect(
-	ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-) error {
-	switch source := effect.(type) {
-	case healthSource:
-		return runHealthSource(ctx, source.interval, emit)
-	case clusterSource:
-		return runClusterSource(ctx, source.cluster, emit)
-	default:
-		return fmt.Errorf("widget: no executor for %s", effect.EffectSource())
+// clusterSourceEffect delivers the raft card's fleet view. It is a subscription
+// on the election running in this process: one cluster, one subscription per
+// session, so every browser watching watches the same protocol.
+func clusterSourceEffect(cluster *raftdemo.Cluster) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: "widgetdemo.cluster_source",
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return runClusterSource(ctx, cluster, emit)
+		},
 	}
 }
 

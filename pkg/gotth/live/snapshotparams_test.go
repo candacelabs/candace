@@ -196,7 +196,7 @@ var _ = Describe("New, validating the Limits the mount snapshot carries (D-23)",
 	// without this going red.
 	DescribeTable("accepts every value the refinement admits, and carries it to the client",
 		func(set func(limits *live.Limits), read func(snapshot *pb.Snapshot) uint32, want uint32) {
-			m := mount(func(c *live.Config[counter]) { set(&c.Limits) })
+			m := mount(func(c *live.Config[counter, user]) { set(&c.Limits) })
 			defer m.stop()
 
 			Expect(read(m.snapshot)).To(Equal(want),
@@ -374,7 +374,7 @@ func probeValues(t reflect.Type) []reflect.Value {
 // mount: the property above exists to find out what the first frame turns out
 // to be, so a helper that already required a Snapshot would fail with the
 // wrong message for the wrong reason.
-func firstFrameOf(app *live.App[counter]) (*pb.Frame, error) {
+func firstFrameOf(app *live.App[counter, user]) (*pb.Frame, error) {
 	ts := httptest.NewServer(app.Handler())
 	defer ts.Close()
 

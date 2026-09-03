@@ -25,7 +25,9 @@ tokens only for its custom vocabulary.
 
 A widget is a vertical slice — its own state, its own events, its own live
 region, its own UI — and every widget a host serves runs inside one process.
-`IWidget[S]` is the contract, and its seven methods are the lifecycle phases of
+`IWidget[S, I]` is the contract — S is the widget's own state type and I is the
+HOST's identity type, threaded through and never read — and its six methods are
+the lifecycle phases of
 [`docs/ontology.md`](docs/ontology.md) rather than a shape chosen for
 convenience: `Register`, `Mount`, `Reduce`, `Render`, `Effect`, `Unmount`, plus
 the `Snapshot` a host reads without knowing the widget's type. `S` is the
@@ -273,4 +275,4 @@ document" becomes indistinguishable from "your document is wrong".
 rather than only the refusal, because nothing generates before it validates.
 
 It is not a product surface: a consumer of this package calls `Interpret` and
-implements `IWidget[S]`, and `gen.sh` is what runs the generator here.
+implements `IWidget[S, I]`, and `gen.sh` is what runs the generator here.

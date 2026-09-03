@@ -12,7 +12,7 @@ Compiled source: [`_samples/observability`](_samples/observability).
 
 <!-- sample: observability/observability.go -->
 ```go
-func Instrument[S any](cfg live.Config[S], logger *slog.Logger, mp metric.MeterProvider, tp trace.TracerProvider) live.Config[S] {
+func Instrument[S any, I live.IIdentity](cfg live.Config[S, I], logger *slog.Logger, mp metric.MeterProvider, tp trace.TracerProvider) live.Config[S, I] {
 	cfg.Logger = logger
 	cfg.Metrics = mp
 	cfg.Tracer = tp

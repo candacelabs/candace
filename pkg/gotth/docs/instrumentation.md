@@ -80,8 +80,8 @@ dependency.
   registered, so this bullet's own bound applied and cardinality was never the
   objection.
 - **`source` is *not* bounded by registration, because nothing registers an
-  effect.** An `IEffect` is an application type and its `EffectSource()` returns
-  whatever the application returns; there is no registry to enumerate
+  effect.** A `live.Effect` is built by the application and its `Source` is
+  whatever the application put there; there is no registry to enumerate
   (protocol.md §3.3). Cardinality is therefore bounded **at the metric**: the
   label admits **64 distinct values per process**, after which further values
   collapse to `other` and `gotthlive_source_label_overflow_total` increments.

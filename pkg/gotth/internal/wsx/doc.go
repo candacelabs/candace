@@ -20,7 +20,7 @@
 // ServeHTTP RETURNS at the upgrade, and the session runs on a goroutine this
 // package owns. The obvious shape — serving the session inline, so the handler
 // returns when the connection ends — keeps net/http's whole per-request working
-// set alive for the life of the session: a *conn with two 4 KiB bufio buffers,
+// set alive for the life of the session: a *conn[I] with two 4 KiB bufio buffers,
 // a *response with a third, and the *Request with its header map, none of which
 // return to net/http's pools because hijacking skips the call that returns
 // them. Returning is what lets net/http collect them, and it is what lets this

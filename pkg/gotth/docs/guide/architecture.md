@@ -78,19 +78,17 @@ The whole of that table is one compiled `Config`:
 
 <!-- sample: architecture/architecture.go -->
 ```go
-	return live.Config[State]{
-		Init: func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
+	return live.Config[State, live.AnonymousIdentity]{
+		Init: func(ctx context.Context, sess live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 			room.Join(sess.ID())
 			return State{}, nil, nil
 		},
 		// ...
-		Reduce: Reduce,
+		Reduce: Reducer(room),
 		// ...
 		Authorize: room.Authorize,
 		// ...
-		Execute: room.Execute,
-		// ...
-		Teardown: func(_ context.Context, sess live.Session, _ State) { room.Leave(sess.ID()) },
+		Teardown: func(_ context.Context, sess live.Session[live.AnonymousIdentity], _ State) { room.Leave(sess.ID()) },
 		// ...
 		Origins:      origins,
 		Authenticate: live.Anonymous,
@@ -102,23 +100,25 @@ The whole of that table is one compiled `Config`:
 `Reduce` never needs a mutex and never gets one, and why no session's state is
 reachable from another session's goroutine. It is also why anything shared
 *between* sessions — a room, a pubsub topic, a cache — is **yours** to
-synchronise, and is reached from `Init`, `Execute` and `Teardown`, never from
-`Reduce`:
+synchronise, and is reached from `Init`, an effect's own `Run` and `Teardown`,
+never from inside the transition itself:
 
 <!-- sample: architecture/architecture.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.IEffect) {
-	if ev.Name != EventShout {
-		return s, nil
+func Reducer(room *Room) live.Reducer[State, live.AnonymousIdentity] {
+	return func(s State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		if ev.Name != EventShout {
+			return s, nil
+		}
+		body := ev.Fields.Get(FieldBody)
+		if body == "" {
+			s.Notice = "say something first"
+			return s, nil
+		}
+		s.Heard++
+		s.Notice = ""
+		return s, []live.Effect[live.AnonymousIdentity]{room.ShoutEffect(body)}
 	}
-	body := ev.Fields.Get(FieldBody)
-	if body == "" {
-		s.Notice = "say something first"
-		return s, nil
-	}
-	s.Heard++
-	s.Notice = ""
-	return s, []live.IEffect{ShoutEffect{Body: body}}
 }
 ```
 
@@ -158,7 +158,7 @@ cache the answer at `Init` and re-check it in `Execute`, where blocking is free.
 
 <!-- sample: architecture/architecture.go -->
 ```go
-func (r *Room) Authorize(_ context.Context, _ live.Session, ev live.Event) error {
+func (r *Room) Authorize(_ context.Context, _ live.Session[live.AnonymousIdentity], ev live.Event) error {
 	if len(ev.Fields.Get(FieldBody)) > 280 {
 		return &live.DenyError{Reason: "that is too long for this room"}
 	}

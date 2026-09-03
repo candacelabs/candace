@@ -39,15 +39,15 @@ var _ = Describe("The generated widgets' dirty declarations", func() {
 	// explains — so it is asserted against the markup rather than against the
 	// projection it came from.
 	It("declare every transition that moves their markup", func() {
-		config, configError := hostWidgets().LiveConfig(widget.MountOptions{
+		config, configError := hostWidgets().LiveConfig(widget.MountOptions[live.AnonymousIdentity]{
 			Origins:      []string{"http://127.0.0.1:8080"},
 			Authenticate: live.Anonymous,
-			Authorize:    live.AllowAll,
+			Authorize:    live.AllowAll[live.AnonymousIdentity],
 			CSRF:         live.NoCSRFCheck,
 		})
 		Expect(configError).ToNot(HaveOccurred())
 
-		initial, _, initError := config.Init(context.Background(), live.Session{})
+		initial, _, initError := config.Init(context.Background(), live.Session[live.AnonymousIdentity]{})
 		Expect(initError).ToNot(HaveOccurred())
 
 		// One of everything that can move either widget: a tick, an election,

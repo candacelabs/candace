@@ -48,14 +48,14 @@ func (u user) Subject() string { return string(u) }
 // graph would legitimately lack the encode and send spans, and a spec that
 // called that "partial" would be failing on the application rather than on the
 // tracer.
-func newApp(tp *sdktrace.TracerProvider) *live.App[state] {
+func newApp(tp *sdktrace.TracerProvider) *live.App[state, user] {
 	GinkgoHelper()
 
-	app, err := live.New(live.Config[state]{
-		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
+	app, err := live.New(live.Config[state, user]{
+		Init: func(ctx context.Context, session live.Session[user]) (state, []live.Effect[user], error) {
 			return state{}, nil, nil
 		},
-		Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
+		Reduce: func(s state, ev live.Event) (state, []live.Effect[user]) {
 			if ev.Name == eventIncr {
 				s.N++
 			}
@@ -73,8 +73,8 @@ func newApp(tp *sdktrace.TracerProvider) *live.App[state] {
 		}},
 		Events:       []string{eventIncr},
 		Origins:      []string{testOrigin},
-		Authenticate: func(request *http.Request) (live.IIdentity, error) { return user("sampler"), nil },
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (user, error) { return user("sampler"), nil },
+		Authorize:    live.AllowAll[user],
 		CSRF:         live.NoCSRFCheck,
 		Tracer:       tp,
 		// The inbound event bucket is raised, and only it.
@@ -109,7 +109,7 @@ func recorder(rate float64) (*sdktrace.TracerProvider, *tracetest.SpanRecorder) 
 
 // driven is one connected session.
 type driven struct {
-	app    *live.App[state]
+	app    *live.App[state, user]
 	server *httptest.Server
 	conn   *websocket.Conn
 	ctx    context.Context

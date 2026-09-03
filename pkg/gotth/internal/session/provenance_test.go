@@ -27,7 +27,7 @@ var _ = Describe("Provenance", func() {
 	BeforeEach(func() {
 		app = newTestApp()
 		app.events["test.result"] = true
-		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
 			s := state.(counterState)
 			switch ev.Name {
 			case "counter.increment":
@@ -35,17 +35,17 @@ var _ = Describe("Provenance", func() {
 			case "counter.relabel":
 				s.Label = ev.Fields[0].Value
 			case "counter.effect":
-				return s, []session.IEffect{testEffect{Source: "test.fetch", Reply: "fetched"}}
+				return s, []session.Effect[subject]{app.effect(testEffect{Source: "test.fetch", Reply: "fetched"})}
 			case "test.result":
 				s.Label = ev.Fields[0].Value
 			}
 			return s, nil
 		}
 		app.events["counter.effect"] = true
-		app.execute = func(_ context.Context, _ session.Peer, e session.IEffect, emit session.Emit) error {
+		app.execute = func(_ context.Context, _ session.Peer[subject], e testEffect, emit session.Emit) error {
 			return emit(session.Event{
 				Name:   "test.result",
-				Fields: []session.Field{{Key: "label", Value: e.(testEffect).Reply}},
+				Fields: []session.Field{{Key: "label", Value: e.Reply}},
 			})
 		}
 		h = newHarness(app, session.DefaultLimits())
@@ -215,11 +215,11 @@ var _ = Describe("Goroutine lifecycle", func() {
 
 		for i := 0; i < 50; i++ {
 			app := newTestApp()
-			app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+			app.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
 				s := state.(counterState)
 				if ev.Name == "counter.increment" {
 					s.N++
-					return s, []session.IEffect{testEffect{Source: "test.noop"}}
+					return s, []session.Effect[subject]{app.effect(testEffect{Source: "test.noop"})}
 				}
 				return s, nil
 			}
@@ -239,10 +239,10 @@ var _ = Describe("Goroutine lifecycle", func() {
 		defer close(release)
 
 		app := newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
-			return state, []session.IEffect{testEffect{Source: "test.hang"}}
+		app.reduce = func(state any, ev session.Event) (any, []session.Effect[subject]) {
+			return state, []session.Effect[subject]{app.effect(testEffect{Source: "test.hang"})}
 		}
-		app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
+		app.execute = func(ctx context.Context, peer session.Peer[subject], effect testEffect, emit session.Emit) error {
 			<-release
 			return nil
 		}

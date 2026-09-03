@@ -123,38 +123,48 @@ type State struct {
 	Age time.Duration
 }
 
-// Reduce is the pure state transition.
+// Reducer returns the pure state transition, bound to the store its effects
+// act on.
 //
-// It reads no clock, performs no I/O, and touches the shared store not at all.
-// A click does not change Value: it returns a ChangeEffect asking the store to
-// apply the operation, and this session learns the result the same way every
-// other tab does, through a sync event. That is what "server-authoritative"
-// means concretely, and it is why two tabs cannot disagree.
-func Reduce(state State, ev live.Event) (State, []live.IEffect) {
-	// Every transition refreshes the relative timestamp, so the "changed 4s
-	// ago" line does not go stale between changes.
-	state.Age = ageAt(state.ChangedAtUnixMilli, ev.At)
+// It is a constructor rather than a package-level function, and that is what
+// changed when live.Effect[live.AnonymousIdentity] stopped being an interface on 2026-09-03. An effect
+// carries its own behaviour now, so the reducer that schedules one has to be
+// able to build it — which means holding the store the effect closes over. The
+// reducer still touches that store not at all: it builds a value describing
+// what to do and the library performs it later, off this goroutine.
+//
+// The transition itself reads no clock and performs no I/O. A click does not
+// change Value: it returns the store's change effect, and this session learns
+// the result the same way every other tab does, through a sync event. That is
+// what "server-authoritative" means concretely, and it is why two tabs cannot
+// disagree.
+func Reducer(store *Store) live.Reducer[State, live.AnonymousIdentity] {
+	return func(state State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		// Every transition refreshes the relative timestamp, so the "changed
+		// 4s ago" line does not go stale between changes.
+		state.Age = ageAt(state.ChangedAtUnixMilli, ev.At)
 
-	switch ev.Name {
-	case EventIncrement:
-		return state, []live.IEffect{ChangeEffect{Op: OpAdd, Delta: 1, By: state.Self, Cause: ev.ID}}
-	case EventDecrement:
-		return state, []live.IEffect{ChangeEffect{Op: OpAdd, Delta: -1, By: state.Self, Cause: ev.ID}}
-	case EventIncrement10:
-		return state, []live.IEffect{ChangeEffect{Op: OpAdd, Delta: 10, By: state.Self, Cause: ev.ID}}
-	case EventReset:
-		return state, []live.IEffect{ChangeEffect{Op: OpReset, By: state.Self, Cause: ev.ID}}
-	case EventSync:
-		return applySync(state, ev), nil
-	case live.EffectFailedEvent:
-		return state, retryWatch(ev)
+		switch ev.Name {
+		case EventIncrement:
+			return state, []live.Effect[live.AnonymousIdentity]{store.ChangeEffect(Change{Op: OpAdd, Delta: 1, By: state.Self, Cause: ev.ID})}
+		case EventDecrement:
+			return state, []live.Effect[live.AnonymousIdentity]{store.ChangeEffect(Change{Op: OpAdd, Delta: -1, By: state.Self, Cause: ev.ID})}
+		case EventIncrement10:
+			return state, []live.Effect[live.AnonymousIdentity]{store.ChangeEffect(Change{Op: OpAdd, Delta: 10, By: state.Self, Cause: ev.ID})}
+		case EventReset:
+			return state, []live.Effect[live.AnonymousIdentity]{store.ChangeEffect(Change{Op: OpReset, By: state.Self, Cause: ev.ID})}
+		case EventSync:
+			return applySync(state, ev), nil
+		case live.EffectFailedEvent:
+			return state, retryWatch(store, ev)
+		}
+
+		// An unknown name cannot reach here from a browser — the library
+		// refuses unregistered names before the reducer runs — so anything
+		// arriving here is something the library synthesised and this
+		// application has no answer for. Ignoring it is correct.
+		return state, nil
 	}
-
-	// An unknown name cannot reach here from a browser — the library refuses
-	// unregistered names before the reducer runs — so anything arriving here
-	// is something the library synthesised and this application has no answer
-	// for. Ignoring it is correct.
-	return state, nil
 }
 
 // retryWatch decides what to do about a failed effect.
@@ -162,17 +172,17 @@ func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 // The only failure this application can act on is a dead subscription. Without
 // one the tab keeps rendering the last value it saw and stops learning about
 // anybody else's changes — it looks right while being wrong, which is the
-// failure worth writing code for, where a failed ChangeEffect is visible
+// failure worth writing code for, where a failed change effect is visible
 // immediately because the number does not move.
 //
 // It re-subscribes only when the library says the failure was transient.
 // Re-running a terminal failure re-runs whatever made it terminal, and the
 // classification is the executor's claim rather than this reducer's guess: an
 // unreadable or absent value parses as false and nothing is retried.
-func retryWatch(ev live.Event) []live.IEffect {
+func retryWatch(store *Store, ev live.Event) []live.Effect[live.AnonymousIdentity] {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceWatch {
-		return []live.IEffect{WatchEffect{}}
+		return []live.Effect[live.AnonymousIdentity]{store.WatchEffect()}
 	}
 	return nil
 }
@@ -298,13 +308,13 @@ func (s State) ValueText() string { return strconv.FormatInt(s.Value, 10) }
 // Everything security-relevant is set here and nothing is left to a default,
 // because live.New refuses a Config with a hole in it rather than starting
 // with one.
-func Config(store *Store, origins []string) live.Config[State] {
-	return live.Config[State]{
+func Config(store *Store, origins []string) live.Config[State, live.AnonymousIdentity] {
+	return live.Config[State, live.AnonymousIdentity]{
 		// Init runs once per connection, before the first snapshot. It joins
 		// the store — which both reads the current value and registers this
 		// session for pushes, under one lock, so no change can slip through
 		// the gap between the two — and asks for the subscription pump.
-		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
+		Init: func(ctx context.Context, s live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 			snap := store.Join(s.ID())
 			return State{
 				Self:               s.ID(),
@@ -314,10 +324,10 @@ func Config(store *Store, origins []string) live.Config[State] {
 				ChangedBy:          snap.ChangedBy,
 				ChangedAtUnixMilli: snap.ChangedAtUnixMilli,
 				Age:                ageAt(snap.ChangedAtUnixMilli, time.Now()),
-			}, []live.IEffect{WatchEffect{}}, nil
+			}, []live.Effect[live.AnonymousIdentity]{store.WatchEffect()}, nil
 		},
 
-		Reduce: Reduce,
+		Reduce: Reducer(store),
 
 		Fragments: []live.Fragment[State]{
 			{
@@ -344,8 +354,7 @@ func Config(store *Store, origins []string) live.Config[State] {
 		// The allowlist. EventSync is absent on purpose; see its doc comment.
 		Events: []string{EventIncrement, EventDecrement, EventIncrement10, EventReset},
 
-		Execute:  store.Execute,
-		Teardown: func(_ context.Context, s live.Session, _ State) { store.Leave(s.ID()) },
+		Teardown: func(_ context.Context, s live.Session[live.AnonymousIdentity], _ State) { store.Leave(s.ID()) },
 
 		// A real allowlist, not live.AnyOrigin. main.go derives it from the
 		// listen address; production lists the scheme and host the app is
@@ -361,7 +370,7 @@ func Config(store *Store, origins []string) live.Config[State] {
 		// the session cookie or bearer token it already trusts, and AllowAll
 		// with the check that says which identities may change what.
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 
 		// NoCSRFCheck is only safe because Origins above is a real allowlist:
 		// the origin check is then the whole of the CSRF posture, which is

@@ -521,7 +521,7 @@ func RosterRegion(s State) templ.Component {
 // and let them drift, and the drift is silent: the page loads, the script
 // 404s, and nothing is live. This example mounts at /chat/live rather than
 // /live precisely so that a wrong default would be visible.
-func Page(app *live.App[State], s State) templ.Component {
+func Page(app *live.App[State, Member], s State) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -672,7 +672,7 @@ func chatHead() templ.Component {
 // omitted argument for the reason every other opt-out in this library is a
 // named value: an absence would be indistinguishable from forgetting, and
 // forgetting would render a page that loads perfectly and does nothing.
-func LoginPage(app *live.App[State], names []string) templ.Component {
+func LoginPage(app *live.App[State, Member], names []string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

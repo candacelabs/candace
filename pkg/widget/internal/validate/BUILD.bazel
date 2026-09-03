@@ -27,6 +27,7 @@ go_test(
         "catalogue_test.go",
         "fixture_test.go",
         "invariants_internal_test.go",
+        "refinement_agreement_test.go",
         "validate_suite_test.go",
         "validate_test.go",
     ],
@@ -41,6 +42,7 @@ go_test(
     deps = [
         "//pkg/widget/internal/diag",
         "//pkg/widget/internal/ir",
+        "//pkg/widget/refinement/v1:refinement",
         "@com_github_onsi_ginkgo_v2//:ginkgo",
         "@com_github_onsi_gomega//:gomega",
     ],

@@ -31,33 +31,32 @@ func pageOf(s pageState) templ.Component {
 // so "how many times was the loader called, and with what identity" is
 // observable.
 type pageApp struct {
-	app *live.App[pageState]
+	app *live.App[pageState, user]
 
 	loaded    int
 	loadedAs  []string
 	loadValue int
 	loadErr   error
 
-	authIdentity live.IIdentity
+	authIdentity user
 	authErr      error
 }
 
 func newPageApp(dev bool) *pageApp {
 	p := &pageApp{loadValue: 41, authIdentity: user("tester")}
-	cfg := live.Config[pageState]{
-		Init: func(_ context.Context, s live.Session) (pageState, []live.IEffect, error) {
+	cfg := live.Config[pageState, user]{
+		Init: func(_ context.Context, s live.Session[user]) (pageState, []live.Effect[user], error) {
 			p.loaded++
-			subject := ""
-			if s.Identity() != nil {
-				subject = s.Identity().Subject()
-			}
-			p.loadedAs = append(p.loadedAs, subject)
+			// No nil test: the session is typed by the identity the hook
+			// produced, so Identity() is a value rather than a possibly-nil
+			// interface.
+			p.loadedAs = append(p.loadedAs, s.Identity().Subject())
 			if p.loadErr != nil {
 				return pageState{}, nil, p.loadErr
 			}
 			return pageState{N: p.loadValue}, nil, nil
 		},
-		Reduce: func(s pageState, ev live.Event) (pageState, []live.IEffect) {
+		Reduce: func(s pageState, ev live.Event) (pageState, []live.Effect[user]) {
 			if ev.Name == "count.inc" {
 				s.N++
 			}
@@ -66,8 +65,8 @@ func newPageApp(dev bool) *pageApp {
 		Fragments:    []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
 		Events:       []string{"count.inc"},
 		Origins:      []string{"https://app.example"},
-		Authenticate: func(request *http.Request) (live.IIdentity, error) { return p.authIdentity, p.authErr },
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (user, error) { return p.authIdentity, p.authErr },
+		Authorize:    live.AllowAll[user],
 		CSRF:         live.NoCSRFCheck,
 		Dev:          dev,
 	}
@@ -127,17 +126,17 @@ var _ = Describe("(*App).PageHandler", func() {
 	// session is minted at the handshake; this is a different request.
 	It("gives the mount hook the zero session identifier, because no session exists yet", func() {
 		var seen live.ID
-		app := live.MustNew(live.Config[pageState]{
-			Init: func(_ context.Context, s live.Session) (pageState, []live.IEffect, error) {
+		app := live.MustNew(live.Config[pageState, user]{
+			Init: func(_ context.Context, s live.Session[user]) (pageState, []live.Effect[user], error) {
 				seen = s.ID()
 				return pageState{}, nil, nil
 			},
-			Reduce:       func(s pageState, _ live.Event) (pageState, []live.IEffect) { return s, nil },
+			Reduce:       func(s pageState, _ live.Event) (pageState, []live.Effect[user]) { return s, nil },
 			Fragments:    []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
 			Events:       []string{"count.inc"},
 			Origins:      []string{"https://app.example"},
-			Authenticate: live.Anonymous,
-			Authorize:    live.AllowAll,
+			Authenticate: func(request *http.Request) (user, error) { return user("tester"), nil },
+			Authorize:    live.AllowAll[user],
 			CSRF:         live.NoCSRFCheck,
 		})
 
@@ -151,20 +150,20 @@ var _ = Describe("(*App).PageHandler", func() {
 	// with no Teardown, because there is no session to tear down.
 	It("discards the startup effects the mount hook returns", func() {
 		executed := 0
-		app := live.MustNew(live.Config[pageState]{
-			Init: func(ctx context.Context, session live.Session) (pageState, []live.IEffect, error) {
-				return pageState{N: 7}, []live.IEffect{logEffect{Message: "subscribe"}}, nil
+		count := func(_ context.Context, _ live.Session[user], _ live.Emitter) error {
+			executed++
+			return nil
+		}
+		app := live.MustNew(live.Config[pageState, user]{
+			Init: func(ctx context.Context, session live.Session[user]) (pageState, []live.Effect[user], error) {
+				return pageState{N: 7}, []live.Effect[user]{logEffect(count)}, nil
 			},
-			Reduce:    func(s pageState, _ live.Event) (pageState, []live.IEffect) { return s, nil },
-			Fragments: []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
-			Execute: func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
-				executed++
-				return nil
-			},
+			Reduce:       func(s pageState, _ live.Event) (pageState, []live.Effect[user]) { return s, nil },
+			Fragments:    []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
 			Events:       []string{"count.inc"},
 			Origins:      []string{"https://app.example"},
-			Authenticate: live.Anonymous,
-			Authorize:    live.AllowAll,
+			Authenticate: func(request *http.Request) (user, error) { return user("tester"), nil },
+			Authorize:    live.AllowAll[user],
 			CSRF:         live.NoCSRFCheck,
 		})
 
@@ -189,15 +188,11 @@ var _ = Describe("(*App).PageHandler", func() {
 		Expect(p.loaded).To(BeZero())
 	})
 
-	It("refuses the page with 401 when Config.Authenticate returns no identity and no error", func() {
-		p := newPageApp(false)
-		p.authIdentity = nil
-
-		rec := p.get(p.app.PageHandler(pageOf), http.MethodGet, "/")
-
-		Expect(rec.Code).To(Equal(http.StatusUnauthorized))
-		Expect(p.loaded).To(BeZero())
-	})
+	// The "no identity and no error" spec is gone with the value it needed.
+	// Config.Authenticate returns the application's OWN identity type since
+	// 2026-09-03, so `nil, nil` is not a result it can produce and the 401 this
+	// exercised is unreachable. The error that answered it left the library in
+	// the same commit; internal/arch's FR-58 census records the removal.
 
 	It("answers 500 and renders no page when the mount hook fails", func() {
 		p := newPageApp(false)
@@ -427,8 +422,8 @@ var _ = Describe("the quickstart application", func() {
 	}
 
 	It("builds, mounts and serves a first paint and the runtime from one Mux", func() {
-		app := live.MustNew(live.Config[state]{
-			Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
+		app := live.MustNew(live.Config[state, user]{
+			Reduce: func(s state, ev live.Event) (state, []live.Effect[user]) {
 				if ev.Name == eventInc {
 					s.N++
 				}
@@ -437,8 +432,8 @@ var _ = Describe("the quickstart application", func() {
 			Fragments:    []live.Fragment[state]{{ID: "count", Render: count}},
 			Events:       []string{eventInc},
 			Origins:      []string{"http://127.0.0.1:8080"},
-			Authenticate: live.Anonymous,
-			Authorize:    live.AllowAll,
+			Authenticate: func(request *http.Request) (user, error) { return user("tester"), nil },
+			Authorize:    live.AllowAll[user],
 			CSRF:         live.NoCSRFCheck,
 		})
 		mux := app.Mux(mountPath, app.PageHandler(page))

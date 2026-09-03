@@ -53,6 +53,12 @@ package patience
 import (
 	"time"
 
+	// gomega is imported qualified on purpose, and it is the CS-11 exemption:
+	// that rule dot-imports gomega in *test* files so specs read Expect/Eventually
+	// unqualified, but this is production code and gomega is its engine, not its
+	// assertion vocabulary. Dot-importing an assertion library into a non-test
+	// package pollutes that package's namespace with matchers, and this package's
+	// whole job is to be the one typed shell that names Await/Consistently itself.
 	"github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
 )

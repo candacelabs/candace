@@ -98,7 +98,7 @@ var clientDevReloadETag = etagOf(clientDevReload)
 //
 // # Order does not matter here
 //
-// Unlike (*App[S]).InspectorScript, this tag may go anywhere: it wraps
+// Unlike (*App[S, I]).InspectorScript, this tag may go anywhere: it wraps
 // nothing, reads nothing the runtime owns, and talks only to its own route
 // over HTTP. Putting all three tags together, inspector first and this one
 // last, is the arrangement the guide shows, and only the inspector's position
@@ -107,7 +107,7 @@ var clientDevReloadETag = etagOf(clientDevReload)
 // mountPath is validated exactly as Script validates it, by the same function,
 // and for the same reason: the prefix as the browser sees it is knowledge only
 // the caller has.
-func (a *App[S]) DevReloadScript(mountPath string) templ.Component {
+func (a *App[S, I]) DevReloadScript(mountPath string) templ.Component {
 	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
 		// Validated even when nothing is written, so a bad mount path is an
 		// error in dev and in production alike — the argument InspectorScript
@@ -142,7 +142,7 @@ func (a *App[S]) DevReloadScript(mountPath string) templ.Component {
 // Config.DevBuildID wins when it is set. Otherwise it is derived, once per
 // process, from the bytes of the running executable — see devBuildID's
 // package-level helper below for what that buys and what it costs.
-func (a *App[S]) devBuildID() string {
+func (a *App[S, I]) devBuildID() string {
 	if a.cfg.DevBuildID != "" {
 		return a.cfg.DevBuildID
 	}
@@ -216,7 +216,7 @@ func serveClientDevReload(w http.ResponseWriter, r *http.Request) {
 // this answer needs. A conditional request is not offered either — the answer
 // is 12 bytes, and a 304 that a proxy decided to satisfy from a store is a
 // page that never reloads.
-func (a *App[S]) serveDevBuild(w http.ResponseWriter, r *http.Request) {
+func (a *App[S, I]) serveDevBuild(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

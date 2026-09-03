@@ -50,7 +50,7 @@ var _ = Describe("A slow client (PRD case 4, FR-51)", func() {
 
 	It("bounds the queue, the heap and the blast radius against a client at a stated 2 KB/s, and does not evict it (D-26)", func() {
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Metrics = rec
 			cfg.Logger = nil
 			cfg.Limits.AckWindow = 16
@@ -140,7 +140,7 @@ var _ = Describe("A slow client (PRD case 4, FR-51)", func() {
 	// recorder. Measured with it attached: 7.9 MB retained, of which the
 	// library's share is unknown. Measured without: the number below.
 	It("keeps the server heap bounded under a stalled client, because backpressure is a dirty bitset and not a queue", func() {
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Metrics = nil
 			cfg.Limits.AckWindow = 16
@@ -179,7 +179,7 @@ var _ = Describe("A slow client (PRD case 4, FR-51)", func() {
 	})
 
 	It("evicts with 4009 within the grace period plus one heartbeat interval once the client stops acknowledging", func() {
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
 			cfg.Limits.AckWindow = 16
 			cfg.Limits.SlowClientGrace = 3 * time.Second
@@ -217,7 +217,7 @@ var _ = Describe("A slow client (PRD case 4, FR-51)", func() {
 	It("coalesces without losing provenance, and flushes at the configured trigger rather than truncating", func() {
 		const flushAt = 64
 		rec := obstest.NewMetrics()
-		s := serve(func(cfg *live.Config[board]) {
+		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Metrics = rec
 			cfg.Logger = nil
 			cfg.Limits.AckWindow = 8

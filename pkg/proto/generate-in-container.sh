@@ -3,10 +3,11 @@
 # at /workspace. Use generate.sh from the host.
 #
 # Every contract this script owns now belongs to the public module: liquidproto,
-# boundedbuffer and cron are all packages of github.com/candacelabs/candace/pkg.
-# `candace/pkg` is the single -I root, which is what keeps the descriptor keys
-# liquidproto/v1/..., boundedbuffer/v1/... and cron/v1/... unchanged across the
-# moves that brought these packages together.
+# boundedbuffer, cron and widget/refinement are all packages of
+# github.com/candacelabs/candace/pkg. `candace/pkg` is the single -I root, which
+# is what keeps the descriptor keys liquidproto/v1/..., boundedbuffer/v1/...,
+# cron/v1/... and widget/refinement/v1/... unchanged across the moves that
+# brought these packages together.
 set -euo pipefail
 
 repo_root=/workspace
@@ -60,6 +61,14 @@ protoc \
   "--liquidproto_out=module=${module}:${output}" \
   cron/v1/cron.proto
 
+protoc \
+  -I "${pkg_root}" \
+  -I /usr/local/include \
+  "--go_out=module=${module}:${output}" \
+  "--plugin=protoc-gen-liquidproto=${plugin_dir}/protoc-gen-liquidproto" \
+  "--liquidproto_out=module=${module}:${output}" \
+  widget/refinement/v1/refinement.proto
+
 if [[ "${mode}" == check ]]; then
   generated_files=(
     liquidproto/v1/refinement.pb.go
@@ -67,6 +76,8 @@ if [[ "${mode}" == check ]]; then
     boundedbuffer/v1/buffer_liquid.pb.go
     cron/v1/cron.pb.go
     cron/v1/cron_liquid.pb.go
+    widget/refinement/v1/refinement.pb.go
+    widget/refinement/v1/refinement_liquid.pb.go
   )
   for generated_file in "${generated_files[@]}"; do
     diff -u "${pkg_root}/${generated_file}" "${output}/${generated_file}"

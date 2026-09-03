@@ -19,7 +19,7 @@ import (
 func card(view MetricsView, sent ...live.Event) widgettest.Rendered {
 	GinkgoHelper()
 
-	mounted, mountError := widgettest.Mount(context.Background(), NewDashbored())
+	mounted, mountError := widgettest.Mount(context.Background(), NewDashbored[live.AnonymousIdentity]())
 	Expect(mountError).ToNot(HaveOccurred())
 	Expect(mounted.Apply(append(
 		[]live.Event{widgettest.Deliver(DashboredEventScrapeReport, ReportFields(view))},
@@ -40,7 +40,7 @@ func observing(sequence uint64) MetricsView {
 
 var _ = Describe("The Dashbored card", func() {
 	It("declares one toggle and one stream-owned event", func() {
-		registration := NewDashbored().Register()
+		registration := NewDashbored[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Events).To(ConsistOf(DashboredEventToggleSilence))
 		Expect(registration.Internal).To(ConsistOf(DashboredEventScrapeReport))

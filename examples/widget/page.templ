@@ -21,7 +21,7 @@ import (
 // because what it puts in the head depends on Config.Dev: this host sets Dev,
 // so the same call that renders the runtime tag also renders the session
 // inspector's and the dev-reload tag, in the order the inspector needs.
-templ Page(app *live.App[widget.HostState], regions []templ.Component) {
+templ Page(app *live.App[widget.HostState, live.AnonymousIdentity], regions []templ.Component) {
 	@app.Document(mountPath, "Widget SDK demo", templ.Attributes{"lang": "en"}, headExtras()) {
 		<main>
 			<h1>Widget SDK</h1>

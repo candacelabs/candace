@@ -20,7 +20,7 @@ import (
 func card(view BrokerView, sent ...live.Event) widgettest.Rendered {
 	GinkgoHelper()
 
-	mounted, mountError := widgettest.Mount(context.Background(), NewQueuecumber())
+	mounted, mountError := widgettest.Mount(context.Background(), NewQueuecumber[live.AnonymousIdentity]())
 	Expect(mountError).ToNot(HaveOccurred())
 	Expect(mounted.Apply(append(
 		[]live.Event{widgettest.Deliver(QueuecumberEventBrokerReport, ReportFields(view))},
@@ -41,7 +41,7 @@ func flowing(sequence uint64) BrokerView {
 
 var _ = Describe("The Queuecumber card", func() {
 	It("registers two browser-sendable events and one the stream owns", func() {
-		registration := NewQueuecumber().Register()
+		registration := NewQueuecumber[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Events).To(ConsistOf(
 			QueuecumberEventToggleIntake, QueuecumberEventRedriveDeadLetters),

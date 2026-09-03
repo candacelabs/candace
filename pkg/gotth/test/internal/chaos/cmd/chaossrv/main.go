@@ -90,9 +90,17 @@ type state struct {
 	Note  string
 }
 
-type commit struct{ ref uint64 }
-
-func (commit) EffectSource() string { return "chaos.commit" }
+// commitEffect is the effect that writes one reference to the ledger. It is a
+// constructor over a concrete live.Effect[user], closing over the ledger it appends
+// to, which is why nothing here needs a central executor.
+func commitEffect(led *fileLedger, ref uint64) live.Effect[user] {
+	return live.Effect[user]{
+		Source: "chaos.commit",
+		Run: func(ctx context.Context, session live.Session[user], emit live.Emitter) error {
+			return led.commit(ref)
+		},
+	}
+}
 
 type user string
 
@@ -123,17 +131,17 @@ func main() {
 	// diagnosis, kept rather than removed after it did its job.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	app, err := live.New(live.Config[state]{
+	app, err := live.New(live.Config[state, user]{
 		Logger: logger,
-		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
+		Init: func(ctx context.Context, session live.Session[user]) (state, []live.Effect[user], error) {
 			return state{Total: led.total(), Note: "ok"}, nil, nil
 		},
-		Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
+		Reduce: func(s state, ev live.Event) (state, []live.Effect[user]) {
 			switch ev.Name {
 			case "chaos.commit":
 				ref, _ := strconv.ParseUint(ev.Fields.Get("ref"), 10, 64)
 				s.Total++
-				return s, []live.IEffect{commit{ref: ref}}
+				return s, []live.Effect[user]{commitEffect(led, ref)}
 			case "chaos.note":
 				s.Note = ev.Fields.Get("note")
 			}
@@ -152,12 +160,6 @@ func main() {
 			},
 		},
 		Events: []string{"chaos.commit", "chaos.note"},
-		Execute: func(_ context.Context, _ live.Session, e live.IEffect, _ live.Emitter) error {
-			if c, ok := e.(commit); ok {
-				return led.commit(c.ref)
-			}
-			return nil
-		},
 		// The fleet is 25 concurrent connections under one identity, and
 		// live.Limits.MaxSessionsPerIdentity defaults to 20 — so without this
 		// the last five are refused with 503 and the case measures the default
@@ -165,8 +167,8 @@ func main() {
 		// restart fleet is simply not what it is sized for.
 		Limits:       live.Limits{MaxSessionsPerIdentity: 200},
 		Origins:      []string{*origin},
-		Authenticate: func(request *http.Request) (live.IIdentity, error) { return user("chaos"), nil },
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (user, error) { return user("chaos"), nil },
+		Authorize:    live.AllowAll[user],
 		CSRF:         live.NoCSRFCheck,
 	})
 	if err != nil {

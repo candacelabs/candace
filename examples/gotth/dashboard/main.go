@@ -43,7 +43,7 @@
 // # Security posture
 //
 // Origins is a real allowlist derived from the listen address, not
-// live.AnyOrigin. Authenticate is live.Anonymous and Authorize is live.AllowAll,
+// live.AnyOrigin. Authenticate is live.Anonymous and Authorize is live.AllowAll[live.AnonymousIdentity],
 // because a read-only demo dashboard has no accounts — examples/chat is where
 // the identity and per-event authorization story is told, and a real dashboard
 // behind an SSO proxy would do what chat does.
@@ -284,7 +284,7 @@ func LoadHTMX(path string) ([]byte, error) {
 // ordinary handlers that know nothing about it.
 // meters may be nil, in which case no metrics route is registered — that is the
 // resync measurement's case, which reads the same sink directly.
-func NewMux(app *live.App[State], feed *Feed, htmx []byte, meters *Meters) *http.ServeMux {
+func NewMux(app *live.App[State, live.AnonymousIdentity], feed *Feed, htmx []byte, meters *Meters) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	if meters != nil {

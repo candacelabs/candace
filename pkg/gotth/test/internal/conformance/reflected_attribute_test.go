@@ -145,12 +145,12 @@ func reflectPanelHTML(s reflectState) string {
 	return b.String()
 }
 
-func reflectConfig() live.Config[reflectState] {
-	return live.Config[reflectState]{
-		Init: func(ctx context.Context, session live.Session) (reflectState, []live.IEffect, error) {
+func reflectConfig() live.Config[reflectState, qaUser] {
+	return live.Config[reflectState, qaUser]{
+		Init: func(ctx context.Context, session live.Session[qaUser]) (reflectState, []live.Effect[qaUser], error) {
 			return reflectState{}, nil, nil
 		},
-		Reduce: func(s reflectState, ev live.Event) (reflectState, []live.IEffect) {
+		Reduce: func(s reflectState, ev live.Event) (reflectState, []live.Effect[qaUser]) {
 			if ev.Name == eventReflectTick {
 				s.Tick++
 			}
@@ -162,8 +162,8 @@ func reflectConfig() live.Config[reflectState] {
 			Dirty:  func(prev, next reflectState) bool { return prev != next },
 		}},
 		Events:       []string{eventReflectTick},
-		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authenticate: func(request *http.Request) (qaUser, error) { return qaUser("qa"), nil },
+		Authorize:    live.AllowAll[qaUser],
 		CSRF:         live.NoCSRFCheck,
 	}
 }

@@ -54,7 +54,7 @@ var _ = Describe("Event to patch, measured", Label("latency"), func() {
 		// token is taken at ingress, and a refused event produces an Error
 		// rather than a slow Patch — so removing it does not shorten anything
 		// this spec reports. Every other limit is left at its default.
-		d := dial(func(c *live.Config[tally]) {
+		d := dial(func(c *live.Config[tally, qaUser]) {
 			c.Limits.MaxEventsPerSecond = 1_000_000
 			c.Limits.EventBurst = 1_000_000
 		})

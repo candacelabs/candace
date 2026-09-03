@@ -71,7 +71,7 @@ func tracedInteraction() *obstest.Traces {
 	GinkgoHelper()
 
 	traces := obstest.NewTraces()
-	d := dial(func(c *live.Config[tally]) { c.Tracer = traces })
+	d := dial(func(c *live.Config[tally, qaUser]) { c.Tracer = traces })
 
 	d.event("qa.increment", d.highestSeq())
 	patch := d.nextPatch()
@@ -170,7 +170,7 @@ var _ = Describe("FR-36 — the event path is walkable end to end", func() {
 	// mutation the existing suite survives.
 	It("puts the encode span under the transition that produced the patch", func() {
 		traces := obstest.NewTraces()
-		d := dial(func(c *live.Config[tally]) { c.Tracer = traces })
+		d := dial(func(c *live.Config[tally, qaUser]) { c.Tracer = traces })
 
 		d.event("qa.increment", d.highestSeq())
 		patch := d.nextPatch()

@@ -43,21 +43,21 @@ type subject string
 func (s subject) Subject() string { return string(s) }
 
 type app struct {
-	authorize func(ctx context.Context, peer session.Peer, event session.Event) error
+	authorize func(ctx context.Context, peer session.Peer[subject], event session.Event) error
 }
 
-func (a *app) Init(ctx context.Context, peer session.Peer) (any, []session.IEffect, error) {
+func (a *app) Init(ctx context.Context, peer session.Peer[subject]) (any, []session.Effect[subject], error) {
 	return state{}, nil, nil
 }
 
-func (a *app) Authorize(ctx context.Context, p session.Peer, ev session.Event) error {
+func (a *app) Authorize(ctx context.Context, p session.Peer[subject], ev session.Event) error {
 	if a.authorize == nil {
 		return nil
 	}
 	return a.authorize(ctx, p, ev)
 }
 
-func (a *app) Reduce(s any, ev session.Event) (any, []session.IEffect) {
+func (a *app) Reduce(s any, ev session.Event) (any, []session.Effect[subject]) {
 	st := s.(state)
 	if ev.Name == "counter.increment" {
 		st.N++
@@ -65,11 +65,7 @@ func (a *app) Reduce(s any, ev session.Event) (any, []session.IEffect) {
 	return st, nil
 }
 
-func (a *app) Execute(ctx context.Context, peer session.Peer, effect session.IEffect, scheduledBy uint64, emit session.Emit) error {
-	return nil
-}
-
-func (a *app) Teardown(ctx context.Context, peer session.Peer, state any) {}
+func (a *app) Teardown(ctx context.Context, peer session.Peer[subject], state any) {}
 
 func (a *app) Registry() *render.Registry {
 	reg, err := render.NewRegistry([]render.Fragment{{
@@ -91,27 +87,27 @@ func (a *app) StateComparable() bool { return true }
 // exercises the handshake, the framing and the acknowledgement path a browser
 // would.
 type server struct {
-	handler *wsx.Handler
+	handler *wsx.Handler[subject]
 	http    *httptest.Server
 	url     string
 }
 
-func newServer(mutate func(options *wsx.Options)) *server {
+func newServer(mutate func(options *wsx.Options[subject])) *server {
 	GinkgoHelper()
 
 	behaviour := &app{}
-	opts := wsx.Options{
+	opts := wsx.Options[subject]{
 		Origins:      []string{allowedOrigin},
-		Authenticate: func(request *http.Request) (session.IIdentity, error) { return subject("tester"), nil },
+		Authenticate: func(request *http.Request) (subject, error) { return subject("tester"), nil },
 		CSRF:         func(request *http.Request) error { return nil },
-		NewApp:       func(request *http.Request) session.IApp { return behaviour },
+		NewApp:       func(request *http.Request) session.IApp[subject] { return behaviour },
 		Limits:       session.DefaultLimits(),
 	}
 	if mutate != nil {
 		mutate(&opts)
 	}
 
-	h, err := wsx.NewHandler(opts)
+	h, err := wsx.NewHandler[subject](opts)
 	Expect(err).NotTo(HaveOccurred())
 
 	ts := httptest.NewServer(h)
@@ -203,7 +199,7 @@ var _ = Describe("The handshake", func() {
 	})
 
 	It("accepts any origin only through the named sentinel", func() {
-		s = newServer(func(o *wsx.Options) { o.Origins = []string{wsx.AnyOrigin} })
+		s = newServer(func(o *wsx.Options[subject]) { o.Origins = []string{wsx.AnyOrigin} })
 
 		headers := http.Header{}
 		headers.Set("Origin", "https://anywhere.example")
@@ -214,9 +210,9 @@ var _ = Describe("The handshake", func() {
 	})
 
 	It("refuses an unauthenticated request before allocating anything", func() {
-		s = newServer(func(o *wsx.Options) {
-			o.Authenticate = func(request *http.Request) (session.IIdentity, error) {
-				return nil, errors.New("no cookie")
+		s = newServer(func(o *wsx.Options[subject]) {
+			o.Authenticate = func(request *http.Request) (subject, error) {
+				return "", errors.New("no cookie")
 			}
 		})
 
@@ -228,7 +224,7 @@ var _ = Describe("The handshake", func() {
 	})
 
 	It("refuses a request that fails the CSRF check", func() {
-		s = newServer(func(o *wsx.Options) {
+		s = newServer(func(o *wsx.Options[subject]) {
 			o.CSRF = func(request *http.Request) error { return errors.New("bad token") }
 		})
 
@@ -251,7 +247,7 @@ var _ = Describe("The handshake", func() {
 	})
 
 	It("refuses a connection past the per-identity session limit", func() {
-		s = newServer(func(o *wsx.Options) { o.MaxSessionsPerIdentity = 1 })
+		s = newServer(func(o *wsx.Options[subject]) { o.MaxSessionsPerIdentity = 1 })
 		ctx := contextWithTimeout(2 * time.Second)
 
 		first := s.mustDial(ctx)
@@ -275,7 +271,7 @@ var _ = Describe("The handshake", func() {
 	// registration of the first has always completed before the second is
 	// admitted, so a serial spec passes against the defect.
 	It("admits exactly one of many concurrent upgrades against a process limit of one", func() {
-		s = newServer(func(o *wsx.Options) {
+		s = newServer(func(o *wsx.Options[subject]) {
 			o.MaxSessions = 1
 			// Not the limit under test: one identity dials every one of these.
 			o.MaxSessionsPerIdentity = 0
@@ -327,7 +323,7 @@ var _ = Describe("The handshake", func() {
 	// never registered has to come back, or the process bleeds capacity until
 	// it admits nothing at all.
 	It("returns a process slot when an admitted connection closes", func() {
-		s = newServer(func(o *wsx.Options) { o.MaxSessions = 1 })
+		s = newServer(func(o *wsx.Options[subject]) { o.MaxSessions = 1 })
 		ctx := contextWithTimeout(5 * time.Second)
 
 		first := s.mustDial(ctx)
@@ -465,9 +461,9 @@ var _ = Describe("A live connection", func() {
 	})
 
 	It("answers an unauthorized event without closing, and never reduces it", func() {
-		denied := newServer(func(o *wsx.Options) {
-			o.NewApp = func(request *http.Request) session.IApp {
-				return &app{authorize: func(ctx context.Context, peer session.Peer, event session.Event) error {
+		denied := newServer(func(o *wsx.Options[subject]) {
+			o.NewApp = func(request *http.Request) session.IApp[subject] {
+				return &app{authorize: func(ctx context.Context, peer session.Peer[subject], event session.Event) error {
 					return &session.DenyError{Reason: "not yours"}
 				}}
 			}

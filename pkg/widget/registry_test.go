@@ -15,13 +15,18 @@ import (
 	"github.com/candacelabs/candace/pkg/widget/internal/mocks"
 )
 
-// namedEffect is a widget effect. The library requires only that an effect name
-// itself, and a name is the whole of what these specs assert about one.
-type namedEffect struct {
-	name string
+// namedEffect is an effect that does nothing under a given name. A name is the
+// whole of what these specs assert about one, and since live.Effect[live.AnonymousIdentity] became a
+// concrete struct that is also the whole of what they CAN assert: Run is a
+// function value, and Go compares two of those only when both are nil.
+func namedEffect(name string) live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: name,
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return nil
+		},
+	}
 }
-
-func (effect namedEffect) EffectSource() string { return effect.name }
 
 // render draws a component to text. Two templ components are compared through
 // the markup they produce rather than by identity: a component is a function
@@ -39,8 +44,8 @@ func render(component templ.Component) string {
 // types — int and string — because that is the heterogeneity the registry
 // exists to hold, and a registry of two widgets with one state type would prove
 // nothing about it.
-func stub[S any](controller *gomock.Controller, registration widget.Registration) *mocks.MockIWidget[S] {
-	instance := mocks.NewMockIWidget[S](controller)
+func stub[S any](controller *gomock.Controller, registration widget.Registration) *mocks.MockIWidget[S, live.AnonymousIdentity] {
+	instance := mocks.NewMockIWidget[S, live.AnonymousIdentity](controller)
 	instance.EXPECT().Register().Return(registration).AnyTimes()
 	return instance
 }
@@ -51,7 +56,7 @@ func stub[S any](controller *gomock.Controller, registration widget.Registration
 // names IWidget alone, and the toolchain container gen.sh runs in deliberately
 // carries no mockgen — see generate.go.
 type dirtyDeclaring struct {
-	*mocks.MockIWidget[int]
+	*mocks.MockIWidget[int, live.AnonymousIdentity]
 	dirty func(previous int, next int) bool
 }
 
@@ -72,14 +77,14 @@ func registrationFor(name, region, event string) widget.Registration {
 var _ = Describe("Registry", func() {
 	var (
 		controller *gomock.Controller
-		registry   *widget.Registry
-		alpha      *mocks.MockIWidget[int]
-		beta       *mocks.MockIWidget[string]
+		registry   *widget.Registry[live.AnonymousIdentity]
+		alpha      *mocks.MockIWidget[int, live.AnonymousIdentity]
+		beta       *mocks.MockIWidget[string, live.AnonymousIdentity]
 	)
 
 	BeforeEach(func() {
 		controller = gomock.NewController(GinkgoT())
-		registry = widget.NewRegistry()
+		registry = widget.NewRegistry[live.AnonymousIdentity]()
 		alpha = stub[int](controller, registrationFor("Alpha", "widget.alpha", "widget.alpha.ping"))
 		beta = stub[string](controller, registrationFor("Beta", "widget.beta", "widget.beta.ping"))
 	})
@@ -91,7 +96,7 @@ var _ = Describe("Registry", func() {
 		})
 
 		It("refuses a nil widget rather than panicking at the first session", func() {
-			Expect(widget.Register[int](registry, nil)).To(MatchError(widget.ErrEmptyName))
+			Expect(widget.Register[int, live.AnonymousIdentity](registry, nil)).To(MatchError(widget.ErrEmptyName))
 		})
 
 		It("refuses a registration that is already invalid on its own", func() {
@@ -191,17 +196,17 @@ var _ = Describe("Registry", func() {
 		})
 
 		It("hands back a typed widget to a caller that knows its state type", func() {
-			found, present := widget.LookupWidget[string](registry, "Beta")
+			found, present := widget.LookupWidget[string, live.AnonymousIdentity](registry, "Beta")
 
 			Expect(present).To(BeTrue())
-			Expect(found).To(BeIdenticalTo(widget.IWidget[string](beta)))
+			Expect(found).To(BeIdenticalTo(widget.IWidget[string, live.AnonymousIdentity](beta)))
 		})
 
 		It("refuses a typed lookup asking for the wrong state type, rather than panicking", func() {
 			// Beta's state is a string. Asking for its widget as an IWidget[int]
 			// is a question with no answer, and answering it would hand a caller
 			// a widget whose every method would fail on the first call.
-			found, present := widget.LookupWidget[int](registry, "Beta")
+			found, present := widget.LookupWidget[int, live.AnonymousIdentity](registry, "Beta")
 
 			Expect(present).To(BeFalse())
 			Expect(found).To(BeNil())
@@ -211,17 +216,17 @@ var _ = Describe("Registry", func() {
 	Describe("LiveConfig", func() {
 		var (
 			ctx     context.Context
-			session live.Session
-			options widget.MountOptions
+			session live.Session[live.AnonymousIdentity]
+			options widget.MountOptions[live.AnonymousIdentity]
 		)
 
 		BeforeEach(func() {
 			ctx = context.Background()
-			session = live.Session{}
-			options = widget.MountOptions{
+			session = live.Session[live.AnonymousIdentity]{}
+			options = widget.MountOptions[live.AnonymousIdentity]{
 				Origins:      []string{live.AnyOrigin},
 				Authenticate: live.Anonymous,
-				Authorize:    live.AllowAll,
+				Authorize:    live.AllowAll[live.AnonymousIdentity],
 				CSRF:         live.NoCSRFCheck,
 			}
 		})
@@ -233,7 +238,7 @@ var _ = Describe("Registry", func() {
 		})
 
 		Context("with two widgets registered", func() {
-			var config live.Config[widget.HostState]
+			var config live.Config[widget.HostState, live.AnonymousIdentity]
 
 			BeforeEach(func() {
 				Expect(widget.Register(registry, alpha)).To(Succeed())
@@ -265,7 +270,7 @@ var _ = Describe("Registry", func() {
 			})
 
 			It("registers the union of the browser-sendable names and no internal one", func() {
-				registry = widget.NewRegistry()
+				registry = widget.NewRegistry[live.AnonymousIdentity]()
 				withInternal := registrationFor("Alpha", "widget.alpha", "widget.alpha.ping")
 				withInternal.Internal = []string{"widget.alpha.sync"}
 				Expect(widget.Register(registry, stub[int](controller, withInternal))).To(Succeed())
@@ -281,7 +286,7 @@ var _ = Describe("Registry", func() {
 				// routing is a separate question, and an internal name has to
 				// keep its answer or a widget's own stream could not deliver to
 				// it. This is the half of the split that is easy to break.
-				registry = widget.NewRegistry()
+				registry = widget.NewRegistry[live.AnonymousIdentity]()
 				withInternal := registrationFor("Alpha", "widget.alpha", "widget.alpha.ping")
 				withInternal.Internal = []string{"widget.alpha.sync"}
 				internallyDelivered := stub[int](controller, withInternal)
@@ -320,11 +325,11 @@ var _ = Describe("Registry", func() {
 				})
 
 				It("carries the host's own startup effects ahead of the widgets'", func() {
-					options.Init = func(ctx context.Context, session live.Session) ([]live.IEffect, error) {
-						return []live.IEffect{namedEffect{name: "host.open"}}, nil
+					options.Init = func(ctx context.Context, session live.Session[live.AnonymousIdentity]) ([]live.Effect[live.AnonymousIdentity], error) {
+						return []live.Effect[live.AnonymousIdentity]{namedEffect("host.open")}, nil
 					}
 					alpha.EXPECT().Mount(gomock.Any(), gomock.Any()).
-						Return(1, []live.IEffect{namedEffect{name: "alpha.watch"}}, nil)
+						Return(1, []live.Effect[live.AnonymousIdentity]{namedEffect("alpha.watch")}, nil)
 					beta.EXPECT().Mount(gomock.Any(), gomock.Any()).Return("b", nil, nil)
 					config, _ = registry.LiveConfig(options)
 
@@ -332,8 +337,8 @@ var _ = Describe("Registry", func() {
 
 					Expect(initError).ToNot(HaveOccurred())
 					Expect(effects).To(HaveLen(2))
-					Expect(effects[0].EffectSource()).To(Equal("host.open"))
-					Expect(effects[1].EffectSource()).To(Equal("alpha.watch"))
+					Expect(effects[0].Source).To(Equal("host.open"))
+					Expect(effects[1].Source).To(Equal("alpha.watch"))
 				})
 
 				It("reports a widget that could not mount, naming it", func() {
@@ -348,7 +353,7 @@ var _ = Describe("Registry", func() {
 				})
 
 				It("reports a host that could not start, before any widget mounts", func() {
-					options.Init = func(ctx context.Context, session live.Session) ([]live.IEffect, error) {
+					options.Init = func(ctx context.Context, session live.Session[live.AnonymousIdentity]) ([]live.Effect[live.AnonymousIdentity], error) {
 						return nil, errors.New("no data plane")
 					}
 					config, _ = registry.LiveConfig(options)
@@ -398,43 +403,25 @@ var _ = Describe("Registry", func() {
 				})
 			})
 
+			// The effect phase has no registry code left to specify, and that
+			// is the finding rather than a gap. Routing an effect back to its
+			// owner, the host's fallback executor and ErrHostEffect all existed
+			// because an effect was an opaque interface value somebody had to
+			// match on; a live.Effect[live.AnonymousIdentity] carries its own Run, so a widget's effect
+			// performs the widget's closure and a host's performs the host's,
+			// with nothing in between to get wrong. What survives is that the
+			// registry passes effects through unchanged, which the mount and
+			// event phases above already assert.
 			Describe("the effect phase", func() {
-				It("hands a widget's effect back to the widget that asked for it, unwrapped", func() {
+				It("passes a widget's effect through under its own name", func() {
 					state := mountBoth()
 					alpha.EXPECT().Reduce(gomock.Any(), gomock.Any()).
-						Return(2, []live.IEffect{namedEffect{name: "alpha.watch"}})
+						Return(2, []live.Effect[live.AnonymousIdentity]{namedEffect("alpha.watch")})
 
 					_, effects := config.Reduce(state, live.Event{Name: "widget.alpha.ping"})
 					Expect(effects).To(HaveLen(1))
-					Expect(effects[0].EffectSource()).To(Equal("alpha.watch"))
-
-					alpha.EXPECT().
-						Effect(gomock.Any(), gomock.Any(), namedEffect{name: "alpha.watch"}, gomock.Any()).
-						Return(nil)
-					Expect(config.Execute(ctx, session, effects[0], nil)).To(Succeed())
-				})
-
-				It("hands an effect no widget owns to the host", func() {
-					var executed live.IEffect
-					options.Execute = func(
-						ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter,
-					) error {
-						executed = effect
-						return nil
-					}
-					config, _ = registry.LiveConfig(options)
-
-					Expect(config.Execute(ctx, session, namedEffect{name: "host.open"}, nil)).To(Succeed())
-					Expect(executed).To(Equal(namedEffect{name: "host.open"}))
-				})
-
-				It("fails an unowned effect rather than succeeding at nothing", func() {
-					config, _ = registry.LiveConfig(options)
-
-					executeError := config.Execute(ctx, session, namedEffect{name: "host.open"}, nil)
-
-					Expect(executeError).To(MatchError(widget.ErrHostEffect))
-					Expect(executeError).To(MatchError(ContainSubstring("host.open")))
+					Expect(effects[0].Source).To(Equal("alpha.watch"))
+					Expect(effects[0].Run(ctx, session, nil)).To(Succeed())
 				})
 			})
 
@@ -455,7 +442,7 @@ var _ = Describe("Registry", func() {
 					// Neither of these widgets declares a dirty test, so this is
 					// the whole-state fallback: safe, and what a hand-written
 					// widget gets for free.
-					_, declares := widget.IWidget[int](alpha).(widget.IDirtyDeclarer[int])
+					_, declares := widget.IWidget[int, live.AnonymousIdentity](alpha).(widget.IDirtyDeclarer[int])
 					Expect(declares).To(BeFalse())
 					Expect(config.Fragments[0].Dirty(state, moved)).To(BeTrue())
 					Expect(config.Fragments[1].Dirty(state, moved)).To(BeFalse())
@@ -471,8 +458,8 @@ var _ = Describe("Registry", func() {
 						},
 					}
 					alpha.EXPECT().Mount(gomock.Any(), gomock.Any()).Return(1, nil, nil)
-					declaringRegistry := widget.NewRegistry()
-					Expect(widget.Register[int](declaringRegistry, declaring)).To(Succeed())
+					declaringRegistry := widget.NewRegistry[live.AnonymousIdentity]()
+					Expect(widget.Register[int, live.AnonymousIdentity](declaringRegistry, declaring)).To(Succeed())
 					declaringConfig, configError := declaringRegistry.LiveConfig(options)
 					Expect(configError).ToNot(HaveOccurred())
 					mounted, _, initError := declaringConfig.Init(ctx, session)

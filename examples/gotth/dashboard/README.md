@@ -375,7 +375,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/examples/gotth/dashboard \
     dis-gotth-live:latest go test -race -count=1 ./...
 ```
 
-72 specs, about ten seconds, most of it deliberate waiting for silence: several
+71 specs, about ten seconds, most of it deliberate waiting for silence: several
 properties are "and then nothing else arrived", which cannot be asserted faster
 than the idle period it is measured over. `ci.sh` runs it beside the counter and
 chat suites, because an example CI does not run is a regression suite in name

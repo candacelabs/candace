@@ -66,8 +66,8 @@ var _ = Describe("The contributing union's two implementations", func() {
 				deferred = &o
 			}
 
-			build := func() *Actor {
-				a := &Actor{pendingIDs: append([]uint64(nil), pending...)}
+			build := func() *Actor[testSubject] {
+				a := &Actor[testSubject]{pendingIDs: append([]uint64(nil), pending...)}
 				if deferred != nil {
 					o := *deferred
 					a.pendingOrig = &o

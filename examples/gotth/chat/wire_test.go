@@ -64,7 +64,7 @@ const (
 // room is one live application behind a real HTTP server, with the room and
 // the directory it was built over.
 type mountedRoom struct {
-	app    *live.App[State]
+	app    *live.App[State, Member]
 	room   *Room
 	dir    Directory
 	server *httptest.Server
@@ -72,7 +72,7 @@ type mountedRoom struct {
 
 // mount builds the chat application and serves it, optionally mutating the
 // Config first.
-func mount(mutate func(*live.Config[State])) *mountedRoom {
+func mount(mutate func(*live.Config[State, Member])) *mountedRoom {
 	GinkgoHelper()
 
 	room := NewRoom()
@@ -521,7 +521,7 @@ var _ = Describe("Error boundaries on the wire", func() {
 	// only thing that field does. The production assertion is the important
 	// one: a person typing /panic reducer must not be shown the panic value.
 	It("keeps a panic value off the wire in production and puts it on in dev", func() {
-		prod := mount(func(c *live.Config[State]) { c.Dev = false })
+		prod := mount(func(c *live.Config[State, Member]) { c.Dev = false })
 		prodTab := prod.open("alice")
 		prodTab.Settle(200 * time.Millisecond)
 		prodTab.say(CmdPanicReducer)
@@ -529,7 +529,7 @@ var _ = Describe("Error boundaries on the wire", func() {
 		Expect(generic.Error.Message).NotTo(ContainSubstring(CmdPanicReducer))
 		Expect(generic.Error.Message).NotTo(ContainSubstring("chat.go"))
 
-		dev := mount(func(c *live.Config[State]) { c.Dev = true })
+		dev := mount(func(c *live.Config[State, Member]) { c.Dev = true })
 		devTab := dev.open("alice")
 		devTab.Settle(200 * time.Millisecond)
 		devTab.say(CmdPanicReducer)
@@ -712,7 +712,7 @@ var _ = Describe("The mounted application", func() {
 
 	It("serves the room, already rendered, to a signed-in browser", func() {
 		m := mount(nil)
-		m.room.Post("alice", PostEffect{Body: "already said"}, tabA)
+		m.room.Post("alice", Post{Body: "already said"}, tabA)
 
 		req, err := http.NewRequest(http.MethodGet, m.server.URL+"/", nil)
 		Expect(err).NotTo(HaveOccurred())

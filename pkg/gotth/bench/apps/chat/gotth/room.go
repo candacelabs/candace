@@ -49,20 +49,13 @@ const (
 // tight.
 const backlogDepth = 4096
 
-// SubscribeEffect asks the rooms to push this session every change until the
-// session ends. It carries nothing: a subscription's address is the session it
-// belongs to, which the library already knows and hands to Execute.
-type SubscribeEffect struct{}
-
-// EffectSource names the subscription for provenance and metrics.
-func (SubscribeEffect) EffectSource() string { return SourceSubscribe }
-
-// SendEffect asks the rooms to accept one message (F-CHT-3, CHT-2).
+// Send is one message on its way into a room (F-CHT-3, CHT-2).
 //
-// Room is carried because the executor has the session's IDENTITY but not its
-// STATE — which room a tab is looking at is one of the things the reducer
-// decides — and an effect value should carry what the reducer decided.
-type SendEffect struct {
+// Room is carried because an effect's Run has the session's IDENTITY but not
+// its STATE — which room a tab is looking at is one of the things the reducer
+// decides — and what a reducer hands an effect should be what the reducer
+// decided.
+type Send struct {
 	Room string
 	Body string
 	// Cause is the identifier of the event that asked. It rides through the
@@ -72,24 +65,74 @@ type SendEffect struct {
 	Cause uint64
 }
 
-// EffectSource names the effect for provenance and metrics.
-func (SendEffect) EffectSource() string { return SourceSend }
-
-// SwitchEffect asks the rooms to move this session (F-CHT-7, CHT-4).
-type SwitchEffect struct {
+// Switch is a request to move this session to another room (F-CHT-7, CHT-4).
+type Switch struct {
 	Room  string
 	Cause uint64
 }
 
-// EffectSource names the effect for provenance and metrics.
-func (SwitchEffect) EffectSource() string { return SourceSwitch }
+// SubscribeEffect is the effect that pushes this session every change until
+// the session ends. It captures nothing: a subscription's address is the
+// session it belongs to, which the library already knows and hands to Run.
+func (r *Rooms) SubscribeEffect() live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourceSubscribe,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			return r.pump(ctx, sess.ID(), emit)
+		},
+	}
+}
 
-// TypingEffect marks this session as typing (F-CHT-6). It decays on its own
-// after TypingDecay, swept by the replay.
-type TypingEffect struct{ Room string }
+// SendEffect is the effect that accepts one message into a room.
+func (r *Rooms) SendEffect(send Send) live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourceSend,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			member := sess.Identity()
+			// F-CHT-9 again, and not redundantly. The reducer's refusal is
+			// what a reader SEES; this one is what a reader cannot get past.
+			// They are two halves of one rule and the second is here because
+			// an effect is reachable from anywhere a reducer can be wrong.
+			if member.Readonly {
+				return fmt.Errorf("chat-gotth: %s is a read-only participant and may not post", member.Name)
+			}
+			r.Post(send.Room, member.Name, send.Body, strconv.FormatUint(send.Cause, 10), sess.ID(), send.Cause)
+			return nil
+		},
+	}
+}
 
-// EffectSource names the effect for provenance and metrics.
-func (TypingEffect) EffectSource() string { return SourceTyping }
+// SwitchEffect is the effect that moves this session to another room.
+func (r *Rooms) SwitchEffect(change Switch) live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourceSwitch,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			r.Switch(sess.ID(), sess.Identity().Name, change.Room)
+			// The answer to the switch, emitted straight into the asking
+			// session rather than queued: it is a fact about one session and
+			// nobody else's render changes because of it. The contributing
+			// edge names the click, so the patch that finally shows the other
+			// room can be traced back to it (FR-42).
+			return emit(live.Event{
+				Name:         EventEntered,
+				Contributing: []uint64{change.Cause},
+				Fields:       live.NewFields(map[string]string{fieldRoom: change.Room}),
+			})
+		},
+	}
+}
+
+// TypingEffect is the effect that marks this session as typing (F-CHT-6). The
+// mark decays on its own after TypingDecay, swept by the replay.
+func (r *Rooms) TypingEffect(roomID string) live.Effect[Member] {
+	return live.Effect[Member]{
+		Source: SourceTyping,
+		Run: func(ctx context.Context, sess live.Session[Member], emit live.Emitter) error {
+			r.Typing(roomID, sess.Identity().Name)
+			return nil
+		},
+	}
+}
 
 // room is one of §2.3's three, as the server owns it.
 type room struct {
@@ -412,56 +455,6 @@ func (r *Rooms) allRosterUpdatesLocked() []update {
 		out = append(out, rm.rosterUpdate(i, now))
 	}
 	return out
-}
-
-/* ------------------------------------------------------------ executor ---- */
-
-// Execute performs one effect at the actor boundary. It is Config.Execute.
-//
-// The effect values arrive exactly as the reducer declared them; nothing here
-// runs inside a reducer, and nothing here can reach a session's state except by
-// emitting an event the reducer folds in.
-func (r *Rooms) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
-	member, ok := sess.Identity().(Member)
-	if !ok {
-		return fmt.Errorf("chat-gotth: the session identity is %T, not a Member", sess.Identity())
-	}
-
-	switch e := effect.(type) {
-	case SubscribeEffect:
-		return r.pump(ctx, sess.ID(), emit)
-
-	case SendEffect:
-		// F-CHT-9 again, and not redundantly. The reducer's refusal is what a
-		// reader SEES; this one is what a reader cannot get past. They are two
-		// halves of one rule and the second is here because an effect is
-		// reachable from anywhere a reducer can be wrong.
-		if member.Readonly {
-			return fmt.Errorf("chat-gotth: %s is a read-only participant and may not post", member.Name)
-		}
-		r.Post(e.Room, member.Name, e.Body, strconv.FormatUint(e.Cause, 10), sess.ID(), e.Cause)
-		return nil
-
-	case SwitchEffect:
-		r.Switch(sess.ID(), member.Name, e.Room)
-		// The answer to the switch, emitted straight into the asking session
-		// rather than queued: it is a fact about one session and nobody else's
-		// render changes because of it. The contributing edge names the click,
-		// so the patch that finally shows the other room can be traced back to
-		// it (FR-42).
-		return emit(live.Event{
-			Name:         EventEntered,
-			Contributing: []uint64{e.Cause},
-			Fields:       live.NewFields(map[string]string{fieldRoom: e.Room}),
-		})
-
-	case TypingEffect:
-		r.Typing(e.Room, member.Name)
-		return nil
-
-	default:
-		return fmt.Errorf("chat-gotth: no executor for effect %T", effect)
-	}
 }
 
 // Post accepts one message into a room and tells every session.

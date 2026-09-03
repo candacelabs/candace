@@ -47,7 +47,7 @@ import (
 // silent. The determinism helpers in live/livetest are what catch a reducer
 // that has forgotten it: replay the same event log twice and the results
 // diverge.
-type Config[S any] struct {
+type Config[S any, I IIdentity] struct {
 	// Init is the mount hook: it produces the session's initial state and any
 	// startup effects, such as a pubsub subscription. It runs once per session,
 	// as the first transition, before the first snapshot.
@@ -73,10 +73,10 @@ type Config[S any] struct {
 	// loader: it must be safe to call for a read. The effects it returns are
 	// performed only for a real session; on a page render they are discarded.
 	// See that method.
-	Init func(ctx context.Context, session Session) (S, []IEffect, error)
+	Init func(ctx context.Context, session Session[I]) (S, []Effect[I], error)
 
 	// Reduce is the pure state transition. Required.
-	Reduce Reducer[S]
+	Reduce Reducer[S, I]
 
 	// Fragments are the server-owned live regions. Required, non-empty, and
 	// every ID must be unique.
@@ -90,30 +90,23 @@ type Config[S any] struct {
 	// cardinality of the per-event metric label before the first connection.
 	Events []string
 
-	// Execute performs one effect at the actor boundary, for the session whose
-	// transition returned it. Required if any code path returns an IEffect.
+	// There is no Execute hook. It was here until 2026-09-03, taking one
+	// effect interface and type-switching on its dynamic type to decide what to
+	// do, and it went with that interface: [Effect.Run] is where an effect's
+	// behaviour lives now, so there is nothing left for a central executor to
+	// dispatch on. An application that had one moves each `case` arm into the
+	// constructor that builds the effect, which is also where the store, broker
+	// or pool it needs is already in scope.
 	//
-	// The session is a parameter rather than something to fish out of the
-	// context, and the difference is whether an executor can be written that
-	// forgot to ask. An effect's identity is an input to what the effect does
-	// — a message published to a topic has a publisher, and the identity
-	// Authorize permitted the event under is the identity the effect it
-	// scheduled must still act as — so a signature that omits it invites the
-	// application to smuggle the session into the effect value instead, which
-	// is addressing information the library already has. A context value would
-	// make the identity optional at the type level and absent by mistake at
-	// runtime; Init, Authorize and Teardown all take a Session, and this is the
-	// hook that was the odd one out.
-	//
-	// An error returned here reaches the reducer as an EffectFailedEvent whose
-	// EffectFailedErrorField carries this error's message verbatim, in
-	// production and unredacted. Return what an operator needs; assume a
-	// reducer that renders it publishes it to the browser.
-	Execute func(ctx context.Context, session Session, effect IEffect, emit Emitter) error
+	// Everything that hook's signature carried, Run's carries: the session it
+	// acts for, the [Emitter] that injects results back, and the error that
+	// reaches the reducer as an [EffectFailedEvent] whose
+	// EffectFailedErrorField holds its message verbatim, in production and
+	// unredacted.
 
 	// Teardown runs after the session actor exits, with the final state, for
 	// unsubscribing. Optional.
-	Teardown func(ctx context.Context, session Session, state S)
+	Teardown func(ctx context.Context, session Session[I], state S)
 
 	// Origins is the allowlist of permitted Origin values, checked on the
 	// upgrade request before any per-session memory is allocated. Required
@@ -124,7 +117,7 @@ type Config[S any] struct {
 
 	// Authenticate derives the session identity from the upgrade request.
 	// Required; use Anonymous to opt out.
-	Authenticate func(request *http.Request) (IIdentity, error)
+	Authenticate func(request *http.Request) (I, error)
 
 	// Authorize runs before the reducer for every event, at the single
 	// mailbox ingress, so a new event kind cannot skip it. Required; use
@@ -133,7 +126,7 @@ type Config[S any] struct {
 	// Returning nil allows the event. Returning a *DenyError rejects it
 	// without closing the connection. Returning a *FatalDenyError rejects it
 	// and closes the connection.
-	Authorize func(ctx context.Context, session Session, event Event) error
+	Authorize func(ctx context.Context, session Session[I], event Event) error
 
 	// CSRF validates a token bound to the authenticated application session.
 	// Required; use NoCSRFCheck to opt out.
@@ -720,15 +713,31 @@ const AnyOrigin = "*"
 // Anonymous is a Config.Authenticate implementation binding every session to a
 // single anonymous identity. It is the explicit opt-out from authentication,
 // named rather than implied by a nil hook.
-func Anonymous(request *http.Request) (IIdentity, error) { return anonymous{}, nil }
+func Anonymous(request *http.Request) (AnonymousIdentity, error) { return AnonymousIdentity{}, nil }
 
-type anonymous struct{}
+// AnonymousIdentity is the identity [Anonymous] produces, and the type an
+// application with no accounts instantiates its Config on.
+//
+// It is a concrete struct rather than the interface, and it is exported for
+// that reason alone: since 2026-09-03 a Config carries its identity type as a
+// type parameter, so an application that opts out of authentication still has
+// to name a type — and the type it names must not be `live.IIdentity`, because
+// naming the interface there is the erasure the ruling removed.
+type AnonymousIdentity struct{}
 
-func (anonymous) Subject() string { return "anonymous" }
+// Subject is the one subject every anonymous session shares.
+func (AnonymousIdentity) Subject() string { return "anonymous" }
 
 // AllowAll is a Config.Authorize implementation permitting every event. It is
 // the explicit opt-out from per-event authorization.
-func AllowAll(ctx context.Context, session Session, event Event) error { return nil }
+//
+// It carries the identity type parameter because the hook it satisfies does,
+// and it must be INSTANTIATED at the call site — `live.AllowAll[Member]`, not
+// `live.AllowAll`. Go infers type arguments for a generic function assigned to
+// a variable of function type but not for one assigned to a composite
+// literal's field, which is exactly how a Config is written. Naming the type is
+// two words and the alternative is an error message about instantiation.
+func AllowAll[I IIdentity](ctx context.Context, session Session[I], event Event) error { return nil }
 
 // NoCSRFCheck is a Config.CSRF implementation performing no check. It is the
 // explicit opt-out, and it is only safe when Config.Origins is a real

@@ -80,7 +80,7 @@ var log = []live.Event{
 
 var _ = Describe("ReplayN", func() {
 	It("passes a reducer that is a pure function of its inputs", func() {
-		pure := func(state counter, ev live.Event) (counter, []live.IEffect) {
+		pure := func(state counter, ev live.Event) (counter, []live.Effect[live.AnonymousIdentity]) {
 			if ev.Name == "counter.increment" {
 				state.N++
 			}
@@ -93,7 +93,7 @@ var _ = Describe("ReplayN", func() {
 	})
 
 	It("catches a reducer that reads a clock", func() {
-		impure := func(state counter, ev live.Event) (counter, []live.IEffect) {
+		impure := func(state counter, ev live.Event) (counter, []live.Effect[live.AnonymousIdentity]) {
 			state.Label = time.Now().Format(time.RFC3339Nano)
 			return state, nil
 		}
@@ -107,10 +107,10 @@ var _ = Describe("ReplayN", func() {
 
 	It("catches a reducer whose effects differ between runs", func() {
 		var runs int
-		impure := func(state counter, ev live.Event) (counter, []live.IEffect) {
+		impure := func(state counter, ev live.Event) (counter, []live.Effect[live.AnonymousIdentity]) {
 			runs++
 			if runs > len(log) {
-				return state, []live.IEffect{drift{}}
+				return state, []live.Effect[live.AnonymousIdentity]{drift()}
 			}
 			return state, nil
 		}
@@ -118,25 +118,34 @@ var _ = Describe("ReplayN", func() {
 		r := run(func(tb testing.TB) { livetest.ReplayN(tb, impure, counter{}, log, 3) })
 
 		Expect(r.failed).To(BeTrue())
-		Expect(r.message).To(ContainSubstring("different effects"))
+		Expect(r.message).To(ContainSubstring("scheduled different effects"))
 	})
 
 	It("refuses to prove anything from an empty log or a single replay", func() {
-		pure := func(state counter, _ live.Event) (counter, []live.IEffect) { return state, nil }
+		pure := func(state counter, _ live.Event) (counter, []live.Effect[live.AnonymousIdentity]) { return state, nil }
 
 		Expect(run(func(tb testing.TB) { livetest.ReplayN(tb, pure, counter{}, nil, 4) }).failed).To(BeTrue())
 		Expect(run(func(tb testing.TB) { livetest.ReplayN(tb, pure, counter{}, log, 1) }).failed).To(BeTrue())
 	})
 })
 
-type drift struct{}
-
-func (drift) EffectSource() string { return "test.drift" }
+// drift is the effect the impure reducer above schedules on one run and not on
+// another. Only its source matters: ReplayN compares the sequence of sources
+// two runs produced, because Effect.Run is a function value and Go cannot
+// compare two of those.
+func drift() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: "test.drift",
+		Run: func(ctx context.Context, session live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			return nil
+		},
+	}
+}
 
 var _ = Describe("AssertDirtyComplete", func() {
-	config := func(dirty func(prev, next counter) bool) live.Config[counter] {
-		return live.Config[counter]{
-			Reduce: func(state counter, ev live.Event) (counter, []live.IEffect) {
+	config := func(dirty func(prev, next counter) bool) live.Config[counter, live.AnonymousIdentity] {
+		return live.Config[counter, live.AnonymousIdentity]{
+			Reduce: func(state counter, ev live.Event) (counter, []live.Effect[live.AnonymousIdentity]) {
 				switch ev.Name {
 				case "counter.increment":
 					state.N++
@@ -194,7 +203,7 @@ var _ = Describe("AssertDirtyComplete", func() {
 
 	It("refuses a configuration it cannot replay", func() {
 		Expect(run(func(tb testing.TB) {
-			livetest.AssertDirtyComplete(tb, live.Config[counter]{}, counter{}, log)
+			livetest.AssertDirtyComplete(tb, live.Config[counter, live.AnonymousIdentity]{}, counter{}, log)
 		}).failed).To(BeTrue())
 
 		cfg := config(nil)
@@ -225,7 +234,7 @@ var _ = Describe("the testing.TB a Ginkgo suite passes", func() {
 		tb := GinkgoTB()
 		var _ testing.TB = tb // compile-time: no adaptation is required.
 
-		pure := func(state counter, ev live.Event) (counter, []live.IEffect) {
+		pure := func(state counter, ev live.Event) (counter, []live.Effect[live.AnonymousIdentity]) {
 			if ev.Name == "counter.increment" {
 				state.N++
 			}
@@ -233,7 +242,7 @@ var _ = Describe("the testing.TB a Ginkgo suite passes", func() {
 		}
 		livetest.ReplayN(tb, pure, counter{}, log, 8)
 
-		livetest.AssertDirtyComplete(tb, live.Config[counter]{
+		livetest.AssertDirtyComplete(tb, live.Config[counter, live.AnonymousIdentity]{
 			Reduce: pure,
 			Fragments: []live.Fragment[counter]{{
 				ID:     "counter",

@@ -42,7 +42,7 @@ func serving(prefix string, dev bool) *httptest.Server {
 // FR-57 route specs need one — the build identity is a Config field, and a
 // spec that asserts the body of the build-identity route has to know what it
 // should say.
-func servingConfig(prefix string, cfg live.Config[counter]) *httptest.Server {
+func servingConfig(prefix string, cfg live.Config[counter, user]) *httptest.Server {
 	GinkgoHelper()
 
 	app, err := live.New(cfg)
@@ -55,7 +55,7 @@ func servingConfig(prefix string, cfg live.Config[counter]) *httptest.Server {
 	return ts
 }
 
-func inspectorApp(dev bool) *live.App[counter] {
+func inspectorApp(dev bool) *live.App[counter, user] {
 	GinkgoHelper()
 
 	cfg := validConfig()

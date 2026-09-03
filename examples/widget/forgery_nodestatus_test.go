@@ -95,7 +95,7 @@ var _ = Describe("A browser forging a second widget's stream-delivered event", f
 		// The half a fix like this breaks silently, on this widget too: an
 		// unregistered name is refused from a browser and must still reach the
 		// widget when the host's own effect emits it.
-		registration := nodestatus.NewNodeStatus().Register()
+		registration := nodestatus.NewNodeStatus[live.AnonymousIdentity]().Register()
 
 		Expect(registration.Internal).To(ContainElement(nodestatus.NodeStatusEventHealth))
 		Expect(registration.Events).To(BeEmpty(),
@@ -107,7 +107,7 @@ var _ = Describe("A browser forging a second widget's stream-delivered event", f
 				nodestatus.NodeStatusEventHealthFieldReachable: "true",
 			}),
 		}
-		state, _ := nodestatus.NewNodeStatus().Reduce(nodestatus.NodeStatusState{}, delivered)
+		state, _ := nodestatus.NewNodeStatus[live.AnonymousIdentity]().Reduce(nodestatus.NodeStatusState{}, delivered)
 		Expect(state.Reachable).To(BeTrue(),
 			"the stream's own event still routes; what changed is who may send it")
 	})

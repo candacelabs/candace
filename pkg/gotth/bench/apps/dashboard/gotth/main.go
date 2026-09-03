@@ -36,7 +36,7 @@
 // live.AnyOrigin, in its localhost-development form; PRODUCTION lists the one
 // scheme-and-host the page is served from. live.NoCSRFCheck is safe only
 // because of that. Authenticate is live.Anonymous and Authorize is
-// live.AllowAll because a read-only operator dashboard has no accounts — the
+// live.AllowAll[live.AnonymousIdentity] because a read-only operator dashboard has no accounts — the
 // same position examples/dashboard takes, and PRODUCTION behind an SSO proxy
 // replaces both. Dev is left false, as it must be outside development.
 package main
@@ -166,7 +166,7 @@ func run() error {
 }
 
 // NewMux routes the whole app.
-func NewMux(app *live.App[State], feed *Feed, shim, htmx []byte) *http.ServeMux {
+func NewMux(app *live.App[State, live.AnonymousIdentity], feed *Feed, shim, htmx []byte) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// WithSID is how Config.Init learns which bench session the page was served

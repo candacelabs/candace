@@ -711,7 +711,7 @@ func Script(mountPath string) templ.Component {
 // for the reason it is a parameter there: the prefix as the browser sees it is
 // knowledge only the caller has, and a default would point at a file that
 // 404s.
-func (a *App[S]) InspectorScript(mountPath string) templ.Component {
+func (a *App[S, I]) InspectorScript(mountPath string) templ.Component {
 	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
 		// Validated even when nothing is written, so that a bad mount path is
 		// an error in dev and in production alike. A component whose argument

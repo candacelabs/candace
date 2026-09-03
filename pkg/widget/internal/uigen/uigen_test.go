@@ -261,8 +261,15 @@ var _ = Describe("The generated scaffold", func() {
 	It("asserts at compile time that it satisfies the SDK contract, and declares its own dirty test", func() {
 		scaffold := scaffoldOf(newBuilder().build())
 
-		Expect(scaffold).To(ContainSubstring("_ widget.IWidget[NodeStatusState]        = (*NodeStatus)(nil)"))
-		Expect(scaffold).To(ContainSubstring("_ widget.IDirtyDeclarer[NodeStatusState] = (*NodeStatus)(nil)"))
+		// The contract assertion instantiates on live.AnonymousIdentity: a
+		// generated widget is generic in the HOST's identity type since
+		// 2026-09-03, so a compile-time assertion has to pick one, and the
+		// identity for a host with no accounts is the honest pick. Nothing in
+		// the generated body branches on it.
+		Expect(scaffold).To(ContainSubstring(
+			"_ widget.IWidget[NodeStatusState, live.AnonymousIdentity] = (*NodeStatus[live.AnonymousIdentity])(nil)"))
+		Expect(scaffold).To(ContainSubstring(
+			"_ widget.IDirtyDeclarer[NodeStatusState]                  = (*NodeStatus[live.AnonymousIdentity])(nil)"))
 	})
 
 	It("carries the declared stream into the registration, for the host to resolve", func() {
@@ -504,9 +511,10 @@ var _ = Describe("The generated scaffold", func() {
 		It("compares exactly the fields of the document's computed projection", func() {
 			scaffold := scaffoldOf(newBuilder().withFullScene())
 
-			Expect(scaffold).To(ContainSubstring("_ widget.IDirtyDeclarer[NodeStatusState] = (*NodeStatus)(nil)"))
 			Expect(scaffold).To(ContainSubstring(
-				"func (instance *NodeStatus) Dirty(previous NodeStatusState, next NodeStatusState) bool {\n" +
+				"_ widget.IDirtyDeclarer[NodeStatusState]                  = (*NodeStatus[live.AnonymousIdentity])(nil)"))
+			Expect(scaffold).To(ContainSubstring(
+				"func (instance *NodeStatus[I]) Dirty(previous NodeStatusState, next NodeStatusState) bool {\n" +
 					"\treturn previous.Reachable != next.Reachable ||\n" +
 					"\t\tprevious.Sequence != next.Sequence ||\n" +
 					"\t\tprevious.Paused != next.Paused\n}"))
@@ -517,7 +525,7 @@ var _ = Describe("The generated scaffold", func() {
 			document.DirtyProjection.Fields = nil
 
 			Expect(scaffoldOf(document)).To(ContainSubstring(
-				"func (instance *NodeStatus) Dirty(previous NodeStatusState, next NodeStatusState) bool {\n" +
+				"func (instance *NodeStatus[I]) Dirty(previous NodeStatusState, next NodeStatusState) bool {\n" +
 					"\t// Nothing this widget renders reads state, so no transition can move it.\n" +
 					"\treturn false\n}"))
 		})

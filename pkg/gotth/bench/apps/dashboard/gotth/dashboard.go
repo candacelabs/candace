@@ -621,69 +621,76 @@ func pad(n int) string {
 
 /* -------------------------------------------------------------- reducer --- */
 
-// Reduce is the pure state transition.
+// Reducer returns the pure state transition, bound to the feed its effects
+// act on.
+//
+// It is a constructor because a live.Effect[live.AnonymousIdentity] carries its own behaviour since the
+// 2026-09-03 ruling, so a reducer scheduling one has to hold what that effect
+// closes over.
 //
 // It reads no clock, performs no I/O and touches the shared feed not at all.
 // Every control is a round trip: a click returns an effect only where the feed
 // has to be told (it does not, for any of the six), and otherwise changes this
 // session's own controls — which is server state either way, because this
 // reducer runs on the server.
-func Reduce(state State, ev live.Event) (State, []live.IEffect) {
-	if !ev.At.IsZero() {
-		state.NowMs = ev.At.UnixMilli()
-	}
+func Reducer(feed *Feed) live.Reducer[State, live.AnonymousIdentity] {
+	return func(state State, ev live.Event) (State, []live.Effect[live.AnonymousIdentity]) {
+		if !ev.At.IsZero() {
+			state.NowMs = ev.At.UnixMilli()
+		}
 
-	switch ev.Name {
-	case EventTick:
-		return tick(state, ev), nil
+		switch ev.Name {
+		case EventTick:
+			return tick(state, ev), nil
 
-	case EventFilter:
-		v := ev.Fields.Get(fieldValue)
-		if !slices.Contains(StatusFilters, v) {
+		case EventFilter:
+			v := ev.Fields.Get(fieldValue)
+			if !slices.Contains(StatusFilters, v) {
+				return state, nil
+			}
+			state.Controls.Filter = v
 			return state, nil
-		}
-		state.Controls.Filter = v
-		return state, nil
 
-	case EventSearch:
-		// The debounce is the CLIENT's (live.Bind.Debounce renders the interval
-		// as a component of this binding inside data-gotth-on, and the runtime
-		// holds the timer against that binding), so by the time this runs the
-		// trailing edge has already fired. The value is the input's own,
-		// serialised from its name because it is not inside a form.
-		state.Controls.Search = ev.Fields.Get(fieldQuery)
-		return state, nil
-
-	case EventSort:
-		state.Controls.Sort = NextSort(state.Controls.Sort)
-		return state, nil
-
-	case EventPerPage:
-		n, err := strconv.Atoi(ev.Fields.Get(fieldValue))
-		if err != nil || !slices.Contains(PerPageChoices, n) {
+		case EventSearch:
+			// The debounce is the CLIENT's (live.Bind.Debounce renders the interval
+			// as a component of this binding inside data-gotth-on, and the runtime
+			// holds the timer against that binding), so by the time this runs the
+			// trailing edge has already fired. The value is the input's own,
+			// serialised from its name because it is not inside a form.
+			state.Controls.Search = ev.Fields.Get(fieldQuery)
 			return state, nil
-		}
-		state.Controls.PerPage = n
-		return state, nil
 
-	case EventPause:
-		state.Controls.Paused = !state.Controls.Paused
-		if !state.Controls.Paused {
-			// A resume shows the CURRENT tick rather than replaying what was
-			// missed (R-2). One assignment, because Live has been following the
-			// feed the whole time.
-			state.Shown = state.Live
-		}
-		return state, nil
+		case EventSort:
+			state.Controls.Sort = NextSort(state.Controls.Sort)
+			return state, nil
 
-	case live.EffectFailedEvent:
-		return state, retrySubscription(ev)
+		case EventPerPage:
+			n, err := strconv.Atoi(ev.Fields.Get(fieldValue))
+			if err != nil || !slices.Contains(PerPageChoices, n) {
+				return state, nil
+			}
+			state.Controls.PerPage = n
+			return state, nil
+
+		case EventPause:
+			state.Controls.Paused = !state.Controls.Paused
+			if !state.Controls.Paused {
+				// A resume shows the CURRENT tick rather than replaying what was
+				// missed (R-2). One assignment, because Live has been following the
+				// feed the whole time.
+				state.Shown = state.Live
+			}
+			return state, nil
+
+		case live.EffectFailedEvent:
+			return state, retrySubscription(feed, ev)
+		}
+
+		// An unknown name cannot reach here from a browser — the library refuses
+		// unregistered names before the reducer runs — so anything arriving here is
+		// something the library synthesised and this application has no answer for.
+		return state, nil
 	}
-
-	// An unknown name cannot reach here from a browser — the library refuses
-	// unregistered names before the reducer runs — so anything arriving here is
-	// something the library synthesised and this application has no answer for.
-	return state, nil
 }
 
 // retrySubscription decides what to do about a failed effect.
@@ -694,10 +701,10 @@ func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 // re-subscribes only when the library says the failure was transient —
 // re-running a terminal failure re-runs whatever made it terminal — and an
 // unreadable classification parses as false.
-func retrySubscription(ev live.Event) []live.IEffect {
+func retrySubscription(feed *Feed, ev live.Event) []live.Effect[live.AnonymousIdentity] {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceSubscribe {
-		return []live.IEffect{SubscribeEffect{}}
+		return []live.Effect[live.AnonymousIdentity]{feed.SubscribeEffect()}
 	}
 	return nil
 }
@@ -901,8 +908,8 @@ func parseInts(raw string) []int {
 /* --------------------------------------------------------------- config --- */
 
 // Config builds the live application over the shared feed.
-func Config(feed *Feed, origins []string) live.Config[State] {
-	return live.Config[State]{
+func Config(feed *Feed, origins []string) live.Config[State, live.AnonymousIdentity] {
+	return live.Config[State, live.AnonymousIdentity]{
 		// Init runs once per connection. It joins the feed — which both reads the
 		// current frame and registers this session for pushes, under one lock, so
 		// no tick can slip through the gap between the two — and asks for the
@@ -913,7 +920,7 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 		// Binding it here is what keeps region E's panel entry alive for as long
 		// as this tab holds a connection, which is the rule the Next.js store
 		// applies to its own session map.
-		Init: func(ctx context.Context, s live.Session) (State, []live.IEffect, error) {
+		Init: func(ctx context.Context, s live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 			sid := SIDFromContext(ctx)
 			snap := feed.Join(s.ID(), sid)
 			return State{
@@ -923,10 +930,10 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 				Live:     snap,
 				Controls: DefaultControls,
 				NowMs:    time.Now().UnixMilli(),
-			}, []live.IEffect{SubscribeEffect{}}, nil
+			}, []live.Effect[live.AnonymousIdentity]{feed.SubscribeEffect()}, nil
 		},
 
-		Reduce: Reduce,
+		Reduce: Reducer(feed),
 
 		// Five fragments, patched independently, which is half of what FR-62 asks
 		// a live dashboard to demonstrate. One fragment covering the page would
@@ -966,8 +973,9 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 
 		Events: []string{EventFilter, EventSearch, EventSort, EventPerPage, EventPause},
 
-		Execute:  feed.Execute,
-		Teardown: func(_ context.Context, s live.Session, state State) { feed.Leave(s.ID(), state.SID) },
+		Teardown: func(_ context.Context, s live.Session[live.AnonymousIdentity], state State) {
+			feed.Leave(s.ID(), state.SID)
+		},
 
 		// A real allowlist, not live.AnyOrigin. PRODUCTION replaces it with the
 		// one scheme-and-host the page is served from.
@@ -980,7 +988,7 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 		// replaces Anonymous with the trusted header or cookie and AllowAll with
 		// the check that says who may pause whose dashboard.
 		Authenticate: live.Anonymous,
-		Authorize:    live.AllowAll,
+		Authorize:    live.AllowAll[live.AnonymousIdentity],
 
 		// live.NoCSRFCheck is safe here ONLY because Origins above is a real
 		// allowlist: the origin check is then the whole of the CSRF posture.

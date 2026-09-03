@@ -35,7 +35,7 @@
 // spellings a browser might send, plus whatever -origin adds. A production
 // deployment replaces it with the one scheme-and-host the page is served from
 // and nothing else. Authenticate is live.Anonymous and Authorize is
-// live.AllowAll because a counter has no accounts and no rule about who may
+// live.AllowAll[live.AnonymousIdentity] because a counter has no accounts and no rule about who may
 // count; production replaces the first with the session cookie or bearer token
 // it already trusts and the second with the check that says which identities
 // may change what. live.NoCSRFCheck is safe here ONLY because Origins above is
@@ -161,7 +161,7 @@ func run() error {
 
 // NewMux routes the whole app: the measured page, the stylesheet, the two bench
 // scripts, and the live handler.
-func NewMux(app *live.App[State], store *Store, shim []byte) *http.ServeMux {
+func NewMux(app *live.App[State, live.AnonymousIdentity], store *Store, shim []byte) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Both patterns: MountPath is the WebSocket endpoint and MountPath+"/" is

@@ -32,7 +32,7 @@
 //
 // Origins is a real allowlist, derived from the listen address, not
 // live.AnyOrigin. The three escape hatches this example does use —
-// live.Anonymous, live.AllowAll, live.NoCSRFCheck — are each there because a
+// live.Anonymous, live.AllowAll[live.AnonymousIdentity], live.NoCSRFCheck — are each there because a
 // counter demo has no accounts to check against, and each is commented in
 // counter.go with what production puts in its place.
 package main
@@ -165,7 +165,7 @@ const MountPath = "/live"
 // It is a plain *http.ServeMux and the live handler is a plain http.Handler,
 // which is the point — mounting a live application is one Handle call under
 // whatever router the application already has.
-func NewMux(app *live.App[State], store *Store) *http.ServeMux {
+func NewMux(app *live.App[State, live.AnonymousIdentity], store *Store) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// The live handler mounts under any prefix. Both patterns are registered

@@ -435,7 +435,12 @@ const ReadonlyError = "You are a read-only participant in this room."
 
 /* ------------------------------------------------------------- reducer ---- */
 
-// Reduce is the pure state transition.
+// Reducer returns the pure state transition, bound to the rooms its effects
+// act on.
+//
+// It is a constructor because a live.Effect[Member] carries its own behaviour since the
+// 2026-09-03 ruling, so a reducer scheduling one has to hold what that effect
+// closes over.
 //
 // It reads no clock, performs no I/O and touches the shared rooms not at all. A
 // send does not append a message: it returns an effect asking the rooms to
@@ -443,70 +448,72 @@ const ReadonlyError = "You are a read-only participant in this room."
 // does — through a posted event. That is what server-authoritative means
 // concretely, and it is why CHT-2's predicate can require
 // data-bench-state="confirmed" and mean it.
-func Reduce(state State, ev live.Event) (State, []live.IEffect) {
-	if !ev.At.IsZero() {
-		state.NowMs = ev.At.UnixMilli()
-	}
+func Reducer(rooms *Rooms) live.Reducer[State, Member] {
+	return func(state State, ev live.Event) (State, []live.Effect[Member]) {
+		if !ev.At.IsZero() {
+			state.NowMs = ev.At.UnixMilli()
+		}
 
-	switch ev.Name {
-	case EventDraft:
-		// CHT-1. The character itself is already on screen — the browser put it
-		// there — and this is the debounced copy the counter and the validation
-		// message are computed from. It also IS this session's typing signal:
-		// F-CHT-6 needs one, and a separate heartbeat would be a second event
-		// carrying the same fact.
-		state.Draft = ev.Fields.Get(fieldBody)
-		return state, []live.IEffect{TypingEffect{Room: state.Room}}
+		switch ev.Name {
+		case EventDraft:
+			// CHT-1. The character itself is already on screen — the browser put it
+			// there — and this is the debounced copy the counter and the validation
+			// message are computed from. It also IS this session's typing signal:
+			// F-CHT-6 needs one, and a separate heartbeat would be a second event
+			// carrying the same fact.
+			state.Draft = ev.Fields.Get(fieldBody)
+			return state, []live.Effect[Member]{rooms.TypingEffect(state.Room)}
 
-	case EventSend:
-		return send(state, ev)
+		case EventSend:
+			return send(rooms, state, ev)
 
-	case EventSwitch:
-		room := ev.Fields.Get(fieldRoom)
-		if RoomIndex(room) < 0 || room == state.Room {
+		case EventSwitch:
+			room := ev.Fields.Get(fieldRoom)
+			if RoomIndex(room) < 0 || room == state.Room {
+				return state, nil
+			}
+			// State.Room is NOT changed here; see its doc comment. The effect asks
+			// the rooms to move this session, and EventEntered is the answer.
+			return state, []live.Effect[Member]{rooms.SwitchEffect(Switch{Room: room, Cause: ev.ID})}
+
+		case EventPosted:
+			return posted(state, ev)
+
+		case EventRoster:
+			i := RoomIndex(ev.Fields.Get(fieldRoom))
+			if i < 0 {
+				return state, nil
+			}
+			state.Rosters[i] = &Roster{
+				Version:  state.Rosters[i].version() + 1,
+				Presence: splitNames(ev.Fields.Get(fieldPresence)),
+				Typing:   splitNames(ev.Fields.Get(fieldTyping)),
+			}
 			return state, nil
-		}
-		// State.Room is NOT changed here; see its doc comment. The effect asks
-		// the rooms to move this session, and EventEntered is the answer.
-		return state, []live.IEffect{SwitchEffect{Room: room, Cause: ev.ID}}
 
-	case EventPosted:
-		return posted(state, ev)
-
-	case EventRoster:
-		i := RoomIndex(ev.Fields.Get(fieldRoom))
-		if i < 0 {
+		case EventEntered:
+			room := ev.Fields.Get(fieldRoom)
+			i := RoomIndex(room)
+			if i < 0 {
+				return state, nil
+			}
+			state.Room = room
+			// F-CHT-7: entering a room clears its badge.
+			state.Unread[i] = 0
 			return state, nil
+
+		case live.EffectFailedEvent:
+			return state, retrySubscription(rooms, ev)
 		}
-		state.Rosters[i] = &Roster{
-			Version:  state.Rosters[i].version() + 1,
-			Presence: splitNames(ev.Fields.Get(fieldPresence)),
-			Typing:   splitNames(ev.Fields.Get(fieldTyping)),
-		}
+
+		// An unknown name cannot reach here from a browser — the library refuses
+		// unregistered names before the reducer runs — so anything arriving here is
+		// something the library synthesised and this application has no answer for.
 		return state, nil
-
-	case EventEntered:
-		room := ev.Fields.Get(fieldRoom)
-		i := RoomIndex(room)
-		if i < 0 {
-			return state, nil
-		}
-		state.Room = room
-		// F-CHT-7: entering a room clears its badge.
-		state.Unread[i] = 0
-		return state, nil
-
-	case live.EffectFailedEvent:
-		return state, retrySubscription(ev)
 	}
-
-	// An unknown name cannot reach here from a browser — the library refuses
-	// unregistered names before the reducer runs — so anything arriving here is
-	// something the library synthesised and this application has no answer for.
-	return state, nil
 }
 
-func send(state State, ev live.Event) (State, []live.IEffect) {
+func send(rooms *Rooms, state State, ev live.Event) (State, []live.Effect[Member]) {
 	body := ev.Fields.Get(fieldBody)
 	// The draft is set from the submitted body rather than left at whatever the
 	// debounce last saw, so the counter and the error agree with what was
@@ -527,10 +534,10 @@ func send(state State, ev live.Event) (State, []live.IEffect) {
 
 	state.DraftError = ""
 	state.PendingSend = ev.ID
-	return state, []live.IEffect{SendEffect{Room: state.Room, Body: body, Cause: ev.ID}}
+	return state, []live.Effect[Member]{rooms.SendEffect(Send{Room: state.Room, Body: body, Cause: ev.ID})}
 }
 
-func posted(state State, ev live.Event) (State, []live.IEffect) {
+func posted(state State, ev live.Event) (State, []live.Effect[Member]) {
 	i := RoomIndex(ev.Fields.Get(fieldRoom))
 	if i < 0 {
 		return state, nil
@@ -580,10 +587,10 @@ func posted(state State, ev live.Event) (State, []live.IEffect) {
 // the library says the failure was transient; re-running a terminal failure
 // re-runs whatever made it terminal, and an unreadable classification parses as
 // false.
-func retrySubscription(ev live.Event) []live.IEffect {
+func retrySubscription(rooms *Rooms, ev live.Event) []live.Effect[Member] {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceSubscribe {
-		return []live.IEffect{SubscribeEffect{}}
+		return []live.Effect[Member]{rooms.SubscribeEffect()}
 	}
 	return nil
 }
@@ -607,17 +614,14 @@ func splitNames(joined string) []string {
 // Everything security-relevant is set here and nothing is left to a default,
 // because live.New refuses a Config with a hole in it rather than starting with
 // one. The production posture for each field is on the field.
-func Config(rooms *Rooms, origins []string) live.Config[State] {
-	return live.Config[State]{
+func Config(rooms *Rooms, origins []string) live.Config[State, Member] {
+	return live.Config[State, Member]{
 		// Init runs once per connection, before the first snapshot. It joins
 		// every room — which both reads the current logs and registers this
 		// session for pushes, under one lock, so no message can slip through the
 		// gap between the two — and asks for the subscription pump.
-		Init: func(ctx context.Context, s live.Session) (State, []live.IEffect, error) {
-			member, ok := s.Identity().(Member)
-			if !ok {
-				return State{}, nil, fmt.Errorf("chat-gotth: the session identity is %T, not a Member", s.Identity())
-			}
+		Init: func(ctx context.Context, s live.Session[Member]) (State, []live.Effect[Member], error) {
+			member := s.Identity()
 			room := RoomFromContext(ctx)
 			snap := rooms.Join(s.ID(), member.Name, room)
 
@@ -631,10 +635,10 @@ func Config(rooms *Rooms, origins []string) live.Config[State] {
 				LastSeq:  snap.LastSeq,
 				NowMs:    time.Now().UnixMilli(),
 			}
-			return state, []live.IEffect{SubscribeEffect{}}, nil
+			return state, []live.Effect[Member]{rooms.SubscribeEffect()}, nil
 		},
 
-		Reduce: Reduce,
+		Reduce: Reducer(rooms),
 
 		Fragments: []live.Fragment[State]{
 			{
@@ -683,8 +687,7 @@ func Config(rooms *Rooms, origins []string) live.Config[State] {
 
 		Events: []string{EventSend, EventDraft, EventSwitch},
 
-		Execute:  rooms.Execute,
-		Teardown: func(_ context.Context, s live.Session, _ State) { rooms.Leave(s.ID()) },
+		Teardown: func(_ context.Context, s live.Session[Member], _ State) { rooms.Leave(s.ID()) },
 
 		// A real allowlist, not live.AnyOrigin. PRODUCTION replaces it with the
 		// one scheme-and-host the page is served from.
@@ -731,12 +734,11 @@ func (m Member) Subject() string { return m.Name }
 
 // Authorize runs before the reducer for every event, at the single mailbox
 // ingress, so a new event name cannot skip it.
-func Authorize(_ context.Context, s live.Session, _ live.Event) error {
-	if _, ok := s.Identity().(Member); !ok {
-		// Unreachable through DirectoryAuthenticate, which returns a Member or
-		// an error. It is here because "unreachable" is a property of today's
-		// code and this is a security boundary.
-		return &live.FatalDenyError{Reason: "the session identity is not a chat participant"}
-	}
+//
+// It permits everything. The shape check that used to stand here — "is this
+// identity a Member" — is a compile-time fact since the session became typed by
+// the identity DirectoryAuthenticate produced, so there is nothing left for a
+// runtime branch to be wrong about.
+func Authorize(_ context.Context, s live.Session[Member], _ live.Event) error {
 	return nil
 }

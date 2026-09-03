@@ -38,9 +38,25 @@ func (t *Topic) Len() int {
 }
 
 // WatchEffect is the subscription pump the mount hook schedules.
-type WatchEffect struct{}
-
-func (WatchEffect) EffectSource() string { return "room.watch" }
+//
+// It is a constructor over a concrete live.Effect[live.AnonymousIdentity]: a source, which provenance
+// and metrics see, and a Run closing over the topic. The Run holds the session
+// open for as long as the session lasts, which is what a subscription is, and
+// returns when the library cancels it at shutdown.
+func (t *Topic) WatchEffect() live.Effect[live.AnonymousIdentity] {
+	return live.Effect[live.AnonymousIdentity]{
+		Source: "room.watch",
+		Run: func(ctx context.Context, sess live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+			// A real pump would select on the topic's own signal as well and
+			// emit an event per update. This one has nothing to deliver, so it
+			// demonstrates the half every pump has: return promptly on
+			// cancellation, because the library waits for this goroutine at
+			// shutdown.
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+}
 
 // State is one session's view.
 type State struct {
@@ -60,11 +76,11 @@ type State struct {
 // Values a mount needs from the upgrade request arrive through the context —
 // that is the whole reason there is no Session.Request(), which would keep an
 // *http.Request alive for the connection's life.
-func Init(topic *Topic) func(context.Context, live.Session) (State, []live.IEffect, error) {
-	return func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
+func Init(topic *Topic) func(ctx context.Context, session live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
+	return func(ctx context.Context, sess live.Session[live.AnonymousIdentity]) (State, []live.Effect[live.AnonymousIdentity], error) {
 		subject := sess.Identity().Subject()
 		topic.Join(sess.ID(), subject)
-		return State{Me: sess.ID(), Subject: subject}, []live.IEffect{WatchEffect{}}, nil
+		return State{Me: sess.ID(), Subject: subject}, []live.Effect[live.AnonymousIdentity]{topic.WatchEffect()}, nil
 	}
 }
 
@@ -76,7 +92,7 @@ func Init(topic *Topic) func(context.Context, live.Session) (State, []live.IEffe
 // connection with UNAUTHORIZED (close code 4006). An error of any other shape
 // is treated as a denial, because a hook that failed open by accident is the
 // one failure mode an authorization hook must not have.
-func Authorize(_ context.Context, sess live.Session, ev live.Event) error {
+func Authorize(_ context.Context, sess live.Session[live.AnonymousIdentity], ev live.Event) error {
 	if ev.Name == "room.purge" && sess.Identity().Subject() != "admin" {
 		return &live.DenyError{Reason: "only an admin may purge the room"}
 	}
@@ -93,8 +109,8 @@ func Authorize(_ context.Context, sess live.Session, ev live.Event) error {
 // It is optional, and leaving it nil is what leaks. It is not called with a
 // state value when Init itself failed, because there is no final state to hand
 // over.
-func Teardown(topic *Topic) func(context.Context, live.Session, State) {
-	return func(_ context.Context, sess live.Session, _ State) {
+func Teardown(topic *Topic) func(context.Context, live.Session[live.AnonymousIdentity], State) {
+	return func(_ context.Context, sess live.Session[live.AnonymousIdentity], _ State) {
 		topic.Leave(sess.ID())
 	}
 }
