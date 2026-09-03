@@ -23,7 +23,7 @@ type Factory struct {
 	steering *steering.Service
 }
 
-var _ harness.Factory = Factory{}
+var _ harness.IFactory = Factory{}
 
 // NewFactory returns the custom factory installed by the external binary. The
 // steering service is a component this repository composes alongside Core, so
@@ -35,7 +35,7 @@ func NewFactory(steeringService *steering.Service) Factory {
 // New binds the custom runtime to Core's host capabilities.
 func (factory Factory) New(
 	harnessContext *candaceosv1.HarnessContext,
-	host harness.Host,
+	host harness.IHost,
 ) (*harness.Instance, error) {
 	if err := candaceosv1.ValidateHarnessContext(harnessContext); err != nil {
 		return nil, fmt.Errorf("external echo harness context: %w", err)
@@ -62,15 +62,15 @@ func (factory Factory) New(
 
 // Runtime publishes an assistant echo and returns to idle for every prompt.
 type Runtime struct {
-	host     harness.Host
+	host     harness.IHost
 	steering *steering.Service
 	runner   *harness.Runner[struct{}]
 	sequence atomic.Uint64
 }
 
-var _ harness.Runtime = (*Runtime)(nil)
+var _ harness.IRuntime = (*Runtime)(nil)
 
-func newRuntime(host harness.Host, steeringService *steering.Service) *Runtime {
+func newRuntime(host harness.IHost, steeringService *steering.Service) *Runtime {
 	runtime := &Runtime{host: host, steering: steeringService}
 	runtime.runner = harness.NewRunner[struct{}](nil, nil)
 	return runtime

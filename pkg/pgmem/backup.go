@@ -16,15 +16,15 @@ import (
 
 var restoreSequence atomic.Uint64
 
-type connectionSerializer interface {
+type iConnectionSerializer interface {
 	Serialize() ([]byte, error)
 }
 
-type connectionDeserializer interface {
-	Deserialize([]byte) error
+type iConnectionDeserializer interface {
+	Deserialize(payload []byte) error
 }
 
-type connectionRestorer interface {
+type iConnectionRestorer interface {
 	NewRestore(sourceURI string) (*sqlite.Backup, error)
 }
 
@@ -239,7 +239,7 @@ func engineSchemaName(name string) string {
 func serializeConnection(connection *sql.Conn) ([]byte, error) {
 	var image []byte
 	err := connection.Raw(func(driverConnection any) error {
-		serializer, ok := driverConnection.(connectionSerializer)
+		serializer, ok := driverConnection.(iConnectionSerializer)
 		if !ok {
 			return errors.New("embedded SQLite connection does not support serialization")
 		}
@@ -255,7 +255,7 @@ func serializeConnection(connection *sql.Conn) ([]byte, error) {
 
 func deserializeConnection(connection *sql.Conn, image []byte) error {
 	return connection.Raw(func(driverConnection any) error {
-		deserializer, ok := driverConnection.(connectionDeserializer)
+		deserializer, ok := driverConnection.(iConnectionDeserializer)
 		if !ok {
 			return errors.New("embedded SQLite connection does not support deserialization")
 		}
@@ -335,7 +335,7 @@ func openRestoredSchema(ctx context.Context, name string, image []byte) (*restor
 
 func restoreConnectionFromURI(connection *sql.Conn, sourceURI string) error {
 	return connection.Raw(func(driverConnection any) error {
-		restorer, ok := driverConnection.(connectionRestorer)
+		restorer, ok := driverConnection.(iConnectionRestorer)
 		if !ok {
 			return errors.New("embedded SQLite connection does not support online restore")
 		}

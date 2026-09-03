@@ -43,7 +43,7 @@ func renderDoc(c templ.Component, children templ.Component) string {
 // failingComponent is a component that renders nothing and fails, for the specs
 // that assert an error is passed through rather than swallowed.
 func failingComponent(err error) templ.Component {
-	return templ.ComponentFunc(func(context.Context, io.Writer) error { return err })
+	return templ.ComponentFunc(func(ctx context.Context, writer io.Writer) error { return err })
 }
 
 var _ = Describe("(*App).Document", func() {

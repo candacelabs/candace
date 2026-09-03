@@ -37,8 +37,8 @@ type persistedAssignment struct {
 	ContentSHA256  *string `json:"content_sha256,omitempty"`
 }
 
-// Store persists a reconciliation snapshot.
-type Store interface {
+// IStore persists a reconciliation snapshot.
+type IStore interface {
 	Load() (Snapshot, bool, error)
 	Save(snapshot Snapshot) error
 }

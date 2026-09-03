@@ -150,7 +150,42 @@ func run() int {
 	// Build the membership discoverer for the configured mode. Discovery is
 	// advisory: the election manager verifies candidates via identify and only
 	// the leader turns stable ones into one-at-a-time voting-membership changes.
-	discoverer := buildDiscoverer(cfg)
+	//
+	// The interface is declared here, at the seam that accepts one, and each
+	// arm assigns the concrete discoverer its constructor already returns
+	// (CS-8). Config validation guarantees the mode is one of the three
+	// recognized values and that its mode-specific requirements are met, so the
+	// default arm safely handles "static".
+	var discoverer warden.IPeerDiscoverer
+	switch cfg.Discovery.Mode {
+	case config.DiscoveryModeTailscale:
+		discoverer = discovery.NewTailscale(discovery.TailscaleConfig{
+			Socket:       cfg.Discovery.Tailscale.Socket,
+			Tag:          cfg.Discovery.Tailscale.Tag,
+			HostPattern:  cfg.Discovery.Tailscale.HostPattern,
+			Port:         bindPort(cfg.Bind), // 0 => discovery defaults to 7717
+			PollInterval: cfg.Discovery.Tailscale.PollInterval,
+			IncludeSelf:  true,
+		})
+	case config.DiscoveryModeFile:
+		discoverer = discovery.NewFile(cfg.Discovery.File, cfg.Discovery.FilePollInterval)
+	default: // "static"
+		// Assigning nothing (not NewStatic, and not a typed nil) is deliberate:
+		// a nil Discoverer selects the election manager's static semantics —
+		// membership mirrors the config peer list exactly and persisted
+		// membership is ignored, so operators change a static fleet by editing
+		// config + rolling restart. Passing NewStatic here would flip those
+		// nodes into dynamic semantics where a persisted roster overrides
+		// config edits. NewStatic remains for tests and embedded composition.
+		//
+		// The switch lives here rather than in a factory returning
+		// warden.IPeerDiscoverer for the same reason. election.Config's
+		// discoveryMode is `cfg.Discoverer != nil`, and a *concrete* nil
+		// pointer stored in an interface is not a nil interface — so a factory
+		// whose static arm returned a typed nil would silently put the whole
+		// fleet into discovery mode. An unassigned variable is the one nil that
+		// cannot be typed.
+	}
 
 	// ViewFreshFor: a follower trusts the leader's piggybacked authoritative
 	// view for as long as it would still consider the leader alive, i.e.
@@ -175,9 +210,28 @@ func run() int {
 		logger.Fatal().Err(err).Msg("constructing election manager")
 	}
 
-	notifier, err := buildNotifier(cfg.Notify)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("constructing notifier")
+	// The operator notifier, selected the same way and for the same reason: the
+	// interface is declared at the seam the watchdog accepts it through, and
+	// each arm assigns the concrete notifier its constructor returns. Config
+	// validation has already rejected an unknown mode, so the default arm is
+	// the unreachable-by-construction one and says so by refusing to start.
+	var notifier warden.INotifier
+	switch cfg.Notify.Mode {
+	case config.NotifyModeSMTP:
+		notifier = notify.NewSMTPNotifier(notify.SMTPConfig{
+			Host:     cfg.Notify.SMTPHost,
+			Port:     cfg.Notify.SMTPPort,
+			Username: cfg.Notify.SMTPUser,
+			Password: cfg.Notify.SMTPPass,
+			From:     cfg.Notify.SMTPFrom,
+			To:       cfg.Notify.SMTPTo,
+		})
+	case config.NotifyModeFile:
+		notifier = notify.NewFileNotifier(cfg.Notify.File)
+	case config.NotifyModeLog:
+		notifier = notify.NewLogNotifier()
+	default:
+		logger.Fatal().Str("notify_mode", cfg.Notify.Mode).Msg("constructing notifier")
 	}
 
 	// CheckInterval: the watchdog re-evaluates peer liveness once per
@@ -224,7 +278,7 @@ func run() int {
 	const numComponents = 3
 	exits := make(chan componentExit, numComponents)
 
-	launch := func(name string, fn func(context.Context) error) {
+	launch := func(name string, fn func(ctx context.Context) error) {
 		go func() { exits <- componentExit{name, fn(ctx)} }()
 	}
 	launch("election", mgr.Run)
@@ -312,35 +366,6 @@ func setupLogger(format string) zerolog.Logger {
 	return *core.Logger
 }
 
-// buildDiscoverer constructs the membership PeerDiscoverer for the configured
-// discovery mode. Config validation guarantees the mode is one of the three
-// recognized values and that its mode-specific requirements are met, so the
-// default arm safely handles "static".
-func buildDiscoverer(cfg config.Config) warden.PeerDiscoverer {
-	switch cfg.Discovery.Mode {
-	case config.DiscoveryModeTailscale:
-		return discovery.NewTailscale(discovery.TailscaleConfig{
-			Socket:       cfg.Discovery.Tailscale.Socket,
-			Tag:          cfg.Discovery.Tailscale.Tag,
-			HostPattern:  cfg.Discovery.Tailscale.HostPattern,
-			Port:         bindPort(cfg.Bind), // 0 => discovery defaults to 7717
-			PollInterval: cfg.Discovery.Tailscale.PollInterval,
-			IncludeSelf:  true,
-		})
-	case config.DiscoveryModeFile:
-		return discovery.NewFile(cfg.Discovery.File, cfg.Discovery.FilePollInterval)
-	default: // "static"
-		// nil (not NewStatic) is deliberate: a nil Discoverer selects the
-		// election manager's static semantics — membership mirrors the config
-		// peer list exactly and persisted membership is ignored, so operators
-		// change a static fleet by editing config + rolling restart. Passing
-		// NewStatic here would flip those nodes into dynamic semantics where
-		// a persisted roster overrides config edits. NewStatic remains for
-		// tests and embedded composition.
-		return nil
-	}
-}
-
 // bindPort extracts the numeric port from a bind address like ":7717" or
 // "0.0.0.0:7717". It returns 0 when the port cannot be determined, letting the
 // tailscale discoverer fall back to its default warden port.
@@ -354,26 +379,4 @@ func bindPort(bind string) int {
 		return 0
 	}
 	return p
-}
-
-// buildNotifier selects the operator Notifier implementation from the
-// resolved notify configuration.
-func buildNotifier(nc config.NotifyConfig) (warden.Notifier, error) {
-	switch nc.Mode {
-	case config.NotifyModeSMTP:
-		return notify.NewSMTPNotifier(notify.SMTPConfig{
-			Host:     nc.SMTPHost,
-			Port:     nc.SMTPPort,
-			Username: nc.SMTPUser,
-			Password: nc.SMTPPass,
-			From:     nc.SMTPFrom,
-			To:       nc.SMTPTo,
-		}), nil
-	case config.NotifyModeFile:
-		return notify.NewFileNotifier(nc.File), nil
-	case config.NotifyModeLog:
-		return notify.NewLogNotifier(), nil
-	default:
-		return nil, fmt.Errorf("unknown notify mode %q", nc.Mode)
-	}
 }

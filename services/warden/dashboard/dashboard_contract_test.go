@@ -31,7 +31,7 @@ func TestDashboardContract(t *testing.T) {
 
 var fixedTime = time.Date(2026, 7, 21, 15, 4, 5, 0, time.UTC)
 
-// stubView is a warden.ViewSource returning a fixed view.
+// stubView is a warden.IViewSource returning a fixed view.
 type stubView struct {
 	mu sync.Mutex
 	v  warden.ClusterView
@@ -43,14 +43,14 @@ func (s *stubView) Subscribe(buf int) (<-chan warden.ClusterView, func()) {
 	return make(chan warden.ClusterView, buf), func() {}
 }
 
-// stubLog is a warden.IncidentLog returning a fixed (possibly nil) slice.
+// stubLog is a warden.IIncidentLog returning a fixed (possibly nil) slice.
 type stubLog struct{ incidents []warden.Incident }
 
 func (s *stubLog) Incidents() []warden.Incident { return s.incidents }
 
 // newDashboardServer isolates the concrete-mux dependency (Register(mux)). The
 // eventual Gin port changes this one helper; every HTTP assertion below stays.
-func newDashboardServer(v warden.ViewSource, log warden.IncidentLog, version string) *httptest.Server {
+func newDashboardServer(v warden.IViewSource, log warden.IIncidentLog, version string) *httptest.Server {
 	d, err := dashboard.New(v, log, version)
 	Expect(err).NotTo(HaveOccurred())
 	engine := httpserver.NewEngine()

@@ -50,7 +50,7 @@ func (st *Store) Load(ctx context.Context) (State, error) {
 }
 
 // Init is Config.Init. It returns exactly what Load returns.
-func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.Effect, error) {
+func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.IEffect, error) {
 	s, err := st.Load(ctx)
 	return s, nil, err
 }
@@ -65,7 +65,7 @@ func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.Effect
 func (st *Store) App() *live.App[State] {
 	return live.MustNew(live.Config[State]{
 		Init:         st.Init,
-		Reduce:       func(s State, _ live.Event) (State, []live.Effect) { return s, nil },
+		Reduce:       func(s State, _ live.Event) (State, []live.IEffect) { return s, nil },
 		Fragments:    []live.Fragment[State]{{ID: "reading", Render: Page}},
 		Events:       []string{"reading.refresh"},
 		Origins:      []string{"http://127.0.0.1:8080"},

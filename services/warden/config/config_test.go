@@ -12,7 +12,7 @@ import (
 )
 
 // envMap turns a map into a getenv func; missing keys return "".
-func envMap(m map[string]string) func(string) string {
+func envMap(m map[string]string) func(name string) string {
 	return func(k string) string { return m[k] }
 }
 
@@ -296,7 +296,7 @@ var _ = Describe("config Validate", func() {
 
 	// TestValidateRules
 	DescribeTable("rejects each invalid config with a clear message",
-		func(mutate func(*Config), wantSub string) {
+		func(mutate func(cfg *Config), wantSub string) {
 			cfg := baseValidConfig()
 			mutate(&cfg)
 			err := cfg.Validate()

@@ -19,7 +19,7 @@ var _ = Describe("OpenCode runtime lifecycle", func() {
 
 		occupied := make(chan struct{})
 		release := make(chan struct{})
-		Expect(fixture.runtime.submit(ctx, nil, func(*sessionState) bool {
+		Expect(fixture.runtime.submit(ctx, nil, func(state *sessionState) bool {
 			close(occupied)
 			<-release
 			return false
@@ -36,7 +36,7 @@ var _ = Describe("OpenCode runtime lifecycle", func() {
 		// the second one here.
 		impatient, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 		defer cancel()
-		Expect(fixture.runtime.submit(impatient, nil, func(*sessionState) bool {
+		Expect(fixture.runtime.submit(impatient, nil, func(state *sessionState) bool {
 			return false
 		})).To(BeFalse())
 	})

@@ -140,13 +140,13 @@ var _ = Describe("The reducer", func() {
 	It("turns a probe into an effect carrying the event that asked for it", func() {
 		_, effects := Reduce(State{}, live.Event{Name: EventProbe, ID: 41})
 
-		Expect(effects).To(Equal([]live.Effect{ProbeEffect{Cause: 41}}),
+		Expect(effects).To(Equal([]live.IEffect{ProbeEffect{Cause: 41}}),
 			"without the causal edge the patch that shows the reading names only the subscription")
 	})
 
 	It("turns a clear into an effect carrying the event that asked for it", func() {
 		_, effects := Reduce(State{}, live.Event{Name: EventClear, ID: 42})
-		Expect(effects).To(Equal([]live.Effect{ClearEffect{Cause: 42}}))
+		Expect(effects).To(Equal([]live.IEffect{ClearEffect{Cause: 42}}))
 	})
 
 	It("pauses and resumes only this session", func() {
@@ -182,7 +182,7 @@ var _ = Describe("The reducer", func() {
 		It("re-subscribes when a retryable subscription dies, because a dashboard that stops learning looks right", func() {
 			state, effects := Reduce(State{}, failure(SourceSubscribe, true))
 
-			Expect(effects).To(Equal([]live.Effect{SubscribeEffect{}}))
+			Expect(effects).To(Equal([]live.IEffect{SubscribeEffect{}}))
 			Expect(state.Notice).To(ContainSubstring(SourceSubscribe))
 		})
 

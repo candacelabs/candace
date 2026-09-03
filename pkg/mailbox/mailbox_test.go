@@ -36,7 +36,7 @@ var _ = Describe("Mailbox", func() {
 				return false
 			})).To(BeTrue())
 		}
-		Expect(box.Submit(func(*state) bool { return true })).To(BeTrue())
+		Expect(box.Submit(func(current *state) bool { return true })).To(BeTrue())
 		Eventually(box.Stopped()).Should(BeClosed())
 
 		Expect(owned.applied).To(Equal([]string{"first", "second", "third"}))
@@ -45,10 +45,10 @@ var _ = Describe("Mailbox", func() {
 	It("refuses submissions once a command has retired the goroutine", func() {
 		box, _ := run()
 
-		Expect(box.Submit(func(*state) bool { return true })).To(BeTrue())
+		Expect(box.Submit(func(current *state) bool { return true })).To(BeTrue())
 		Eventually(box.Stopped()).Should(BeClosed())
 
-		Expect(box.Submit(func(*state) bool { return false })).To(BeFalse(),
+		Expect(box.Submit(func(current *state) bool { return false })).To(BeFalse(),
 			"a stopped mailbox reports the refusal rather than blocking forever")
 	})
 
@@ -57,7 +57,7 @@ var _ = Describe("Mailbox", func() {
 
 		occupied := make(chan struct{})
 		release := make(chan struct{})
-		Expect(box.Submit(func(*state) bool {
+		Expect(box.Submit(func(current *state) bool {
 			close(occupied)
 			<-release
 			return false
@@ -67,7 +67,7 @@ var _ = Describe("Mailbox", func() {
 
 		impatient, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 		defer cancel()
-		Expect(box.SubmitContext(impatient, nil, func(*state) bool { return false })).To(BeFalse())
+		Expect(box.SubmitContext(impatient, nil, func(current *state) bool { return false })).To(BeFalse())
 	})
 
 	It("publishes what a command wrote before it stopped the mailbox", func() {
@@ -89,7 +89,7 @@ var _ = Describe("Mailbox", func() {
 	It("tolerates Stop from both a command and Run", func() {
 		box, _ := run()
 
-		Expect(box.Submit(func(*state) bool {
+		Expect(box.Submit(func(current *state) bool {
 			box.Stop()
 			return true
 		})).To(BeTrue())
@@ -101,11 +101,11 @@ var _ = Describe("Mailbox", func() {
 	Describe("SubmitContext", func() {
 		It("gives up when the caller's context is done", func() {
 			box, _ := run()
-			DeferCleanup(func() { Expect(box.Submit(func(*state) bool { return true })).To(BeTrue()) })
+			DeferCleanup(func() { Expect(box.Submit(func(current *state) bool { return true })).To(BeTrue()) })
 
 			occupied := make(chan struct{})
 			release := make(chan struct{})
-			Expect(box.Submit(func(*state) bool {
+			Expect(box.Submit(func(current *state) bool {
 				close(occupied)
 				<-release
 				return false
@@ -115,16 +115,16 @@ var _ = Describe("Mailbox", func() {
 
 			done, cancel := context.WithCancel(context.Background())
 			cancel()
-			Expect(box.SubmitContext(done, nil, func(*state) bool { return false })).To(BeFalse())
+			Expect(box.SubmitContext(done, nil, func(current *state) bool { return false })).To(BeFalse())
 		})
 
 		It("gives up when the supplied cancellation channel closes", func() {
 			box, _ := run()
-			DeferCleanup(func() { Expect(box.Submit(func(*state) bool { return true })).To(BeTrue()) })
+			DeferCleanup(func() { Expect(box.Submit(func(current *state) bool { return true })).To(BeTrue()) })
 
 			occupied := make(chan struct{})
 			release := make(chan struct{})
-			Expect(box.Submit(func(*state) bool {
+			Expect(box.Submit(func(current *state) bool {
 				close(occupied)
 				<-release
 				return false
@@ -135,17 +135,17 @@ var _ = Describe("Mailbox", func() {
 			canceled := make(chan struct{})
 			close(canceled)
 			Expect(box.SubmitContext(context.Background(), canceled,
-				func(*state) bool { return false })).To(BeFalse())
+				func(current *state) bool { return false })).To(BeFalse())
 		})
 
 		It("gives up when the mailbox has stopped", func() {
 			box, _ := run()
 
-			Expect(box.Submit(func(*state) bool { return true })).To(BeTrue())
+			Expect(box.Submit(func(current *state) bool { return true })).To(BeTrue())
 			Eventually(box.Stopped()).Should(BeClosed())
 
 			Expect(box.SubmitContext(context.Background(), nil,
-				func(*state) bool { return false })).To(BeFalse())
+				func(current *state) bool { return false })).To(BeFalse())
 		})
 
 		It("treats a nil cancellation channel as no second cancellation", func() {

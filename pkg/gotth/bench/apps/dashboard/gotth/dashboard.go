@@ -628,7 +628,7 @@ func pad(n int) string {
 // has to be told (it does not, for any of the six), and otherwise changes this
 // session's own controls — which is server state either way, because this
 // reducer runs on the server.
-func Reduce(state State, ev live.Event) (State, []live.Effect) {
+func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 	if !ev.At.IsZero() {
 		state.NowMs = ev.At.UnixMilli()
 	}
@@ -694,10 +694,10 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 // re-subscribes only when the library says the failure was transient —
 // re-running a terminal failure re-runs whatever made it terminal — and an
 // unreadable classification parses as false.
-func retrySubscription(ev live.Event) []live.Effect {
+func retrySubscription(ev live.Event) []live.IEffect {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceSubscribe {
-		return []live.Effect{SubscribeEffect{}}
+		return []live.IEffect{SubscribeEffect{}}
 	}
 	return nil
 }
@@ -913,7 +913,7 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 		// Binding it here is what keeps region E's panel entry alive for as long
 		// as this tab holds a connection, which is the rule the Next.js store
 		// applies to its own session map.
-		Init: func(ctx context.Context, s live.Session) (State, []live.Effect, error) {
+		Init: func(ctx context.Context, s live.Session) (State, []live.IEffect, error) {
 			sid := SIDFromContext(ctx)
 			snap := feed.Join(s.ID(), sid)
 			return State{
@@ -923,7 +923,7 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 				Live:     snap,
 				Controls: DefaultControls,
 				NowMs:    time.Now().UnixMilli(),
-			}, []live.Effect{SubscribeEffect{}}, nil
+			}, []live.IEffect{SubscribeEffect{}}, nil
 		},
 
 		Reduce: Reduce,

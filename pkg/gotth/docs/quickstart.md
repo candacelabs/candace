@@ -107,7 +107,7 @@ type State struct{ N int }
 // app is the application, and it is a package-level var rather than a local in
 // main so that view.templ can reach it: app.Document renders the page shell.
 var app = live.MustNew(live.Config[State]{
-	Reduce: func(s State, ev live.Event) (State, []live.Effect) {
+	Reduce: func(s State, ev live.Event) (State, []live.IEffect) {
 		if ev.Name == EventInc {
 			s.N++
 		}
@@ -304,7 +304,7 @@ grep -rn 'live\.AnyOrigin\|live\.Anonymous\|live\.AllowAll\|live\.NoCSRFCheck'
 | Escape hatch | Field | What it does | What replaces it in production |
 |---|---|---|---|
 | `live.AnyOrigin` | `Origins` | Disables origin validation entirely. | A real allowlist of the origins your page is served from. |
-| `live.Anonymous` | `Authenticate` | Binds every session to one anonymous identity. | The session cookie or bearer token your application already trusts, turned into an `Identity` whose `Subject()` is stable and non-secret. |
+| `live.Anonymous` | `Authenticate` | Binds every session to one anonymous identity. | The session cookie or bearer token your application already trusts, turned into an `IIdentity` whose `Subject()` is stable and non-secret. |
 | `live.AllowAll` | `Authorize` | Permits every event. | The check that says which identities may raise which events. |
 | `live.NoCSRFCheck` | `CSRF` | Performs no check. | A token bound to the authenticated application session. |
 

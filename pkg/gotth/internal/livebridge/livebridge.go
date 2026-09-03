@@ -29,14 +29,14 @@
 // claim is how one quietly stops being true.
 package livebridge
 
-// Identity is live.Identity, redeclared because this package cannot import
+// IIdentity is live.IIdentity, redeclared because this package cannot import
 // live: live imports this one, to assign NewSession.
 //
 // The duplication is safe in the direction that matters. Go interfaces are
-// structural, so any live.Identity satisfies this and vice versa; if live.Identity
+// structural, so any live.IIdentity satisfies this and vice versa; if live.IIdentity
 // ever grows a method, this one keeps compiling and keeps meaning less, which
 // the assignment in live/livebridge.go would then have to widen deliberately.
-type Identity interface {
+type IIdentity interface {
 	// Subject is the stable identifier for the authenticated principal, and
 	// the only thing this package needs from an identity: it is what the
 	// per-identity session cap counts and what a log record names.
@@ -53,4 +53,4 @@ type Identity interface {
 // is what keeps that true.
 //
 // The id is a live.ID, which is a [16]byte.
-var NewSession func(id [16]byte, identity Identity) any
+var NewSession func(id [16]byte, identity IIdentity) any

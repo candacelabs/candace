@@ -70,7 +70,7 @@ type Tailscale struct {
 	client      *http.Client
 }
 
-var _ warden.PeerDiscoverer = (*Tailscale)(nil)
+var _ warden.IPeerDiscoverer = (*Tailscale)(nil)
 
 // CompileHostPattern compiles an RE2 host pattern anchored to the whole string.
 // services/warden/config validates operator patterns against the identical anchoring;

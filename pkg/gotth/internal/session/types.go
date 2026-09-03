@@ -19,20 +19,20 @@ type ID [16]byte
 // String returns the lower-case hex form used in logs and span attributes.
 func (id ID) String() string { return hex.EncodeToString(id[:]) }
 
-// Identity is the application's identity for a session. It is bound at the
+// IIdentity is the application's identity for a session. It is bound at the
 // handshake and immutable for the connection's life: a session cannot outlive
 // its connection, so there is no re-authentication and no privilege change
 // mid-session.
-type Identity interface {
+type IIdentity interface {
 	// Subject returns a stable, non-secret identifier used for logging and
 	// per-identity session limits.
 	Subject() string
 }
 
-// Effect is a value describing I/O for the actor to perform. Implementations
+// IEffect is a value describing I/O for the actor to perform. Implementations
 // are plain values, not closures over live handles, which is what lets a test
 // assert on what a reducer decided to do without performing it.
-type Effect interface {
+type IEffect interface {
 	// EffectSource names the effect for provenance and metrics.
 	EffectSource() string
 }
@@ -45,7 +45,7 @@ type Peer struct {
 
 	// Identity is the authenticated principal, derived once from the upgrade
 	// request. It never changes for the life of the session.
-	Identity Identity
+	Identity IIdentity
 }
 
 // Field is one form value carried by an event.
@@ -184,9 +184,9 @@ func (e *FatalDenyError) Error() string {
 }
 
 // Emit injects an event into the session that spawned an effect.
-type Emit func(Event) error
+type Emit func(event Event) error
 
-// App is the application behaviour the actor drives.
+// IApp is the application behaviour the actor drives.
 //
 // It is an interface with one implementation, which this library otherwise
 // refuses, and the reason it earns its place is the type parameter: the public
@@ -194,10 +194,10 @@ type Emit func(Event) error
 // state as an opaque value, so something has to be the seam where the type
 // assertion happens exactly once. That seam is this interface, and every
 // method of it is called only from the actor goroutine except Authorize.
-type App interface {
+type IApp interface {
 	// Init produces the session's initial state and any startup effects. It
 	// runs once, as the first transition, before the first snapshot.
-	Init(ctx context.Context, p Peer) (state any, effects []Effect, err error)
+	Init(ctx context.Context, p Peer) (state any, effects []IEffect, err error)
 
 	// Authorize runs before the reducer for every event, at the single
 	// mailbox ingress. It is the one method called from the read pump rather
@@ -206,7 +206,7 @@ type App interface {
 	Authorize(ctx context.Context, p Peer, ev Event) error
 
 	// Reduce is the pure state transition.
-	Reduce(state any, ev Event) (any, []Effect)
+	Reduce(state any, ev Event) (any, []IEffect)
 
 	// Execute performs one effect at the actor boundary, for the peer whose
 	// transition returned it. The peer is passed rather than assumed because
@@ -221,7 +221,7 @@ type App interface {
 	// emitted event are raised before any identifier of their own is minted.
 	// This is the one that exists, and it is what an operator holding the
 	// failure needs in order to reach the interaction behind it.
-	Execute(ctx context.Context, p Peer, e Effect, scheduledBy uint64, emit Emit) error
+	Execute(ctx context.Context, p Peer, e IEffect, scheduledBy uint64, emit Emit) error
 
 	// Teardown runs after the actor exits, with final state.
 	Teardown(ctx context.Context, p Peer, state any)

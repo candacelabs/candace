@@ -37,7 +37,7 @@ var errSaveFail = errors.New("persist_fail_test: injected Save failure")
 // recover mid-run" as call-count expectations would be brittle and is exactly
 // the harness-simulated behavior the mocks/simulators policy says not to mock.
 type failingStore struct {
-	inner warden.Store
+	inner warden.IStore
 
 	mu   sync.Mutex
 	fail bool
@@ -69,7 +69,7 @@ func (f *failingStore) Load() (warden.PersistentState, bool, error) {
 
 // newClusterWithStores mirrors newClusterWithTimings but lets each node bring
 // its own Store, so tests can inject persistence failures per node.
-func newClusterWithStores(t harnessT, tim harnessTimings, stores map[warden.NodeID]warden.Store, ids ...warden.NodeID) *cluster {
+func newClusterWithStores(t iHarnessT, tim harnessTimings, stores map[warden.NodeID]warden.IStore, ids ...warden.NodeID) *cluster {
 	t.Helper()
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	c := &cluster{
@@ -96,7 +96,7 @@ func newClusterWithStores(t harnessT, tim harnessTimings, stores map[warden.Node
 // bring its own Store (like newClusterWithStores), so tests can inject
 // per-node persistence failures in discovery mode — e.g. a follower whose
 // disk write fails while adopting a leader-committed membership change.
-func newDiscoveryClusterWithStores(t harnessT, tim harnessTimings, stores map[warden.NodeID]warden.Store, join, remove time.Duration, ids ...warden.NodeID) *cluster {
+func newDiscoveryClusterWithStores(t iHarnessT, tim harnessTimings, stores map[warden.NodeID]warden.IStore, join, remove time.Duration, ids ...warden.NodeID) *cluster {
 	t.Helper()
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	c := &cluster{
@@ -133,7 +133,7 @@ var _ = Describe("persistence-failure safety", func() {
 	// it keeps the harness + failingStore fake (not gomock).
 	It("starts no election while Save fails and elects once the store recovers", func() {
 		tim := defaultTimings()
-		stores := map[warden.NodeID]warden.Store{
+		stores := map[warden.NodeID]warden.IStore{
 			"n1": newFailingStore(true),
 			"n2": newFailingStore(true),
 			"n3": newFailingStore(true),
@@ -169,14 +169,14 @@ var _ = Describe("persistence-failure safety", func() {
 	// refused (Granted=false) with nothing persisted; once the store recovers
 	// the same request is granted and durable.
 	//
-	// gomock swap: the hand-rolled failing Store is replaced by a MockStore, and
+	// gomock swap: the hand-rolled failing Store is replaced by a MockIStore, and
 	// persist-before-vote is expressed as an ORDERED expectation — the manager
 	// must Load once at construction, then Save (term,vote) BEFORE granting; the
 	// first Save fails (refuse), the identical second Save succeeds (grant). The
 	// Save argument is matched exactly, which also pins the persisted content.
 	It("refuses a vote when Save fails and grants + persists once the store recovers", func() {
 		ctrl := gomock.NewController(GinkgoT())
-		st := mocks.NewMockStore(ctrl)
+		st := mocks.NewMockIStore(ctrl)
 
 		req := warden.VoteRequest{Term: 10, CandidateID: "b"}
 		wantPS := warden.PersistentState{CurrentTerm: req.Term, VotedFor: req.CandidateID}
@@ -216,7 +216,7 @@ var _ = Describe("persistence-failure safety", func() {
 	// and c never persisted anything past the founding membership.
 	It("never counts a membership ack from a follower whose Save failed", func() {
 		tim := defaultTimings()
-		stores := map[warden.NodeID]warden.Store{
+		stores := map[warden.NodeID]warden.IStore{
 			"a": newFailingStore(false),
 			"b": newFailingStore(false),
 			"c": newFailingStore(false),
@@ -287,7 +287,7 @@ var _ = Describe("persistence-failure safety", func() {
 	// the failing follower is still never counted toward settle.
 	It("never marks a reachable follower dead merely because its membership Save fails", func() {
 		tim := defaultTimings()
-		stores := map[warden.NodeID]warden.Store{
+		stores := map[warden.NodeID]warden.IStore{
 			"a": newFailingStore(false),
 			"b": newFailingStore(false),
 			"c": newFailingStore(false),

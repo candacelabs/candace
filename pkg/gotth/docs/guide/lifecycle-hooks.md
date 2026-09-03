@@ -11,15 +11,15 @@ Compiled source: [`_samples/lifecycle`](_samples/lifecycle).
 ## Three hooks, and the whole session
 
 ```text
-upgrade  ─▶  Authenticate(*http.Request) (Identity, error)      before any session memory
+upgrade  ─▶  Authenticate(*http.Request) (IIdentity, error)      before any session memory
              CSRF(*http.Request) error
    │
    ▼
-mount    ─▶  Init(ctx, Session) (S, []Effect, error)            once, first transition
+mount    ─▶  Init(ctx, Session) (S, []IEffect, error)            once, first transition
    │
    ▼
 each event ▶ Authorize(ctx, Session, Event) error               single mailbox ingress
-             Reduce(S, Event) (S, []Effect)
+             Reduce(S, Event) (S, []IEffect)
    │
    ▼
 exit     ─▶  Teardown(ctx, Session, S)                          after the actor has exited
@@ -55,11 +55,11 @@ way.
 
 <!-- sample: lifecycle/lifecycle.go -->
 ```go
-func Init(topic *Topic) func(context.Context, live.Session) (State, []live.Effect, error) {
-	return func(_ context.Context, sess live.Session) (State, []live.Effect, error) {
+func Init(topic *Topic) func(context.Context, live.Session) (State, []live.IEffect, error) {
+	return func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
 		subject := sess.Identity().Subject()
 		topic.Join(sess.ID(), subject)
-		return State{Me: sess.ID(), Subject: subject}, []live.Effect{WatchEffect{}}, nil
+		return State{Me: sess.ID(), Subject: subject}, []live.IEffect{WatchEffect{}}, nil
 	}
 }
 ```
@@ -84,7 +84,7 @@ memory line item, and a context value is the idiomatic Go answer with zero API
 surface.
 
 `Session` carries exactly two things: `ID() live.ID`, sixteen bytes minted by
-the server and carried in every frame, and `Identity() live.Identity`, bound at
+the server and carried in every frame, and `Identity() live.IIdentity`, bound at
 the handshake and immutable for the connection's life. There is no
 re-authentication and no privilege change mid-session.
 

@@ -108,6 +108,9 @@ func (r *relay) copy(dst, src net.Conn, counter *atomic.Int64, throttled bool) {
 						// flat pacing of each chunk, which is the conservative
 						// reading of "throttled to X bytes per second" and the
 						// one a spec can state a bound against.
+						//
+						// CS-9 keep: this sleep is the slow link. It is the
+						// subject of case 4, not a wait for one.
 						time.Sleep(time.Duration(float64(n) / float64(rate) * float64(time.Second)))
 					}
 				}

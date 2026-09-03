@@ -3,7 +3,7 @@
 // Service owns the write path. It resolves the requested source to an exact
 // app revision, decides placement over the authoritative fleet snapshot,
 // records desired state and its receipts in the relational store, and only
-// then calls the selected node's agent. It implements operator.Reconciler, so
+// then calls the selected node's agent. It implements operator.IReconciler, so
 // Prepare and ReconcileApproved are always separated by Core's approval gate.
 //
 // Callers may rely on Prepare being read-only — it resolves and validates a
@@ -608,4 +608,4 @@ func errorString(err error) string {
 	return err.Error()
 }
 
-var _ operator.Reconciler = (*Service)(nil)
+var _ operator.IReconciler = (*Service)(nil)

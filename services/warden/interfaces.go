@@ -2,11 +2,11 @@ package warden
 
 import "context"
 
-// Transport sends cluster RPCs to peers. The production implementation
+// ITransport sends cluster RPCs to peers. The production implementation
 // (services/warden/grpctransport) carries them over the gRPC WardenService (h2c on
 // the tailnet); tests substitute in-memory fakes to simulate partitions,
 // delays, and node death.
-type Transport interface {
+type ITransport interface {
 	// RequestVote sends a VoteRequest to peer and returns its response.
 	// An error means the peer was unreachable or replied malformed; the
 	// caller treats it as a vote not granted.
@@ -21,37 +21,37 @@ type Transport interface {
 	Identify(ctx context.Context, peer Node) (IdentifyResponse, error)
 }
 
-// PeerDiscoverer reports candidate cluster nodes. Discover returns a channel
+// IPeerDiscoverer reports candidate cluster nodes. Discover returns a channel
 // delivering roster snapshots until ctx ends (the implementation closes the
 // channel when done and must send an initial snapshot promptly). Snapshots
 // are advisory: the election manager's event loop consumes them, verifies
-// candidates via Transport.Identify, and only the LEADER turns stable,
+// candidates via ITransport.Identify, and only the LEADER turns stable,
 // verified candidates into one-at-a-time membership changes. When the
 // discovery source is unavailable, implementations should keep the channel
 // open and simply not send (consumers fall back to the last known roster and
 // the persisted membership — never to an empty set).
-type PeerDiscoverer interface {
+type IPeerDiscoverer interface {
 	Discover(ctx context.Context) (<-chan Roster, error)
 }
 
-// RPCHandler is the server side of the wire protocol, implemented by the
+// IRPCHandler is the server side of the wire protocol, implemented by the
 // election manager and served as the gRPC WardenService by services/warden/grpcserver
 // (multiplexed onto the single node port with the HTTP surface by
 // services/warden/grpcmux). Implementations must be safe for concurrent use.
-type RPCHandler interface {
+type IRPCHandler interface {
 	HandleVote(ctx context.Context, req VoteRequest) VoteResponse
 	HandleHeartbeat(ctx context.Context, req HeartbeatRequest) HeartbeatResponse
 	// HandleIdentify serves the cluster-identity handshake.
 	HandleIdentify(ctx context.Context) IdentifyResponse
 }
 
-// Notifier delivers a watchdog Incident to the operator. Production uses
+// INotifier delivers a watchdog Incident to the operator. Production uses
 // SMTP email; tests use a recording mock; the e2e harness uses a file
 // sink. Implementations must be safe for concurrent use. Notify should
 // return an error only on delivery failure; the watchdog logs failures
 // and retries on the next evaluation (dedup still prevents duplicate
 // notifications once one delivery succeeds).
-type Notifier interface {
+type INotifier interface {
 	Notify(ctx context.Context, inc Incident) error
 }
 
@@ -68,18 +68,18 @@ type PersistentState struct {
 	Membership *Membership `json:"membership,omitempty"`
 }
 
-// Store persists PersistentState. Save must be atomic and durable before
+// IStore persists PersistentState. Save must be atomic and durable before
 // returning (write-then-rename for the file implementation). Load returns
 // ok == false when no state has ever been saved.
-type Store interface {
+type IStore interface {
 	Save(st PersistentState) error
 	Load() (st PersistentState, ok bool, err error)
 }
 
-// ViewSource provides cluster view snapshots and change notifications.
+// IViewSource provides cluster view snapshots and change notifications.
 // Implemented by the election manager; consumed by the watchdog,
 // dashboard, and metrics packages.
-type ViewSource interface {
+type IViewSource interface {
 	// View returns the current cluster view snapshot. Safe for
 	// concurrent use; the returned value is a copy the caller may keep.
 	View() ClusterView
@@ -92,8 +92,8 @@ type ViewSource interface {
 	Subscribe(buf int) (ch <-chan ClusterView, cancel func())
 }
 
-// IncidentLog exposes the incident history for the dashboard. Implemented
+// IIncidentLog exposes the incident history for the dashboard. Implemented
 // by the watchdog. Returned slices are copies, most recent first.
-type IncidentLog interface {
+type IIncidentLog interface {
 	Incidents() []Incident
 }

@@ -35,7 +35,7 @@ type standing struct {
 }
 
 // serve mounts chaosConfig, optionally mutated, on a real listener.
-func serve(mutate func(*live.Config[board])) *standing {
+func serve(mutate func(cfg *live.Config[board])) *standing {
 	GinkgoHelper()
 
 	led := newLedger()
@@ -642,7 +642,7 @@ func (w *wire) next(timeout time.Duration) (*pb.Frame, error) {
 }
 
 // await reads until pick matches or the timeout expires.
-func (w *wire) await(timeout time.Duration, pick func(*pb.Frame) bool) (*pb.Frame, error) {
+func (w *wire) await(timeout time.Duration, pick func(frame *pb.Frame) bool) (*pb.Frame, error) {
 	deadline := time.Now().Add(timeout)
 	for {
 		remaining := time.Until(deadline)

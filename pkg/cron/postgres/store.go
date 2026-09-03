@@ -16,7 +16,7 @@ import (
 // Store persists cron state in PostgreSQL. Callers own the database lifecycle.
 type Store struct{ db *sql.DB }
 
-var _ cron.Store = (*Store)(nil)
+var _ cron.IStore = (*Store)(nil)
 
 // NewStore binds the durable cron adapter to a caller-owned database pool.
 func NewStore(db *sql.DB) (*Store, error) {

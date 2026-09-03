@@ -363,7 +363,7 @@ func (c *Client) Next(timeout time.Duration) *Frame {
 // The what argument is the failure message's subject — "a meters patch", "the
 // resync snapshot" — and it is required because the alternative message is
 // "the predicate never matched", which tells a reader nothing they can act on.
-func (c *Client) Await(what string, timeout time.Duration, pred func(*Frame) bool) *Frame {
+func (c *Client) Await(what string, timeout time.Duration, pred func(frame *Frame) bool) *Frame {
 	c.tb.Helper()
 
 	deadline := time.Now().Add(timeout)

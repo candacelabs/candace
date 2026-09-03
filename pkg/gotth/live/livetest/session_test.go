@@ -57,7 +57,7 @@ var _ = Describe("NewSession", func() {
 	It("makes a Config hook callable without a server", func() {
 		var seen live.Session
 		cfg := live.Config[counter]{
-			Init: func(_ context.Context, s live.Session) (counter, []live.Effect, error) {
+			Init: func(_ context.Context, s live.Session) (counter, []live.IEffect, error) {
 				seen = s
 				return counter{Label: s.Identity().Subject()}, nil, nil
 			},

@@ -71,7 +71,7 @@ func NewMetrics() *Metrics {
 }
 
 // Meter returns a recording meter. The name is ignored: this library uses one.
-func (m *Metrics) Meter(string, ...metric.MeterOption) metric.Meter {
+func (m *Metrics) Meter(name string, options ...metric.MeterOption) metric.Meter {
 	return recordingMeter{rec: m}
 }
 
@@ -264,7 +264,7 @@ func NewTraces() *Traces {
 }
 
 // Tracer returns a recording tracer. The name is ignored: this library uses one.
-func (t *Traces) Tracer(string, ...trace.TracerOption) trace.Tracer {
+func (t *Traces) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
 	return recordingTracer{rec: t}
 }
 
@@ -374,7 +374,7 @@ func (s *recordingSpan) SetAttributes(attrs ...attribute.KeyValue) {
 	}
 }
 
-func (s *recordingSpan) End(...trace.SpanEndOption) {
+func (s *recordingSpan) End(options ...trace.SpanEndOption) {
 	s.rec.mu.Lock()
 	defer s.rec.mu.Unlock()
 	s.span.Ended = true

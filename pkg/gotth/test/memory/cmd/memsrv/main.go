@@ -130,14 +130,14 @@ func run() error {
 	var subjects atomic.Uint64
 
 	cfg := live.Config[State]{
-		Init: func(_ context.Context, s live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
 			// The shallowest probe point on the session actor's goroutine:
 			// Run → mount → Init. It anchors the high end of that goroutine's
 			// observed stack extent.
 			probe.note("app.Init", stackAddr())
 			return State{Self: s.ID()}, nil, nil
 		},
-		Reduce: func(st State, ev live.Event) (State, []live.Effect) {
+		Reduce: func(st State, ev live.Event) (State, []live.IEffect) {
 			if ev.Name == eventIncrement {
 				st.Value++
 			}
@@ -157,11 +157,11 @@ func run() error {
 			},
 		}},
 		Events: []string{eventIncrement},
-		Execute: func(context.Context, live.Session, live.Effect, live.Emitter) error {
+		Execute: func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
 			return errors.New("memsrv returns no effects")
 		},
 		Origins: strings.Split(*origins, ","),
-		Authenticate: func(*http.Request) (live.Identity, error) {
+		Authenticate: func(request *http.Request) (live.IIdentity, error) {
 			return subject(fmt.Sprintf("session-%d", subjects.Add(1))), nil
 		},
 		Authorize: func(ctx context.Context, s live.Session, ev live.Event) error {
@@ -176,7 +176,7 @@ func run() error {
 		Limits: live.DefaultLimits(),
 	}
 
-	var shutdown []func(context.Context) error
+	var shutdown []func(ctx context.Context) error
 	if wantLogger {
 		// The sink is the container's stderr, which the harness sends to the
 		// container log and not to a file on the SUT's own disk:
@@ -458,5 +458,7 @@ func (s subject) Subject() string { return string(s) }
 // measurement depending on a second container.
 type discardExporter struct{}
 
-func (discardExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error { return nil }
-func (discardExporter) Shutdown(context.Context) error                             { return nil }
+func (discardExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	return nil
+}
+func (discardExporter) Shutdown(ctx context.Context) error { return nil }

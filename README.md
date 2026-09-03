@@ -81,6 +81,8 @@ primitives usable on their own:
 | [`redact`](pkg/redact) | Removes caller-declared sensitive values, and their URL-userinfo spellings, from log-bound text. |
 | [`labels`](pkg/labels) | Canonicalizes case-insensitive label lists so services compare and deduplicate them one way. |
 | [`core`](pkg/core) | The zerolog logger the Go trees log through, plus the few formatters operator pages share. |
+| [`patience`](pkg/patience) | The one typed await for tests: poll a value, judge it with a predicate, get the value that satisfied it back. |
+| [`widget`](pkg/widget) | The widget dialect and its toolchain: interpreter, validator, generator, and the typed SDK that mounts generated cards into a gotth-live host. |
 
 `pkg/proto` and `pkg/scripts` hold tooling rather than a package.
 

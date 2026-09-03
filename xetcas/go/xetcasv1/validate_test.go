@@ -161,7 +161,7 @@ var _ = Describe("storage.proto boundaries", func() {
 	})
 
 	DescribeTable("rejects xorb records outside the documented xorb limits",
-		func(mutate func(*xetcasv1.XorbRecord), field, predicate string) {
+		func(mutate func(record *xetcasv1.XorbRecord), field, predicate string) {
 			record := validXorbRecord()
 			mutate(record)
 			expectRefinementViolation(xetcasv1.ValidateXorbRecord(record),

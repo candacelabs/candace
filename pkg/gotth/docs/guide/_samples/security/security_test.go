@@ -150,7 +150,7 @@ func (stranger) Subject() string { return "stranger" }
 // fields are unexported — identity is bound at the handshake and nothing
 // downstream may mint one — so livetest.NewSession is the way a spec calls a
 // hook directly instead of through a running server.
-func session(b byte, identity live.Identity) live.Session {
+func session(b byte, identity live.IIdentity) live.Session {
 	GinkgoHelper()
 	return livetest.NewSession(GinkgoTB(), live.ID{b}, identity)
 }

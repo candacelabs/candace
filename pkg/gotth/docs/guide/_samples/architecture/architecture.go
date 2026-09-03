@@ -85,7 +85,7 @@ func (r *Room) Said() []string {
 // function needs no mutex and gets none. What it may not do is the price of
 // that: no I/O, no clock, no randomness, no logging, and no mutation of the
 // state it was handed. It returns the work it wants done as a value.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	if ev.Name != EventShout {
 		return s, nil
 	}
@@ -96,7 +96,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 	}
 	s.Heard++
 	s.Notice = ""
-	return s, []live.Effect{ShoutEffect{Body: body}}
+	return s, []live.IEffect{ShoutEffect{Body: body}}
 }
 
 // Execute performs one effect, on a goroutine the library spawns for it.
@@ -105,7 +105,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 // block, to call a database, to take as long as it takes. The session keeps
 // handling events while it runs, and what it produces reaches the reducer as
 // an ordinary event rather than as a return value.
-func (r *Room) Execute(_ context.Context, sess live.Session, effect live.Effect, _ live.Emitter) error {
+func (r *Room) Execute(_ context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
 	shout, ok := effect.(ShoutEffect)
 	if !ok {
 		return fmt.Errorf("architecture: no executor for %T", effect)
@@ -140,7 +140,7 @@ func Config(room *Room, origins []string) live.Config[State] {
 		// The session's actor goroutine, as the first transition, before the
 		// first snapshot reaches the browser. A slow Init is a slow first
 		// paint.
-		Init: func(_ context.Context, sess live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
 			room.Join(sess.ID())
 			return State{}, nil, nil
 		},

@@ -19,7 +19,7 @@ type runnerEvent struct {
 	Type string
 }
 
-func newTestRunner(publish func(runnerEvent)) *harness.Runner[runnerEvent] {
+func newTestRunner(publish func(event runnerEvent)) *harness.Runner[runnerEvent] {
 	return harness.NewRunner(publish, func(event runnerEvent) string { return event.ID })
 }
 
@@ -37,7 +37,7 @@ var _ = Describe("Runner", func() {
 		Expect(runner.BeginStart()).To(Succeed())
 		var sent atomic.Int64
 		Expect(runner.Install(
-			func(context.Context, *candaceosv1.HarnessPrompt) error {
+			func(ctx context.Context, prompt *candaceosv1.HarnessPrompt) error {
 				sent.Add(1)
 				return nil
 			}, nil, nil,

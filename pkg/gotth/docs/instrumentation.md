@@ -80,7 +80,7 @@ dependency.
   registered, so this bullet's own bound applied and cardinality was never the
   objection.
 - **`source` is *not* bounded by registration, because nothing registers an
-  effect.** An `Effect` is an application type and its `EffectSource()` returns
+  effect.** An `IEffect` is an application type and its `EffectSource()` returns
   whatever the application returns; there is no registry to enumerate
   (protocol.md §3.3). Cardinality is therefore bounded **at the metric**: the
   label admits **64 distinct values per process**, after which further values
@@ -810,7 +810,7 @@ exist, and they are named explicitly for that reason.
 
 Redaction happens at the logging boundary, not in callers: the library's log
 helpers accept only field types that cannot carry a payload, and a test asserts
-that no call site passes a `*Frame`, an application state value, or an `Identity`
+that no call site passes a `*Frame`, an application state value, or an `IIdentity`
 into a log record.
 
 ---

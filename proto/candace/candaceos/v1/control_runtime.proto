@@ -18,7 +18,7 @@ enum HarnessBackend {
   HARNESS_BACKEND_COPILOT_CLI = 1;
   HARNESS_BACKEND_DEMO = 2;
   HARNESS_BACKEND_OLLAMA = 3;
-  // EMBEDDED identifies a Go implementation supplied through harness.Factory
+  // EMBEDDED identifies a Go implementation supplied through harness.IFactory
   // by the embedding binary. HarnessRuntimeIdentity.implementation records
   // the implementation's stable name.
   HARNESS_BACKEND_EMBEDDED = 4;

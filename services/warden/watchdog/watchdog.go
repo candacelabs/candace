@@ -46,22 +46,22 @@ type Config struct {
 }
 
 // Watchdog is the leader-only incident engine. Construct it with New and drive
-// it with Run. It implements warden.IncidentLog.
+// it with Run. It implements warden.IIncidentLog.
 type Watchdog struct {
 	cfg      Config
-	src      warden.ViewSource
-	notifier warden.Notifier
-	clock    warden.Clock
+	src      warden.IViewSource
+	notifier warden.INotifier
+	clock    warden.IClock
 
 	// ring is the only state shared beyond the Run loop; see incidentRing.
 	ring *incidentRing
 }
 
-var _ warden.IncidentLog = (*Watchdog)(nil)
+var _ warden.IIncidentLog = (*Watchdog)(nil)
 
 // New builds a Watchdog. src supplies cluster views, notifier delivers
 // incidents, and clock drives timing (inject a fake clock in tests).
-func New(cfg Config, src warden.ViewSource, notifier warden.Notifier, clock warden.Clock) *Watchdog {
+func New(cfg Config, src warden.IViewSource, notifier warden.INotifier, clock warden.IClock) *Watchdog {
 	if cfg.Cooldown <= 0 {
 		cfg.Cooldown = defaultCooldown
 	}
@@ -174,7 +174,7 @@ func (w *Watchdog) Run(ctx context.Context) error {
 				continue
 			}
 			w.evaluate(ctx, st, &wg, results)
-		case <-ticker.C():
+		case <-ticker.C:
 			w.evaluate(ctx, st, &wg, results)
 		case r := <-results:
 			w.handleResult(st, r)

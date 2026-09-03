@@ -1,6 +1,6 @@
 package store_test
 
-// Contract tests for the warden.Store implementations (FileStore, MemStore).
+// Contract tests for the warden.IStore implementations (FileStore, MemStore).
 // The Store interface makes two promises the election safety argument leans on:
 //   1. Load returns ok==false (NOT an error) when no state has ever been saved.
 //   2. Save is durable before it returns (write-then-rename for the file store),
@@ -242,8 +242,8 @@ var _ = Describe("MemStore", func() {
 		Expect(out.VotedFor).To(Equal(warden.NodeID("a")))
 	})
 
-	It("implements warden.Store", func() {
-		var _ warden.Store = store.NewMemStore()
-		var _ warden.Store = store.NewFileStore(filepath.Join(GinkgoT().TempDir(), "s.json"))
+	It("implements warden.IStore", func() {
+		var _ warden.IStore = store.NewMemStore()
+		var _ warden.IStore = store.NewFileStore(filepath.Join(GinkgoT().TempDir(), "s.json"))
 	})
 })

@@ -27,7 +27,7 @@ import (
 //
 // A reducer is called from the session's own goroutine and never concurrently
 // with itself.
-type Reducer[S any] func(state S, ev Event) (S, []Effect)
+type Reducer[S any] func(state S, ev Event) (S, []IEffect)
 
 // Fragment declares one server-owned live region and how to render it.
 type Fragment[S any] struct {
@@ -40,7 +40,7 @@ type Fragment[S any] struct {
 	// function of state: the same state must render byte-identical HTML,
 	// across runs and across processes. The known hazard is ranging over a Go
 	// map in a template; range a sorted slice instead.
-	Render func(S) templ.Component
+	Render func(state S) templ.Component
 
 	// Dirty optionally declares whether a transition may have changed this
 	// fragment. Nil means "re-render on every transition", which is always
@@ -181,14 +181,14 @@ func (f Fields) All(yield func(key, value string) bool) {
 	}
 }
 
-// Effect is a value describing I/O for the library to perform at the actor
+// IEffect is a value describing I/O for the library to perform at the actor
 // boundary.
 //
 // Implementations must be plain values: no channels, no connections, no other
 // live handles. That is what lets a test assert on what a reducer decided to
 // do without performing it, and it is why effects are returned rather than
 // executed.
-type Effect interface {
+type IEffect interface {
 	// EffectSource names the effect for provenance and metrics, in the form
 	// "package.action" — it becomes the origin source "effect:<name>" on every
 	// patch the effect causes.
@@ -200,7 +200,7 @@ type Effect interface {
 //
 // It returns an error when the session is saturated or closing, so an effect
 // learns about backpressure rather than having its event vanish.
-type Emitter func(Event) error
+type Emitter func(event Event) error
 
 // EffectFailedEvent is the name of the event a failed or panicking effect
 // becomes, so that a reducer sees a deterministic failure rather than silence.
@@ -379,11 +379,11 @@ type ID [16]byte
 // attributes and the provenance stream.
 func (id ID) String() string { return session.ID(id).String() }
 
-// Identity is the application's identity for a session. It is bound at the
+// IIdentity is the application's identity for a session. It is bound at the
 // handshake and immutable for the connection's life: a session cannot outlive
 // its connection, so there is no re-authentication and no privilege change
 // mid-session.
-type Identity interface {
+type IIdentity interface {
 	// Subject returns a stable, non-secret identifier, used for logging and
 	// for per-identity session limits. It must not be a token.
 	Subject() string
@@ -393,11 +393,11 @@ type Identity interface {
 // Config.Authorize and Config.Teardown, and is safe to copy.
 type Session struct {
 	id       ID
-	identity Identity
+	identity IIdentity
 }
 
 // ID returns the session's identifier.
 func (s Session) ID() ID { return s.id }
 
 // Identity returns the identity bound at the handshake.
-func (s Session) Identity() Identity { return s.identity }
+func (s Session) Identity() IIdentity { return s.identity }

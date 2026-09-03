@@ -13,7 +13,7 @@
 // stamps into each snapshot.
 //
 // Callers may rely on Runtime satisfying the operator transport's backend
-// contract, including webui.SnapshotProvider, and on every operator-visible
+// contract, including webui.ISnapshotProvider, and on every operator-visible
 // mutation being proven durable before it is acknowledged. Runtime owns no
 // HTTP surface, no agent harness, and no schema; those belong to httpapi,
 // operator, and store respectively.
@@ -324,7 +324,7 @@ func writeFleetKeyPart(key *strings.Builder, value string) {
 	key.WriteString(value)
 }
 
-// Snapshot implements webui.SnapshotProvider.
+// Snapshot implements webui.ISnapshotProvider.
 func (r *Runtime) Snapshot(ctx context.Context) (*candaceosv1.WebUISnapshot, error) {
 	deploymentRows, err := r.store.Queries.ListDeploymentRolloutRows(ctx)
 	if err != nil {
@@ -715,4 +715,4 @@ func activityStatus(kind string) string {
 	}
 }
 
-var _ webui.SnapshotProvider = (*Runtime)(nil)
+var _ webui.ISnapshotProvider = (*Runtime)(nil)

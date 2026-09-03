@@ -31,7 +31,7 @@ import (
 var _ = Describe("The Snapshot session-parameter ranges (D-23)", func() {
 	// admits is the production outbound boundary with one Snapshot field varied,
 	// reduced to the question these specs ask of it.
-	type admits func(uint32) error
+	type admits func(value uint32) error
 
 	heartbeat := admits(func(v uint32) error {
 		frame := serverFrame("snapshot")

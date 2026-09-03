@@ -66,7 +66,7 @@ func inspectorApp(dev bool) *live.App[counter] {
 }
 
 func render(c interface {
-	Render(context.Context, io.Writer) error
+	Render(ctx context.Context, writer io.Writer) error
 }) string {
 	GinkgoHelper()
 

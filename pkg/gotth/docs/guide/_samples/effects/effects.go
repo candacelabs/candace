@@ -61,10 +61,10 @@ type State struct {
 // Reduce never changes Value. It returns an effect and learns the result the
 // same way every other session does, which is what "server-authoritative"
 // means concretely and why two tabs cannot disagree.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventInc:
-		return s, []live.Effect{ApplyEffect{Delta: 1, Cause: ev.ID}}
+		return s, []live.IEffect{ApplyEffect{Delta: 1, Cause: ev.ID}}
 
 	case EventSync:
 		return applySync(s, ev), nil
@@ -104,10 +104,10 @@ func applySync(s State, ev live.Event) State {
 // classification is a claim the code that performed the effect is in a
 // position to make and this reducer is not. An absent or unreadable value
 // parses as false, and unclassified is terminal.
-func retryWatch(ev live.Event) []live.Effect {
+func retryWatch(ev live.Event) []live.IEffect {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceWatch {
-		return []live.Effect{WatchEffect{}}
+		return []live.IEffect{WatchEffect{}}
 	}
 	return nil
 }
@@ -129,7 +129,7 @@ func NewStore() *Store { return &Store{subs: map[live.ID]chan struct{}{}} }
 // effect's identity is an input to what the effect does, and a signature that
 // omitted it would invite the effect value to carry addressing information the
 // library already has.
-func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	switch e := effect.(type) {
 	case ApplyEffect:
 		s.apply(e.Delta)

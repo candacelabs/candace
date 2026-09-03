@@ -38,14 +38,14 @@ type pageApp struct {
 	loadValue int
 	loadErr   error
 
-	authIdentity live.Identity
+	authIdentity live.IIdentity
 	authErr      error
 }
 
 func newPageApp(dev bool) *pageApp {
 	p := &pageApp{loadValue: 41, authIdentity: user("tester")}
 	cfg := live.Config[pageState]{
-		Init: func(_ context.Context, s live.Session) (pageState, []live.Effect, error) {
+		Init: func(_ context.Context, s live.Session) (pageState, []live.IEffect, error) {
 			p.loaded++
 			subject := ""
 			if s.Identity() != nil {
@@ -57,7 +57,7 @@ func newPageApp(dev bool) *pageApp {
 			}
 			return pageState{N: p.loadValue}, nil, nil
 		},
-		Reduce: func(s pageState, ev live.Event) (pageState, []live.Effect) {
+		Reduce: func(s pageState, ev live.Event) (pageState, []live.IEffect) {
 			if ev.Name == "count.inc" {
 				s.N++
 			}
@@ -66,7 +66,7 @@ func newPageApp(dev bool) *pageApp {
 		Fragments:    []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
 		Events:       []string{"count.inc"},
 		Origins:      []string{"https://app.example"},
-		Authenticate: func(*http.Request) (live.Identity, error) { return p.authIdentity, p.authErr },
+		Authenticate: func(request *http.Request) (live.IIdentity, error) { return p.authIdentity, p.authErr },
 		Authorize:    live.AllowAll,
 		CSRF:         live.NoCSRFCheck,
 		Dev:          dev,
@@ -128,11 +128,11 @@ var _ = Describe("(*App).PageHandler", func() {
 	It("gives the mount hook the zero session identifier, because no session exists yet", func() {
 		var seen live.ID
 		app := live.MustNew(live.Config[pageState]{
-			Init: func(_ context.Context, s live.Session) (pageState, []live.Effect, error) {
+			Init: func(_ context.Context, s live.Session) (pageState, []live.IEffect, error) {
 				seen = s.ID()
 				return pageState{}, nil, nil
 			},
-			Reduce:       func(s pageState, _ live.Event) (pageState, []live.Effect) { return s, nil },
+			Reduce:       func(s pageState, _ live.Event) (pageState, []live.IEffect) { return s, nil },
 			Fragments:    []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
 			Events:       []string{"count.inc"},
 			Origins:      []string{"https://app.example"},
@@ -152,12 +152,12 @@ var _ = Describe("(*App).PageHandler", func() {
 	It("discards the startup effects the mount hook returns", func() {
 		executed := 0
 		app := live.MustNew(live.Config[pageState]{
-			Init: func(context.Context, live.Session) (pageState, []live.Effect, error) {
-				return pageState{N: 7}, []live.Effect{logEffect{Message: "subscribe"}}, nil
+			Init: func(ctx context.Context, session live.Session) (pageState, []live.IEffect, error) {
+				return pageState{N: 7}, []live.IEffect{logEffect{Message: "subscribe"}}, nil
 			},
-			Reduce:    func(s pageState, _ live.Event) (pageState, []live.Effect) { return s, nil },
+			Reduce:    func(s pageState, _ live.Event) (pageState, []live.IEffect) { return s, nil },
 			Fragments: []live.Fragment[pageState]{{ID: "count", Render: pageOf}},
-			Execute: func(context.Context, live.Session, live.Effect, live.Emitter) error {
+			Execute: func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
 				executed++
 				return nil
 			},
@@ -231,7 +231,7 @@ var _ = Describe("(*App).PageHandler", func() {
 	// browser would not read as a path is the reachable version of this.
 	It("answers 500 with no partial document when the page render fails part-way", func() {
 		p := newPageApp(false)
-		half := func(pageState) templ.Component {
+		half := func(state pageState) templ.Component {
 			return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
 				if _, err := io.WriteString(w, "<html><body>the first half"); err != nil {
 					return err
@@ -249,7 +249,7 @@ var _ = Describe("(*App).PageHandler", func() {
 	It("answers 500 when the page function returns no component", func() {
 		p := newPageApp(false)
 
-		rec := p.get(p.app.PageHandler(func(pageState) templ.Component { return nil }), http.MethodGet, "/")
+		rec := p.get(p.app.PageHandler(func(state pageState) templ.Component { return nil }), http.MethodGet, "/")
 
 		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 	})
@@ -428,7 +428,7 @@ var _ = Describe("the quickstart application", func() {
 
 	It("builds, mounts and serves a first paint and the runtime from one Mux", func() {
 		app := live.MustNew(live.Config[state]{
-			Reduce: func(s state, ev live.Event) (state, []live.Effect) {
+			Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
 				if ev.Name == eventInc {
 					s.N++
 				}

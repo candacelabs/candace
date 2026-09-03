@@ -146,14 +146,14 @@ func keyPanelHTML(s keyState) string {
 
 func keyConfig() live.Config[keyState] {
 	return live.Config[keyState]{
-		Init: func(context.Context, live.Session) (keyState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (keyState, []live.IEffect, error) {
 			return keyState{}, nil, nil
 		},
 		// Every accepted event moves Events and Log, so every one of them
 		// produces a patch. A spec can therefore wait for the arrival of an
 		// event that changes nothing else, which is what makes "no event was
 		// raised" assertable rather than merely unobserved.
-		Reduce: func(s keyState, ev live.Event) (keyState, []live.Effect) {
+		Reduce: func(s keyState, ev live.Event) (keyState, []live.IEffect) {
 			s.Events++
 			s.Log = strings.TrimSpace(s.Log + " " + ev.Name)
 			switch ev.Name {

@@ -64,7 +64,7 @@ type sqlDriver struct {
 	connector *sqlConnector
 }
 
-func (d *sqlDriver) Open(string) (driver.Conn, error) {
+func (d *sqlDriver) Open(name string) (driver.Conn, error) {
 	return d.connector.Connect(context.Background())
 }
 

@@ -52,7 +52,7 @@ const sentinel = "livetest stopped the test"
 
 // run calls fn and reports what the helper did, converting the helper's own
 // stop-the-test panic back into a value.
-func run(fn func(testing.TB)) *recorder {
+func run(fn func(t testing.TB)) *recorder {
 	r := &recorder{}
 	func() {
 		defer func() {
@@ -80,7 +80,7 @@ var log = []live.Event{
 
 var _ = Describe("ReplayN", func() {
 	It("passes a reducer that is a pure function of its inputs", func() {
-		pure := func(state counter, ev live.Event) (counter, []live.Effect) {
+		pure := func(state counter, ev live.Event) (counter, []live.IEffect) {
 			if ev.Name == "counter.increment" {
 				state.N++
 			}
@@ -93,7 +93,7 @@ var _ = Describe("ReplayN", func() {
 	})
 
 	It("catches a reducer that reads a clock", func() {
-		impure := func(state counter, ev live.Event) (counter, []live.Effect) {
+		impure := func(state counter, ev live.Event) (counter, []live.IEffect) {
 			state.Label = time.Now().Format(time.RFC3339Nano)
 			return state, nil
 		}
@@ -107,10 +107,10 @@ var _ = Describe("ReplayN", func() {
 
 	It("catches a reducer whose effects differ between runs", func() {
 		var runs int
-		impure := func(state counter, ev live.Event) (counter, []live.Effect) {
+		impure := func(state counter, ev live.Event) (counter, []live.IEffect) {
 			runs++
 			if runs > len(log) {
-				return state, []live.Effect{drift{}}
+				return state, []live.IEffect{drift{}}
 			}
 			return state, nil
 		}
@@ -122,7 +122,7 @@ var _ = Describe("ReplayN", func() {
 	})
 
 	It("refuses to prove anything from an empty log or a single replay", func() {
-		pure := func(state counter, _ live.Event) (counter, []live.Effect) { return state, nil }
+		pure := func(state counter, _ live.Event) (counter, []live.IEffect) { return state, nil }
 
 		Expect(run(func(tb testing.TB) { livetest.ReplayN(tb, pure, counter{}, nil, 4) }).failed).To(BeTrue())
 		Expect(run(func(tb testing.TB) { livetest.ReplayN(tb, pure, counter{}, log, 1) }).failed).To(BeTrue())
@@ -136,7 +136,7 @@ func (drift) EffectSource() string { return "test.drift" }
 var _ = Describe("AssertDirtyComplete", func() {
 	config := func(dirty func(prev, next counter) bool) live.Config[counter] {
 		return live.Config[counter]{
-			Reduce: func(state counter, ev live.Event) (counter, []live.Effect) {
+			Reduce: func(state counter, ev live.Event) (counter, []live.IEffect) {
 				switch ev.Name {
 				case "counter.increment":
 					state.N++
@@ -206,7 +206,7 @@ var _ = Describe("AssertDirtyComplete", func() {
 
 	It("reports a fragment that renders nothing at all", func() {
 		cfg := config(nil)
-		cfg.Fragments[0].Render = func(counter) templ.Component { return nil }
+		cfg.Fragments[0].Render = func(state counter) templ.Component { return nil }
 
 		r := run(func(tb testing.TB) { livetest.AssertDirtyComplete(tb, cfg, counter{}, log) })
 
@@ -225,7 +225,7 @@ var _ = Describe("the testing.TB a Ginkgo suite passes", func() {
 		tb := GinkgoTB()
 		var _ testing.TB = tb // compile-time: no adaptation is required.
 
-		pure := func(state counter, ev live.Event) (counter, []live.Effect) {
+		pure := func(state counter, ev live.Event) (counter, []live.IEffect) {
 			if ev.Name == "counter.increment" {
 				state.N++
 			}

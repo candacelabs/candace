@@ -2,9 +2,9 @@
 //
 // A Watchdog runs on every node but only acts while the local node is the
 // authoritative leader. It observes ClusterView snapshots from a
-// warden.ViewSource, tracks per-peer dead/recovery "episodes", records an
-// Incident log for the dashboard (implementing warden.IncidentLog), and
-// delivers each incident to a warden.Notifier exactly once per episode with
+// warden.IViewSource, tracks per-peer dead/recovery "episodes", records an
+// Incident log for the dashboard (implementing warden.IIncidentLog), and
+// delivers each incident to a warden.INotifier exactly once per episode with
 // a per-(peer, incident-type) cooldown so a flapping node cannot spam the
 // operator.
 //
@@ -17,7 +17,7 @@
 // locks and cannot race.
 //
 // The loop selects over four things: the ViewSource subscription channel, the
-// CheckInterval ticker (both from warden.Clock, never a sleep-and-check), a
+// CheckInterval ticker (both from warden.IClock, never a sleep-and-check), a
 // results channel carrying notification outcomes, and ctx.Done(). Delivery is
 // performed by short-lived goroutines the loop spawns; each reports its result
 // back on the results channel, and only the loop mutates dedup/retry

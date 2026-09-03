@@ -46,7 +46,7 @@ const (
 // ChangeEffect asks the store to apply one operation.
 //
 // It is a plain comparable value with no channel, connection or closure in it,
-// which is the whole contract live.Effect states. That is what lets a spec
+// which is the whole contract live.IEffect states. That is what lets a spec
 // assert on what the reducer decided to do without a store existing at all,
 // and what lets livetest.ReplayN compare two runs' effects by value.
 type ChangeEffect struct {
@@ -264,7 +264,7 @@ func broadcast(subs []*subscriber, snap Snapshot) {
 // The effect values arrive exactly as the reducer declared them; nothing here
 // runs inside a reducer, and nothing here can reach a session's state except
 // by emitting an event the reducer folds in.
-func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	switch e := effect.(type) {
 	case ChangeEffect:
 		s.Apply(e)

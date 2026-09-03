@@ -32,7 +32,7 @@ func TestElectionContract(t *testing.T) {
 
 var clockStart = time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 
-// fakeTransport is a warden.Transport whose vote/heartbeat outcomes are
+// fakeTransport is a warden.ITransport whose vote/heartbeat outcomes are
 // programmable per peer. grant lists the peer IDs that return Granted=true;
 // every other peer returns an error (unreachable), which the manager treats as
 // a vote not granted.
@@ -91,7 +91,7 @@ func runManager(m *election.Manager) (stop func()) {
 	}
 }
 
-func newManager(self string, peers []warden.Node, tr warden.Transport, st warden.Store, clock warden.Clock) *election.Manager {
+func newManager(self string, peers []warden.Node, tr warden.ITransport, st warden.IStore, clock warden.IClock) *election.Manager {
 	m, err := election.NewManager(election.Config{
 		Self:               warden.Node{ID: warden.NodeID(self), Addr: "127.0.0.1:0"},
 		Peers:              peers,
@@ -111,7 +111,7 @@ var _ = Describe("NewManager construction validation", func() {
 	ck := testclock.New(clockStart)
 
 	DescribeTable("rejects structurally invalid configuration",
-		func(mutate func(*election.Config), wantErr error) {
+		func(mutate func(cfg *election.Config), wantErr error) {
 			cfg := election.Config{Self: warden.Node{ID: "a", Addr: "h:1"}, Peers: valid}
 			mutate(&cfg)
 			_, err := election.NewManager(cfg, tr, st, ck)

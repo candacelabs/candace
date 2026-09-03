@@ -23,12 +23,12 @@ var _ = Describe("FactoryFunc", func() {
 			Backend:        candaceosv1.HarnessBackend_HARNESS_BACKEND_EMBEDDED,
 			Implementation: "example",
 		}}
-		factory := harness.FactoryFunc(func(received *candaceosv1.HarnessContext, host harness.Host) (*harness.Instance, error) {
+		factory := harness.FactoryFunc(func(received *candaceosv1.HarnessContext, host harness.IHost) (*harness.Instance, error) {
 			Expect(received).To(BeIdenticalTo(harnessContext))
 			Expect(host).To(BeNil())
 			return expected, nil
 		})
-		var contract harness.Factory = factory
+		var contract harness.IFactory = factory
 
 		actual, err := contract.New(harnessContext, nil)
 
@@ -38,7 +38,7 @@ var _ = Describe("FactoryFunc", func() {
 
 	It("returns the implementation error unchanged", func() {
 		expected := errors.New("constructing custom harness")
-		factory := harness.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harness.Host) (*harness.Instance, error) {
+		factory := harness.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harness.IHost) (*harness.Instance, error) {
 			return nil, expected
 		})
 

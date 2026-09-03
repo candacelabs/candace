@@ -9,9 +9,9 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// Translator converts PostgreSQL syntax into the internal execution dialect.
+// ITranslator converts PostgreSQL syntax into the internal execution dialect.
 // Implementations must be safe for concurrent use.
-type Translator interface {
+type ITranslator interface {
 	Translate(ctx context.Context, defaultSchema, statement string) (string, error)
 }
 

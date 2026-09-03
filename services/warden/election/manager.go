@@ -2,15 +2,15 @@
 // log replication) over a static peer set, plus the peer-liveness tracking
 // that feeds the cluster ClusterView.
 //
-// A Manager is both the warden.RPCHandler a node answers cluster RPCs with and
-// the warden.ViewSource its dashboard, metrics, and watchdog read. Callers may
+// A Manager is both the warden.IRPCHandler a node answers cluster RPCs with and
+// the warden.IViewSource its dashboard, metrics, and watchdog read. Callers may
 // rely on the two safety properties that make the rest of the service simple:
 // quorum is always computed over the persisted voter set (Membership.Voters),
 // never over a discovery roster or over "peers we can currently reach", so a
 // quiet or broken discovery source cannot shrink the denominator; and only a
 // leader admits or removes a member, one change at a time. Every view handed
 // out is an immutable snapshot the caller may keep. Durable term-and-vote state
-// goes through warden.Store before a vote is granted, so a restart cannot vote
+// goes through warden.IStore before a vote is granted, so a restart cannot vote
 // twice in one term.
 //
 // # Concurrency model
@@ -20,18 +20,18 @@
 // mutates that state. Every external interaction is a typed message placed on
 // the loop's inbound channel:
 //
-//   - HandleVote / HandleHeartbeat (the warden.RPCHandler methods, invoked
+//   - HandleVote / HandleHeartbeat (the warden.IRPCHandler methods, invoked
 //     from HTTP handler goroutines) wrap the request with a per-request reply
 //     channel and wait for the loop to answer, honoring both the caller ctx
 //     and loop shutdown so a handler never leaks or hangs.
-//   - View / Subscribe (the warden.ViewSource methods) are queries into the
+//   - View / Subscribe (the warden.IViewSource methods) are queries into the
 //     loop returning immutable snapshots.
 //   - Outbound vote/heartbeat RPCs run in short-lived worker goroutines the
 //     loop spawns; they never touch state, reporting their results back to the
 //     loop as messages. They are tracked so Run does not return until every
 //     one has exited.
 //
-// Timers and tickers come from warden.Clock and are composed directly into the
+// Timers and tickers come from warden.IClock and are composed directly into the
 // loop's select, which keeps the whole machine testable with a simulated
 // clock.
 package election
@@ -53,10 +53,10 @@ import (
 // goroutines while the loop is momentarily busy.
 const eventBuffer = 256
 
-// HandleIdentify implements warden.RPCHandler. It reads only immutable
+// HandleIdentify implements warden.IRPCHandler. It reads only immutable
 // construction-time configuration, so it answers directly without a loop
 // round-trip.
-func (m *Manager) HandleIdentify(context.Context) warden.IdentifyResponse {
+func (m *Manager) HandleIdentify(ctx context.Context) warden.IdentifyResponse {
 	return warden.IdentifyResponse{
 		ClusterID: m.cfg.ClusterID,
 		NodeID:    m.self.ID,
@@ -81,8 +81,8 @@ func (a ackRef) newerAck(v uint64, t warden.Term) bool {
 
 // interface assertions.
 var (
-	_ warden.RPCHandler = (*Manager)(nil)
-	_ warden.ViewSource = (*Manager)(nil)
+	_ warden.IRPCHandler = (*Manager)(nil)
+	_ warden.IViewSource = (*Manager)(nil)
 )
 
 // Manager runs the election state machine for one node. Construct with
@@ -93,9 +93,9 @@ type Manager struct {
 	self            warden.Node
 	discoveryMode   bool // cfg.Discoverer != nil
 	publishInterval time.Duration
-	transport       warden.Transport
-	store           warden.Store
-	clock           warden.Clock
+	transport       warden.ITransport
+	store           warden.IStore
+	clock           warden.IClock
 	log             *zerolog.Logger
 
 	// baseCtx is the Run context; outbound RPC contexts derive from it.
@@ -273,13 +273,13 @@ func (m *Manager) Run(ctx context.Context) error {
 			}
 			m.onRoster(r)
 			m.activity.Add(1)
-		case <-m.electionTimer.C():
+		case <-m.electionTimer.C:
 			m.onElectionTimeout()
 			m.activity.Add(1)
-		case <-m.heartbeatTicker.C():
+		case <-m.heartbeatTicker.C:
 			m.onHeartbeatTick()
 			m.activity.Add(1)
-		case <-m.publishTicker.C():
+		case <-m.publishTicker.C:
 			m.publish()
 			m.activity.Add(1)
 		}
@@ -292,13 +292,16 @@ func (m *Manager) Run(ctx context.Context) error {
 func (m *Manager) shutdown() {
 	close(m.done)
 	m.rpc.wait()
-	if m.electionTimer != nil {
+	// The guard is on the function field rather than on the value: a Manager
+	// that never reached the arming block in Run holds zero Timers/Tickers,
+	// whose Stop is nil.
+	if m.electionTimer.Stop != nil {
 		m.electionTimer.Stop()
 	}
-	if m.heartbeatTicker != nil {
+	if m.heartbeatTicker.Stop != nil {
 		m.heartbeatTicker.Stop()
 	}
-	if m.publishTicker != nil {
+	if m.publishTicker.Stop != nil {
 		m.publishTicker.Stop()
 	}
 	for id, ch := range m.subs {
@@ -354,13 +357,13 @@ func (m *Manager) drainReady() {
 			}
 			m.onRoster(r)
 			m.activity.Add(1)
-		case <-m.electionTimer.C():
+		case <-m.electionTimer.C:
 			m.onElectionTimeout()
 			m.activity.Add(1)
-		case <-m.heartbeatTicker.C():
+		case <-m.heartbeatTicker.C:
 			m.onHeartbeatTick()
 			m.activity.Add(1)
-		case <-m.publishTicker.C():
+		case <-m.publishTicker.C:
 			m.publish()
 			m.activity.Add(1)
 		default:
@@ -369,7 +372,7 @@ func (m *Manager) drainReady() {
 	}
 }
 
-// ---- warden.RPCHandler ----
+// ---- warden.IRPCHandler ----
 
 func waitForReply[T any](ctx context.Context, done <-chan struct{}, reply <-chan T, fallback T) T {
 	select {
@@ -414,7 +417,7 @@ func (m *Manager) HandleHeartbeat(ctx context.Context, req warden.HeartbeatReque
 	return waitForReply(ctx, m.done, reply, fallback)
 }
 
-// ---- warden.ViewSource ----
+// ---- warden.IViewSource ----
 
 // View returns the current cluster view snapshot. The returned value is a copy
 // the caller may keep and mutate.
@@ -575,7 +578,7 @@ func (m *Manager) resetElectionTimer(d time.Duration) {
 	}
 	if !m.electionTimer.Stop() {
 		select {
-		case <-m.electionTimer.C():
+		case <-m.electionTimer.C:
 		default:
 		}
 	}

@@ -163,7 +163,7 @@ fragment's `Dirty` proves nothing about it.
 ## `NewSession`: testing the hooks that take a `Session`
 
 ```text
-livetest.NewSession(tb testing.TB, id live.ID, identity live.Identity) live.Session
+livetest.NewSession(tb testing.TB, id live.ID, identity live.IIdentity) live.Session
 ```
 
 `Init`, `Authorize`, `Teardown` and `Execute` all take a `live.Session`, whose
@@ -175,7 +175,7 @@ the reason those hooks take a `Session` at all.
 
 <!-- sample: apptest/app_test.go -->
 ```go
-	newSession := func(b byte, identity live.Identity) live.Session {
+	newSession := func(b byte, identity live.IIdentity) live.Session {
 		return livetest.NewSession(GinkgoTB(), live.ID{b}, identity)
 	}
 

@@ -28,7 +28,7 @@ const (
 )
 
 // OverlapPolicy controls whether two occurrences of one job may execute at the
-// same time. It is enforced by Store, so it also covers multiple processes
+// same time. It is enforced by IStore, so it also covers multiple processes
 // sharing a durable store.
 type OverlapPolicy string
 
@@ -42,13 +42,13 @@ const (
 
 // Option configures a Service. New validates the complete option set before
 // reconciling or starting any work.
-type Option func(*serviceConfig) error
+type Option func(config *serviceConfig) error
 
 // JobOption configures one job registered with WithJob.
-type JobOption func(*jobConfig) error
+type JobOption func(config *jobConfig) error
 
 type serviceConfig struct {
-	store         Store
+	store         IStore
 	jobs          []registeredJob
 	leaseDuration time.Duration
 	catchUpLimit  int
@@ -70,7 +70,7 @@ type registeredJob struct {
 
 // WithStore selects the required durable state store. Use NewMemoryStore
 // explicitly when process-local state is sufficient.
-func WithStore(store Store) Option {
+func WithStore(store IStore) Option {
 	return func(config *serviceConfig) error {
 		if store == nil {
 			return fmt.Errorf("%w: nil store", ErrInvalidConfiguration)

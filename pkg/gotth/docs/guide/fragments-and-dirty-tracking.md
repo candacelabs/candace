@@ -13,7 +13,7 @@ Compiled source: [`_samples/fragments`](_samples/fragments).
 ```text
 Fragment[S]{
     ID     string                      // stable identity; a patch names it
-    Render func(S) templ.Component     // pure function of state
+    Render func(state S) templ.Component // pure function of state
     Dirty  func(prev, next S) bool     // optional; nil means "always"
 }
 ```
@@ -233,7 +233,7 @@ from:
 
 <!-- sample: mounting/firstpaint.go -->
 ```go
-func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.Effect, error) {
+func (st *Store) Init(ctx context.Context, _ live.Session) (State, []live.IEffect, error) {
 	s, err := st.Load(ctx)
 	return s, nil, err
 }

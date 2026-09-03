@@ -82,7 +82,7 @@ func inertDefinition(
 	GinkgoHelper()
 	definition, err := component.New(
 		name,
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			return nil
 		}),
 		component.WithRequires(requirements...),
@@ -103,7 +103,7 @@ func lifecycleDefinition(
 	GinkgoHelper()
 	definition, err := component.New(
 		name,
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			record.note("assemble " + name)
 			return assembleErr
 		}),

@@ -143,10 +143,10 @@ func hxPlainPage() string {
 
 func hxConfig() live.Config[hxState] {
 	return live.Config[hxState]{
-		Init: func(context.Context, live.Session) (hxState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (hxState, []live.IEffect, error) {
 			return hxState{}, nil, nil
 		},
-		Reduce: func(s hxState, ev live.Event) (hxState, []live.Effect) {
+		Reduce: func(s hxState, ev live.Event) (hxState, []live.IEffect) {
 			if ev.Name == eventHXTick {
 				s.Tick++
 			}

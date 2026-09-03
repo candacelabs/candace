@@ -52,7 +52,7 @@ var _ = Describe("testclock Clock", func() {
 		timer := clk.NewTimer(10 * time.Second)
 		Expect(timer.Stop()).To(BeTrue(), "Stop on an armed timer should report true")
 		clk.Advance(20 * time.Second)
-		_, ok := recv(timer.C())
+		_, ok := recv(timer.C)
 		Expect(ok).To(BeFalse(), "stopped timer must not fire")
 		Expect(timer.Stop()).To(BeFalse(), "Stop on an already-stopped timer should report false")
 	})
@@ -66,10 +66,10 @@ var _ = Describe("testclock Clock", func() {
 		timer.Reset(10 * time.Second) // re-arm for now+10 = +15
 
 		clk.Advance(5 * time.Second) // now = +10, not yet
-		_, ok := recv(timer.C())
+		_, ok := recv(timer.C)
 		Expect(ok).To(BeFalse(), "reset timer fired early")
 		clk.Advance(5 * time.Second) // now = +15
-		got, ok := recv(timer.C())
+		got, ok := recv(timer.C)
 		Expect(ok).To(BeTrue(), "reset timer did not fire at new deadline")
 		Expect(got).To(BeTemporally("==", start.Add(15*time.Second)))
 	})
@@ -82,14 +82,14 @@ var _ = Describe("testclock Clock", func() {
 
 		for i := 1; i <= 3; i++ {
 			clk.Advance(10 * time.Second)
-			got, ok := recv(ticker.C())
+			got, ok := recv(ticker.C)
 			Expect(ok).To(BeTrue(), "ticker did not fire on interval %d", i)
 			Expect(got).To(BeTemporally("==", start.Add(time.Duration(i)*10*time.Second)))
 		}
 
 		ticker.Stop()
 		clk.Advance(10 * time.Second)
-		_, ok := recv(ticker.C())
+		_, ok := recv(ticker.C)
 		Expect(ok).To(BeFalse(), "stopped ticker must not fire")
 	})
 
@@ -101,9 +101,9 @@ var _ = Describe("testclock Clock", func() {
 
 		clk.Advance(30 * time.Second)
 
-		e, ok := recv(early.C())
+		e, ok := recv(early.C)
 		Expect(ok).To(BeTrue(), "early timer did not fire")
-		l, ok := recv(late.C())
+		l, ok := recv(late.C)
 		Expect(ok).To(BeTrue(), "late timer did not fire")
 		Expect(e).To(BeTemporally("<", l), "early fire should precede late fire")
 		Expect(e).To(BeTemporally("==", start.Add(10*time.Second)))

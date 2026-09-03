@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 // Timing profile for the test cluster: aggressive but safe multiples so
@@ -35,10 +37,82 @@ const (
 	rpcTimeout        = "250ms"
 	cooldown          = "2s"
 
-	convergeTimeout = 20 * time.Second
-	alertTimeout    = 20 * time.Second
-	pollEvery       = 250 * time.Millisecond
+	pollEvery = 250 * time.Millisecond
 )
+
+// The two wall clocks this suite waits on, named and stated generously.
+//
+// Nothing here is measuring latency: every assertion is about a cluster
+// reaching a state, and the timing profile above is what decides how fast it
+// gets there. So the budget is guarding against a cluster that never converges
+// at all, and a minute of it costs a slow failure on a run that was going to
+// fail — while twenty seconds of it costs a red build on a correct one, on a
+// box running anything else. That trade is not symmetric and these numbers
+// reflect it.
+var (
+	convergeBudget = patience.Budget{Within: time.Minute, Interval: pollEvery}
+	alertBudget    = patience.Budget{Within: time.Minute, Interval: pollEvery}
+)
+
+// clusterReporter is how a failed await in this suite reaches the test.
+//
+// A converge failure is unreadable without the node logs, and every await here
+// used to dump them at its own call site — five copies of the same two lines,
+// which is the shape that goes stale the first time somebody adds a sixth
+// await and forgets. Reporting through the dump instead makes it structural.
+type clusterReporter struct {
+	cluster *cluster
+}
+
+func (reporter clusterReporter) Helper() { reporter.cluster.t.Helper() }
+
+func (reporter clusterReporter) Fatalf(format string, arguments ...any) {
+	reporter.cluster.dumpLogs()
+	reporter.cluster.t.Fatalf(format, arguments...)
+}
+
+// reporting is the cluster as something an await can fail through.
+func (c *cluster) reporting() clusterReporter { return clusterReporter{cluster: c} }
+
+// peerFact is what one observer currently reports about one peer. The awaits
+// below judge this shape and a failure prints it, which is the whole reason
+// the poll returns a value rather than a bool.
+type peerFact struct {
+	Status string
+	Member string
+}
+
+// peerFacts is one observer's view of the fleet, keyed by peer id. An observer
+// that cannot be reached reports nothing rather than failing: that is a
+// reading, and the await is what decides whether it was the last one.
+func (c *cluster) peerFacts(observer string) map[string]peerFact {
+	facts := map[string]peerFact{}
+	view, reachable := c.tryStatus(observer)
+	if !reachable {
+		return facts
+	}
+	for _, peer := range view.View.Peers {
+		facts[peer.Node.ID] = peerFact{Status: peer.Status, Member: peer.Member}
+	}
+	return facts
+}
+
+// consistency is one reading of "do these nodes agree on a leader". It is a
+// type because the reading is three facts, and three values spread across a
+// poll and a predicate is how a timing loop grows back.
+type consistency struct {
+	Leader string
+	Term   uint64
+	// Reason is why this reading is not yet the agreement, empty when it is.
+	Reason string
+}
+
+// membership is one node's reading of the voting set, for the join await.
+type membership struct {
+	Voters  int
+	Version uint64
+	Role    string
+}
 
 // statusView mirrors the parts of the dashboard /api/status response the
 // test asserts on (kept intentionally minimal and decoupled).
@@ -312,55 +386,52 @@ func (c *cluster) status(id string) statusView {
 // the stale pre-kill state survivors report right after a leader dies.
 // Returns the agreed leader and its term.
 func (c *cluster) awaitConsistentLeader(ids []string, notLeader string, minTerm uint64, phase string) (string, uint64) {
-	deadline := time.Now().Add(convergeTimeout)
-	var lastErr string
-	for time.Now().Before(deadline) {
-		leader, term, err := c.checkConsistent(ids)
-		switch {
-		case err != "":
-			lastErr = err
-		case notLeader != "" && leader == notLeader:
-			lastErr = fmt.Sprintf("still reporting stale leader %s", notLeader)
-		case term <= minTerm && minTerm > 0:
-			lastErr = fmt.Sprintf("term %d has not advanced past %d", term, minTerm)
-		default:
-			return leader, term
-		}
-		time.Sleep(pollEvery)
-	}
-	c.dumpLogs()
-	c.t.Fatalf("%s: cluster did not converge within %s: %s", phase, convergeTimeout, lastErr)
-	return "", 0
+	agreed := patience.Await(c.reporting(),
+		fmt.Sprintf("%s: %v to agree on one authoritative leader", phase, ids),
+		convergeBudget,
+		func() consistency {
+			reading := c.checkConsistent(ids)
+			switch {
+			case reading.Reason != "":
+			case notLeader != "" && reading.Leader == notLeader:
+				reading.Reason = fmt.Sprintf("still reporting stale leader %s", notLeader)
+			case reading.Term <= minTerm && minTerm > 0:
+				reading.Reason = fmt.Sprintf("term %d has not advanced past %d", reading.Term, minTerm)
+			}
+			return reading
+		},
+		func(reading consistency) bool { return reading.Reason == "" })
+	return agreed.Leader, agreed.Term
 }
 
-func (c *cluster) checkConsistent(ids []string) (string, uint64, string) {
+func (c *cluster) checkConsistent(ids []string) consistency {
 	leader := ""
 	var term uint64
 	leaders := 0
 	for _, id := range ids {
 		sv, ok := c.tryStatus(id)
 		if !ok {
-			return "", 0, "node " + id + " unreachable"
+			return consistency{Reason: "node " + id + " unreachable"}
 		}
 		if sv.View.LeaderID == "" {
-			return "", 0, "node " + id + " sees no leader"
+			return consistency{Reason: "node " + id + " sees no leader"}
 		}
 		if leader == "" {
 			leader = sv.View.LeaderID
 			term = sv.View.Term
 		} else if sv.View.LeaderID != leader {
-			return "", 0, fmt.Sprintf("disagreement: %s sees %s, others see %s", id, sv.View.LeaderID, leader)
+			return consistency{Reason: fmt.Sprintf("disagreement: %s sees %s, others see %s", id, sv.View.LeaderID, leader)}
 		} else if sv.View.Term != term {
-			return "", 0, fmt.Sprintf("term disagreement on %s: %d vs %d", id, sv.View.Term, term)
+			return consistency{Reason: fmt.Sprintf("term disagreement on %s: %d vs %d", id, sv.View.Term, term)}
 		}
 		if sv.View.Role == "leader" {
 			leaders++
 			if sv.View.Self != sv.View.LeaderID {
-				return "", 0, "node " + id + " is leader but reports another leader id"
+				return consistency{Reason: "node " + id + " is leader but reports another leader id"}
 			}
 		}
 		if !sv.View.Authoritative {
-			return "", 0, "node " + id + " view not authoritative yet"
+			return consistency{Reason: "node " + id + " view not authoritative yet"}
 		}
 	}
 	wantLeaders := 0
@@ -370,54 +441,38 @@ func (c *cluster) checkConsistent(ids []string) (string, uint64, string) {
 		}
 	}
 	if leaders != wantLeaders {
-		return "", 0, fmt.Sprintf("expected %d leader role(s) among polled nodes, saw %d", wantLeaders, leaders)
+		return consistency{
+			Leader: leader,
+			Term:   term,
+			Reason: fmt.Sprintf("expected %d leader role(s) among polled nodes, saw %d", wantLeaders, leaders),
+		}
 	}
-	return leader, term, ""
+	return consistency{Leader: leader, Term: term}
 }
 
 // awaitPeerStatus polls until observer's view reports peer with status.
 func (c *cluster) awaitPeerStatus(observer, peer, status string) {
-	deadline := time.Now().Add(alertTimeout)
-	for time.Now().Before(deadline) {
-		if sv, ok := c.tryStatus(observer); ok {
-			for _, p := range sv.View.Peers {
-				if p.Node.ID == peer && p.Status == status {
-					return
-				}
-			}
-		}
-		time.Sleep(pollEvery)
-	}
-	c.dumpLogs()
-	c.t.Fatalf("%s never reported peer %s as %s within %s", observer, peer, status, alertTimeout)
+	patience.Await(c.reporting(),
+		fmt.Sprintf("%s to report peer %s as %s", observer, peer, status),
+		alertBudget,
+		func() map[string]peerFact { return c.peerFacts(observer) },
+		func(facts map[string]peerFact) bool { return facts[peer].Status == status })
 }
 
 // awaitAllAlive polls until observer's view reports every listed node alive.
 func (c *cluster) awaitAllAlive(observer string, ids []string) {
-	deadline := time.Now().Add(convergeTimeout)
-	for time.Now().Before(deadline) {
-		if sv, ok := c.tryStatus(observer); ok {
-			alive := map[string]bool{}
-			for _, p := range sv.View.Peers {
-				if p.Status == "alive" {
-					alive[p.Node.ID] = true
-				}
-			}
-			all := true
+	patience.Await(c.reporting(),
+		fmt.Sprintf("%s to report all of %v alive", observer, ids),
+		convergeBudget,
+		func() map[string]peerFact { return c.peerFacts(observer) },
+		func(facts map[string]peerFact) bool {
 			for _, id := range ids {
-				if !alive[id] {
-					all = false
-					break
+				if facts[id].Status != "alive" {
+					return false
 				}
 			}
-			if all {
-				return
-			}
-		}
-		time.Sleep(pollEvery)
-	}
-	c.dumpLogs()
-	c.t.Fatalf("%s never reported all of %v alive within %s", observer, ids, convergeTimeout)
+			return true
+		})
 }
 
 func (c *cluster) readAlerts(id string) []alertLine {
@@ -453,30 +508,33 @@ func (c *cluster) countAlerts(id, typ, peer string) int {
 
 // awaitAlert waits for node id's alert file to record an alert of typ for peer.
 func (c *cluster) awaitAlert(id, typ, peer string) {
-	deadline := time.Now().Add(alertTimeout)
-	for time.Now().Before(deadline) {
-		if c.countAlerts(id, typ, peer) >= 1 {
-			return
-		}
-		time.Sleep(pollEvery)
-	}
-	c.dumpLogs()
-	c.t.Fatalf("no %s alert for %s recorded by %s within %s", typ, peer, id, alertTimeout)
+	patience.Await(c.reporting(),
+		fmt.Sprintf("%s to record a %s alert for %s", id, typ, peer),
+		alertBudget,
+		func() int { return c.countAlerts(id, typ, peer) },
+		func(recorded int) bool { return recorded >= 1 })
 }
 
 // awaitAlertAnywhere waits for any node's alert file to record the alert.
 func (c *cluster) awaitAlertAnywhere(typ, peer string) {
-	deadline := time.Now().Add(alertTimeout)
-	for time.Now().Before(deadline) {
-		for id := range c.nodes {
-			if c.countAlerts(id, typ, peer) >= 1 {
-				return
+	patience.Await(c.reporting(),
+		fmt.Sprintf("any node to record a %s alert for %s", typ, peer),
+		alertBudget,
+		func() map[string]int {
+			recorded := map[string]int{}
+			for id := range c.nodes {
+				recorded[id] = c.countAlerts(id, typ, peer)
 			}
-		}
-		time.Sleep(pollEvery)
-	}
-	c.dumpLogs()
-	c.t.Fatalf("no %s alert for %s recorded by any node within %s", typ, peer, alertTimeout)
+			return recorded
+		},
+		func(recorded map[string]int) bool {
+			for _, count := range recorded {
+				if count >= 1 {
+					return true
+				}
+			}
+			return false
+		})
 }
 
 // dumpLogs tails each node's log into the test output to make failures
@@ -599,48 +657,40 @@ func TestClusterDiscoveryJoin(t *testing.T) {
 	writeRoster(t, roster, addrs)
 
 	// Observer phase: some seed node reports n4 as observer.
-	deadline := time.Now().Add(convergeTimeout)
-	sawObserver := false
-	for time.Now().Before(deadline) && !sawObserver {
-		if sv, ok := c.tryStatus(leader1); ok {
-			for _, p := range sv.View.Peers {
-				if p.Node.ID == "n4" && p.Member == "observer" {
-					sawObserver = true
-				}
-			}
-		}
-		time.Sleep(pollEvery)
-	}
-	if !sawObserver {
-		c.dumpLogs()
-		t.Fatalf("n4 never appeared as observer on the leader's view")
-	}
+	patience.Await(c.reporting(), "n4 to appear as an observer on the leader's view", convergeBudget,
+		func() map[string]peerFact { return c.peerFacts(leader1) },
+		func(facts map[string]peerFact) bool { return facts["n4"].Member == "observer" })
 
 	// Admission: every node (including n4) converges on 4 voters.
 	all := []string{"n1", "n2", "n3", "n4"}
-	deadline = time.Now().Add(convergeTimeout)
-	for {
-		if time.Now().After(deadline) {
-			c.dumpLogs()
-			t.Fatalf("cluster never converged on 4-voter membership")
-		}
-		okAll := true
-		for _, id := range all {
-			sv, ok := c.tryStatus(id)
-			if !ok || len(sv.View.Membership.Voters) != 4 || sv.View.Membership.Version < 2 {
-				okAll = false
-				break
+	patience.Await(c.reporting(), "every node to converge on the 4-voter membership", convergeBudget,
+		func() map[string]membership {
+			readings := map[string]membership{}
+			for _, id := range all {
+				sv, ok := c.tryStatus(id)
+				if !ok {
+					continue
+				}
+				readings[id] = membership{
+					Voters:  len(sv.View.Membership.Voters),
+					Version: sv.View.Membership.Version,
+					Role:    sv.View.Role,
+				}
 			}
-			if id == "n4" && sv.View.Role != "follower" && sv.View.Role != "leader" {
-				okAll = false
-				break
+			return readings
+		},
+		func(readings map[string]membership) bool {
+			for _, id := range all {
+				reading, reachable := readings[id]
+				if !reachable || reading.Voters != 4 || reading.Version < 2 {
+					return false
+				}
+				if id == "n4" && reading.Role != "follower" && reading.Role != "leader" {
+					return false
+				}
 			}
-		}
-		if okAll {
-			break
-		}
-		time.Sleep(pollEvery)
-	}
+			return true
+		})
 
 	// Elections still work at the new quorum (3 of 4): kill the leader.
 	leader2, term2 := c.awaitConsistentLeader(all, "", 0, "post-join convergence")

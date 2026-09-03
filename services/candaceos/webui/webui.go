@@ -4,7 +4,7 @@
 // The package owns presentation only: the embedded templates and assets, the
 // page and asset handlers, and the read-only snapshot endpoint. Agent
 // execution, approvals, event publication, and fleet state belong to the
-// containing core, which supplies them through SnapshotProvider — the single
+// containing core, which supplies them through ISnapshotProvider — the single
 // input this package takes — and which mounts its own action endpoints and
 // event stream alongside this handler.
 //
@@ -106,16 +106,16 @@ var assetsFS embed.FS
 // source of immutable display state.
 var ErrNilSnapshotProvider = errors.New("webui: nil snapshot provider")
 
-// SnapshotProvider supplies one immutable, internally consistent view of the
+// ISnapshotProvider supplies one immutable, internally consistent view of the
 // core. Implementations should honor cancellation from the request context.
-type SnapshotProvider interface {
+type ISnapshotProvider interface {
 	Snapshot(ctx context.Context) (*candaceosv1.WebUISnapshot, error)
 }
 
-// SnapshotFunc adapts a function to SnapshotProvider.
+// SnapshotFunc adapts a function to ISnapshotProvider.
 type SnapshotFunc func(ctx context.Context) (*candaceosv1.WebUISnapshot, error)
 
-// Snapshot implements SnapshotProvider.
+// Snapshot implements ISnapshotProvider.
 func (f SnapshotFunc) Snapshot(ctx context.Context) (*candaceosv1.WebUISnapshot, error) {
 	return f(ctx)
 }
@@ -123,7 +123,7 @@ func (f SnapshotFunc) Snapshot(ctx context.Context) (*candaceosv1.WebUISnapshot,
 // Handler serves the embedded UI. It is safe for concurrent use after New
 // returns.
 type Handler struct {
-	provider  SnapshotProvider
+	provider  ISnapshotProvider
 	template  *template.Template
 	assets    http.Handler
 	brand     Brand
@@ -240,7 +240,7 @@ var enums = browserEnums{
 // mount its POST action endpoints and GET /api/events alongside this handler.
 //
 // Without options the handler serves the stock CandaceOS identity.
-func New(provider SnapshotProvider, functionalOptions ...Option) (*Handler, error) {
+func New(provider ISnapshotProvider, functionalOptions ...Option) (*Handler, error) {
 	if provider == nil {
 		return nil, ErrNilSnapshotProvider
 	}

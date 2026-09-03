@@ -42,7 +42,7 @@ import (
 // access to the state for as long as it runs. Returning true retires the
 // goroutine after this command completes; returning false leaves the mailbox
 // accepting work.
-type Command[State any] func(*State) bool
+type Command[State any] func(state *State) bool
 
 // Mailbox is the submission side of one serialized state owner. The zero value
 // is not usable; construct one with [New].

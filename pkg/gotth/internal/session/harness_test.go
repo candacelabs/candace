@@ -56,16 +56,16 @@ type testApp struct {
 	events map[string]bool
 
 	initState   any
-	initEffects []session.Effect
+	initEffects []session.IEffect
 	initErr     error
 
 	// pointerState makes StateComparable answer the way live's adapter answers
 	// for a reference state type.
 	pointerState bool
 
-	reduce    func(state any, ev session.Event) (any, []session.Effect)
+	reduce    func(state any, ev session.Event) (any, []session.IEffect)
 	authorize func(ctx context.Context, p session.Peer, ev session.Event) error
-	execute   func(ctx context.Context, p session.Peer, e session.Effect, emit session.Emit) error
+	execute   func(ctx context.Context, p session.Peer, e session.IEffect, emit session.Emit) error
 
 	mu          sync.Mutex
 	authorized  []string
@@ -91,7 +91,7 @@ func newTestApp(frags ...render.Fragment) *testApp {
 		reg:       reg,
 		events:    map[string]bool{"counter.increment": true, "counter.relabel": true, "counter.noop": true},
 		initState: counterState{Label: "hits"},
-		reduce: func(state any, ev session.Event) (any, []session.Effect) {
+		reduce: func(state any, ev session.Event) (any, []session.IEffect) {
 			s := state.(counterState)
 			switch ev.Name {
 			case "counter.increment":
@@ -115,7 +115,7 @@ func counterFragment() render.Fragment {
 	}
 }
 
-func (t *testApp) Init(context.Context, session.Peer) (any, []session.Effect, error) {
+func (t *testApp) Init(ctx context.Context, peer session.Peer) (any, []session.IEffect, error) {
 	return t.initState, t.initEffects, t.initErr
 }
 
@@ -129,7 +129,7 @@ func (t *testApp) Authorize(ctx context.Context, p session.Peer, ev session.Even
 	return nil
 }
 
-func (t *testApp) Reduce(state any, ev session.Event) (any, []session.Effect) {
+func (t *testApp) Reduce(state any, ev session.Event) (any, []session.IEffect) {
 	t.mu.Lock()
 	t.reduced = append(t.reduced, ev.Name)
 	t.mu.Unlock()
@@ -139,7 +139,7 @@ func (t *testApp) Reduce(state any, ev session.Event) (any, []session.Effect) {
 	return t.reduce(state, ev)
 }
 
-func (t *testApp) Execute(ctx context.Context, p session.Peer, e session.Effect, scheduledBy uint64, emit session.Emit) error {
+func (t *testApp) Execute(ctx context.Context, p session.Peer, e session.IEffect, scheduledBy uint64, emit session.Emit) error {
 	t.mu.Lock()
 	t.executeSeen = append(t.executeSeen, e.EffectSource())
 	t.executeScheduledBy = append(t.executeScheduledBy, scheduledBy)
@@ -296,7 +296,7 @@ type records struct {
 	all []map[string]any
 }
 
-func (r *records) Enabled(context.Context, slog.Level) bool { return true }
+func (r *records) Enabled(ctx context.Context, level slog.Level) bool { return true }
 
 func (r *records) Handle(_ context.Context, rec slog.Record) error {
 	m := map[string]any{"msg": rec.Message, "level": rec.Level.String()}
@@ -316,14 +316,14 @@ func (r *records) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &prefixed{parent: r, attrs: attrs}
 }
 
-func (r *records) WithGroup(string) slog.Handler { return r }
+func (r *records) WithGroup(name string) slog.Handler { return r }
 
 type prefixed struct {
 	parent *records
 	attrs  []slog.Attr
 }
 
-func (p *prefixed) Enabled(context.Context, slog.Level) bool { return true }
+func (p *prefixed) Enabled(ctx context.Context, level slog.Level) bool { return true }
 
 func (p *prefixed) Handle(ctx context.Context, rec slog.Record) error {
 	rec.AddAttrs(p.attrs...)
@@ -334,7 +334,7 @@ func (p *prefixed) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &prefixed{parent: p.parent, attrs: append(append([]slog.Attr(nil), p.attrs...), attrs...)}
 }
 
-func (p *prefixed) WithGroup(string) slog.Handler { return p }
+func (p *prefixed) WithGroup(name string) slog.Handler { return p }
 
 // provenance returns the transition rows, in emission order.
 func (r *records) provenance() []map[string]any {

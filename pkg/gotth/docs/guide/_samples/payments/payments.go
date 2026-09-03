@@ -116,14 +116,14 @@ func (s State) charge() ChargeEffect {
 // having, and it is NOT the mechanism — it is in-process state, and a customer
 // who reconnects gets a fresh session whose Init rebuilds this struct from the
 // order. The key is what survives that; the guard is what saves a round trip.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventPay:
 		if s.Status != StatusOpen {
 			return s, nil
 		}
 		s.Status = StatusCharging
-		return s, []live.Effect{s.charge()}
+		return s, []live.IEffect{s.charge()}
 
 	case EventCharged:
 		s.Status = StatusCharged
@@ -144,12 +144,12 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 // customer press Pay again — same key, same answer. Both branches are only
 // honest because of IdempotencyKey; without it this reducer would be a
 // double-charge generator with good manners.
-func failedCharge(s State, ev live.Event) (State, []live.Effect) {
+func failedCharge(s State, ev live.Event) (State, []live.IEffect) {
 	if ev.Fields.Get(live.EffectFailedSourceField) != SourceCharge {
 		return s, nil
 	}
 	if retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField)); retryable {
-		return s, []live.Effect{s.charge()}
+		return s, []live.IEffect{s.charge()}
 	}
 	s.Status = StatusOpen
 	return s, nil
@@ -169,7 +169,7 @@ type Gateway struct {
 // is entitled to make it because it passed a key it derived from the order.
 // Without the key the honest classification would be terminal, and the customer
 // would be looking at a checkout that had already taken their money.
-func (g *Gateway) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (g *Gateway) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	switch e := effect.(type) {
 	case ChargeEffect:
 		charge, err := g.Provider.Charge(ctx, ChargeRequest{

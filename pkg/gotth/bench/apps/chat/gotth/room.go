@@ -421,7 +421,7 @@ func (r *Rooms) allRosterUpdatesLocked() []update {
 // The effect values arrive exactly as the reducer declared them; nothing here
 // runs inside a reducer, and nothing here can reach a session's state except by
 // emitting an event the reducer folds in.
-func (r *Rooms) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (r *Rooms) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	member, ok := sess.Identity().(Member)
 	if !ok {
 		return fmt.Errorf("chat-gotth: the session identity is %T, not a Member", sess.Identity())

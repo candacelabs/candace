@@ -164,6 +164,11 @@ func TestClusterWatchLeaderChange(t *testing.T) {
 				break
 			}
 			if curStream == nil {
+				// Pacing, not an await: this loop is already blocked on the
+				// stream, and the sleep spaces out reconnection attempts
+				// against a cluster that is mid-election. Nothing is being
+				// polled for a condition here, so there is nothing for
+				// patience.Await to own.
 				time.Sleep(pollEvery)
 			}
 			continue

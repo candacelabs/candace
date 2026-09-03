@@ -573,17 +573,17 @@ app/warden/                 # the runnable composition
 services/warden/            # the reusable service packages
 ├── warden/                 # FROZEN contract: types, wire protocol, interfaces
 ├── config/                 # YAML + env configuration loading
-├── discovery/              # PeerDiscoverer sources: static, tailscale, file
+├── discovery/              # IPeerDiscoverer sources: static, tailscale, file
 ├── election/               # election state machine + liveness + membership
 ├── wireconv/               # domain <-> candacenet.warden.v1 conversions
 ├── grpcserver/             # WardenService server: unary RPCs + WatchCluster
 ├── grpcmux/                # single-port cmux: gRPC (h2c) + the HTTP engine
-├── grpctransport/          # gRPC client implementing warden.Transport
+├── grpctransport/          # gRPC client implementing warden.ITransport
 ├── httpserver/             # the gin engine the HTTP surface is served from
 ├── store/                  # durable PersistentState (file)
 ├── testclock/              # deterministic fake clock for tests
 ├── watchdog/               # leader-only incident engine (dedup + cooldown)
-├── notify/                 # Notifier impls: SMTP, log, file
+├── notify/                 # INotifier impls: SMTP, log, file
 ├── dashboard/              # SSR dashboard (HTMX, embedded assets) + JSON API
 ├── metrics/                # Prometheus collectors + /metrics
 ├── proto/warden/v1/        # protobuf schema + committed Go/gRPC bindings

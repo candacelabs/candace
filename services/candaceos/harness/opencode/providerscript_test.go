@@ -61,7 +61,7 @@ type providerScript struct {
 
 	violations []string
 
-	receive          func(json.RawMessage)
+	receive          func(event json.RawMessage)
 	streamConnected  chan struct{}
 	streamConnectOne sync.Once
 }
@@ -98,7 +98,7 @@ func scriptedProvider(script *providerScript) *MockProvider {
 
 // ---- provider implementation --------------------------------------------
 
-func (script *providerScript) health(context.Context) (bool, string, error) {
+func (script *providerScript) health(ctx context.Context) (bool, string, error) {
 	script.mu.Lock()
 	defer script.mu.Unlock()
 	return true, script.version, nil
@@ -202,7 +202,7 @@ func (script *providerScript) abort(_ context.Context, _ string) error {
 
 // streamEvents holds the subscription open until the session ends, recording
 // the callback so a spec can deliver an invalidation through it.
-func (script *providerScript) streamEvents(ctx context.Context, receive func(json.RawMessage)) error {
+func (script *providerScript) streamEvents(ctx context.Context, receive func(event json.RawMessage)) error {
 	script.mu.Lock()
 	script.receive = receive
 	script.mu.Unlock()

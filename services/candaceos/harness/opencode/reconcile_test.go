@@ -14,7 +14,7 @@ import (
 // the host refuses, and what the runtime must do once the host recovers.
 type projectionRetryCase struct {
 	// matches selects the event class the host refuses.
-	matches func(*candaceosv1.HarnessEvent) bool
+	matches func(event *candaceosv1.HarnessEvent) bool
 	// arrange advances the provider transcript so the class is projected.
 	arrange func(script *providerScript, parentMessageID string)
 	// expectsIdle reports whether the turn concludes once the class lands.

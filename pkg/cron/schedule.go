@@ -453,7 +453,7 @@ func (schedule Schedule) Next(after time.Time) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("schedule has no occurrence within five years")
 }
 
-func (schedule Schedule) matcher() (func(time.Time) bool, error) {
+func (schedule Schedule) matcher() (func(value time.Time) bool, error) {
 	rule := schedule.rule
 	switch rule.kind {
 	case ruleDaily:
@@ -469,7 +469,7 @@ func (schedule Schedule) matcher() (func(time.Time) bool, error) {
 	}
 }
 
-func atMatcher(at TimeOfDay) func(time.Time) bool {
+func atMatcher(at TimeOfDay) func(value time.Time) bool {
 	return func(value time.Time) bool { return matchesAt(value, at) }
 }
 func matchesAt(value time.Time, at TimeOfDay) bool {

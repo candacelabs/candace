@@ -15,7 +15,7 @@ import (
 
 // newUnstartedManager builds a Manager without calling Run, so its loop is not
 // consuming events. Useful for exercising the RPC-handler cancellation paths.
-func newUnstartedManager(t harnessT) *Manager {
+func newUnstartedManager(t iHarnessT) *Manager {
 	t.Helper()
 	clk := testclock.New(time.Unix(0, 0))
 	cfg := Config{

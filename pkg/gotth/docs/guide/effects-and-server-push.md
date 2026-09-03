@@ -17,7 +17,7 @@ work — and the library performs them at the actor boundary, on a goroutine it
 owns and waits for at shutdown.
 
 ```text
-Reduce(state, ev) → (state, []Effect)        pure, on the session's goroutine
+Reduce(state, ev) → (state, []IEffect)        pure, on the session's goroutine
         │
         ▼  actor boundary
 Config.Execute(ctx, session, effect, emit)   I/O, on a goroutine the library owns
@@ -25,7 +25,7 @@ Config.Execute(ctx, session, effect, emit)   I/O, on a goroutine the library own
         └── emit(Event) ─────────────────▶  back into the same session's mailbox
 ```
 
-`live.Effect` has one method:
+`live.IEffect` has one method:
 
 ```text
 EffectSource() string
@@ -62,10 +62,10 @@ func (WatchEffect) EffectSource() string { return SourceWatch }
 
 <!-- sample: effects/effects.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventInc:
-		return s, []live.Effect{ApplyEffect{Delta: 1, Cause: ev.ID}}
+		return s, []live.IEffect{ApplyEffect{Delta: 1, Cause: ev.ID}}
 
 	case EventSync:
 		return applySync(s, ev), nil
@@ -86,7 +86,7 @@ the result the same way every other session does. That is what
 ## `Config.Execute`
 
 ```text
-Execute func(context.Context, Session, Effect, Emitter) error
+Execute func(ctx context.Context, session Session, effect IEffect, emit Emitter) error
 ```
 
 Required as soon as any code path returns an effect; `live.New` refuses a
@@ -95,7 +95,7 @@ effect types.
 
 <!-- sample: effects/effects.go -->
 ```go
-func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (s *Store) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	switch e := effect.(type) {
 	case ApplyEffect:
 		s.apply(e.Delta)
@@ -121,7 +121,7 @@ effect selects on.
 
 ## The `Emitter`: pushing an event into a session
 
-`live.Emitter` is `func(Event) error`. It injects an event into the session that
+`live.Emitter` is `func(event Event) error`. It injects an event into the session that
 spawned the effect, and it is safe to call from the effect's goroutine. It is
 how a subscription delivers a value the browser never asked for.
 
@@ -275,10 +275,10 @@ mailbox nor a session mid-shutdown is a property of the subscription.
 
 <!-- sample: effects/effects.go -->
 ```go
-func retryWatch(ev live.Event) []live.Effect {
+func retryWatch(ev live.Event) []live.IEffect {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceWatch {
-		return []live.Effect{WatchEffect{}}
+		return []live.IEffect{WatchEffect{}}
 	}
 	return nil
 }
@@ -400,7 +400,7 @@ func (s State) charge() ChargeEffect {
 			return s, nil
 		}
 		s.Status = StatusCharging
-		return s, []live.Effect{s.charge()}
+		return s, []live.IEffect{s.charge()}
 ```
 
 The `Status` guard is **not** the mechanism. It is worth having — within one
@@ -453,12 +453,12 @@ The same key is what makes the failure path safe to write at all:
 
 <!-- sample: payments/payments.go -->
 ```go
-func failedCharge(s State, ev live.Event) (State, []live.Effect) {
+func failedCharge(s State, ev live.Event) (State, []live.IEffect) {
 	if ev.Fields.Get(live.EffectFailedSourceField) != SourceCharge {
 		return s, nil
 	}
 	if retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField)); retryable {
-		return s, []live.Effect{s.charge()}
+		return s, []live.IEffect{s.charge()}
 	}
 	s.Status = StatusOpen
 	return s, nil

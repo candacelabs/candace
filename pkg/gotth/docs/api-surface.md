@@ -40,6 +40,28 @@ because the number being checked was the total. That is the argument for this
 table holding only what a program reads, and for the derived totals living in
 the program's output. Surface changes are recorded in §10.*
 
+**Names.** Since 2026-09-02, `tools/apisurface` also compares the **set of
+exported names** in each package against the symbol rows of §1–§6, and CI fails
+on a difference. This is not a second baseline and adds no field here: the rows
+already name every symbol, and the tool reads what the document states rather
+than storing anything derived. It exists because a count is a projection and a
+projection is exactly a gate's reach — the P3 style retrofit renamed every
+interface in this ledger and then named every parameter in it, and both times
+this tool printed *the surface matches the ledger* while the rows were stale,
+because neither edit moves a number. `live` is compared in both directions, so
+a row left at a symbol's old spelling now fails; `live/livetest` is a ceiling in
+names as in counts, so a ledgered symbol nobody has implemented is reported and
+does not fail. A rename therefore belongs in the same commit as its rows, with
+a §10 entry saying the counts did not move.
+
+*One thing that comparison surfaced and did not change: §6 lists **39** symbols
+while the `live/livetest` ceiling above says **37**. The two extra rows are
+`Audit` and `Report`, which §6's own closing note says are not implemented — so
+the ceiling is currently set at what is built rather than at what is ledgered,
+and implementing either one would exceed it. Reconciling that is a change to an
+enforced baseline and belongs to whoever rules on this document; the tool
+prints the disagreement on every run rather than picking a side.*
+
 ## 0.1 Two exported packages — ruled on, and capped at two
 
 This surface has **two** exported packages, `live` and `live/livetest`.
@@ -76,7 +98,7 @@ and was wrong twice over (REV-DEL finding 8, ruled at
 | `MustNew[S](Config[S]) *App[S]` | func | `New` for a caller with nowhere to put the error: returns the application, or **panics with the `*ConfigError` `New` would have returned**. For `main` and package-level initialisation, where a `Config` is a literal in the source and every failure is a startup mistake in it. `template.Must`'s shape and naming. | stable | **FR-53** |
 | `App[S]` | struct | A validated live application. Safe for concurrent use. | stable | FR-33 |
 | `(*App[S]).Handler() http.Handler` | method | Returns the `http.Handler` that serves the live connection and the client runtime. Mountable under any router. **The live route returns at the upgrade** — the session runs on a goroutine the library owns, so wrapping middleware completes at the handshake and the session runs under `context.WithoutCancel` of the request context (`5a2ca417`, C-38). | stable | FR-33 |
-| `(*App[S]).PageHandler(func(S) templ.Component) http.Handler` | method | Serves the first paint: on every request it loads state through `Config.Init` — with the identity `Config.Authenticate` derives from that request and the zero session `ID` — and renders the given component function from it. **It cannot be given a state value, only the function that renders one**, which is what makes QA-1's F-4 unwritable: `templ.Handler(Page(State{}))` freezes the zero state at registration and contradicts every `Init` that loads anything. `Init`'s effects are discarded on a page render. 401 when `Authenticate` refuses (the status that visitor's upgrade would get), 500 when the load or the render fails, buffered so a half-written document is never a 200. | experimental | **FR-53**, QA-1 F-4, FR-33 |
+| `(*App[S]).PageHandler(page func(state S) templ.Component) http.Handler` | method | Serves the first paint: on every request it loads state through `Config.Init` — with the identity `Config.Authenticate` derives from that request and the zero session `ID` — and renders the given component function from it. **It cannot be given a state value, only the function that renders one**, which is what makes QA-1's F-4 unwritable: `templ.Handler(Page(State{}))` freezes the zero state at registration and contradicts every `Init` that loads anything. `Init`'s effects are discarded on a page render. 401 when `Authenticate` refuses (the status that visitor's upgrade would get), 500 when the load or the render fails, buffered so a half-written document is never a 200. | experimental | **FR-53**, QA-1 F-4, FR-33 |
 | `(*App[S]).Mux(mountPath string, page http.Handler) http.Handler` | method | The three registrations of a single-application server in one call: the upgrade at exactly `mountPath`, the runtime and dev routes on the subtree under it, and `page` on the catch-all. Makes the two silent mounting failures `docs/quickstart.md` §2 measures — a missing subtree registration, and the `http.StripPrefix` repair that turns the upgrade into an unfollowable 307 — inexpressible. **Panics** on a nil page, on a `mountPath` `Script` would reject, and on `"/"`, on the precedent of `http.ServeMux.Handle`, which panics for the same class. | experimental | **FR-53**, FR-33 |
 | `(*App[S]).Close(context.Context) error` | method | Drains **every** session, closing each with `GOING_AWAY`, and waits for in-flight effects up to the context deadline. A connection admitted but not yet registered when `Close` begins is refused and closed rather than started, so `Close` cannot return `nil` over a session it did not touch (`ed9f73b6`, C-34). Not reusable afterwards. | stable | FR-22, checklist §6.8 |
 | `ConfigError` | struct | Reports an invalid `Config`, naming the offending field and what to set it to. | stable | FR-58 |
@@ -86,16 +108,16 @@ and was wrong twice over (REV-DEL finding 8, ruled at
 
 | Field | Type | Summary | Status |
 |---|---|---|---|
-| `Init` | `func(context.Context, Session) (S, []Effect, error)` | Mount hook: produces the session's initial state and any startup effects (e.g. a pubsub subscription). Runs once per session, before the first `Snapshot`, **and once per request through `(*App).PageHandler`**. **Optional since 2026-08-05**: nil means the zero value of `S`, no effects, no error — the only total, side-effect-free reading of an unwritten mount hook, and `Teardown`'s long-standing shape at the other end of the same session. It is the one field of the eight `New` fills in; the rest cannot be guessed. | stable |
+| `Init` | `func(ctx context.Context, session Session) (S, []IEffect, error)` | Mount hook: produces the session's initial state and any startup effects (e.g. a pubsub subscription). Runs once per session, before the first `Snapshot`, **and once per request through `(*App).PageHandler`**. **Optional since 2026-08-05**: nil means the zero value of `S`, no effects, no error — the only total, side-effect-free reading of an unwritten mount hook, and `Teardown`'s long-standing shape at the other end of the same session. It is the one field of the eight `New` fills in; the rest cannot be guessed. | stable |
 | `Reduce` | `Reducer[S]` | The pure state transition. Required. | stable |
 | `Fragments` | `[]Fragment[S]` | The server-owned live regions. Required, non-empty. | stable |
 | `Events` | `[]string` | The event names this application accepts. Required. An unregistered name is refused with `UNKNOWN_EVENT` and counted, never dispatched and never ignored. | stable |
-| `Execute` | `func(context.Context, Session, Effect, Emitter) error` | Performs one effect at the actor boundary, for the session whose transition returned it. Required if any code path returns an `Effect`. | stable |
-| `Teardown` | `func(context.Context, Session, S)` | Runs after the session actor exits, with final state, for unsubscribing. Optional. | stable |
+| `Execute` | `func(ctx context.Context, session Session, effect IEffect, emit Emitter) error` | Performs one effect at the actor boundary, for the session whose transition returned it. Required if any code path returns an `IEffect`. | stable |
+| `Teardown` | `func(ctx context.Context, session Session, state S)` | Runs after the session actor exits, with final state, for unsubscribing. Optional. | stable |
 | `Origins` | `[]string` | Allowed `Origin` values. Required unless it contains `AnyOrigin`. | stable |
-| `Authenticate` | `func(*http.Request) (Identity, error)` | Derives the session identity from the upgrade request. Required; use `Anonymous` to opt out. | stable |
-| `Authorize` | `func(context.Context, Session, Event) error` | Runs before the reducer for every event. Required; use `AllowAll` to opt out. | stable |
-| `CSRF` | `func(*http.Request) error` | Validates a token bound to the authenticated application session. Required; use `NoCSRFCheck` to opt out. | stable |
+| `Authenticate` | `func(request *http.Request) (IIdentity, error)` | Derives the session identity from the upgrade request. Required; use `Anonymous` to opt out. | stable |
+| `Authorize` | `func(ctx context.Context, session Session, event Event) error` | Runs before the reducer for every event. Required; use `AllowAll` to opt out. | stable |
+| `CSRF` | `func(request *http.Request) error` | Validates a token bound to the authenticated application session. Required; use `NoCSRFCheck` to opt out. | stable |
 | `Limits` | `Limits` | Resource bounds. Zero fields take documented defaults. | stable |
 | `Logger` | `*slog.Logger` | Structured log sink. Nil disables library logging **and the provenance log with it**, which makes FR-41's reverse lookup unavailable (instrumentation §4A.3). | stable *(L9-1 D2 settled)* |
 | `Metrics` | `metric.MeterProvider` (from `go.opentelemetry.io/otel/metric`) | Enables the full metric set with one field (FR-38). | stable *(L9-1 D1: Option A settled)* |
@@ -123,7 +145,7 @@ trigger has a visible blast radius.
 
 | Symbol | Kind | Summary | Status | Req'd by |
 |---|---|---|---|---|
-| `Reducer[S]` | func type | `func(state S, ev Event) (S, []Effect)` — the pure state transition. Must not perform I/O, read clocks or randomness, mutate its input, or start goroutines. | stable | FR-14 |
+| `Reducer[S]` | func type | `func(state S, ev Event) (S, []IEffect)` — the pure state transition. Must not perform I/O, read clocks or randomness, mutate its input, or start goroutines. | stable | FR-14 |
 | `Fragment[S]` | struct | Declares one server-owned live region and how to render it. | stable | FR-18, FR-21 |
 | `Event` | struct | One inbound interaction, already past the refinement boundary. | stable | FR-39 |
 | `Fields` | struct | The form values carried by an event. Read-only; holds no alias into wire data. | stable | FR-55 |
@@ -132,8 +154,8 @@ trigger has a visible blast radius.
 | `(Fields).Lookup(string) (string, bool)` | method | Returns the value and whether the key was present — the distinction matters for unchecked checkboxes. | stable | FR-55 |
 | `(Fields).Len() int` | method | Number of fields. | stable | FR-55 |
 | `(Fields).All(func(k, v string) bool)` | method | Iterates fields in wire order. | stable | FR-55 |
-| `Effect` | interface | A value describing I/O for the actor to perform. One method, `EffectSource() string`, which names the effect for provenance and metrics. Implementations must be plain values: no channels, connections, or other live handles. | stable | FR-16, FR-42 |
-| `Emitter` | func type | `func(Event) error` — injects an event into the session that spawned the effect. Passed to `Config.Execute`. | experimental | FR-42, FR-61 |
+| `IEffect` | interface | A value describing I/O for the actor to perform. One method, `EffectSource() string`, which names the effect for provenance and metrics. Implementations must be plain values: no channels, connections, or other live handles. | stable | FR-16, FR-42 |
+| `Emitter` | func type | `func(event Event) error` — injects an event into the session that spawned the effect. Passed to `Config.Execute`. | experimental | FR-42, FR-61 |
 | `EffectFailedEvent` | const `string` | The name of the event a failed or panicking effect becomes. Not in `Config.Events` and must not be: the library mints it. | stable | FR-16, FR-58 |
 | `EffectFailedSourceField` | const `string` | Field key: the `EffectSource` of the effect that failed. | stable | FR-16 |
 | `EffectFailedErrorField` | const `string` | Field key: the error's message, or the panic value. | stable | FR-16, FR-58 |
@@ -175,7 +197,7 @@ application can create and cannot inspect. The measured cost of the cut is in
 | Struct | Field | Type | Summary |
 |---|---|---|---|
 | `Fragment[S]` | `ID` | `string` | Stable identity matching `^[A-Za-z0-9_:.-]{1,64}$`; must be unique per app (FR-21). |
-| | `Render` | `func(S) templ.Component` | Pure render of this region from state (FR-18). |
+| | `Render` | `func(state S) templ.Component` | Pure render of this region from state (FR-18). |
 | | `Dirty` | `func(prev, next S) bool` | Optional; nil means "re-render on every transition". Over-declaring is safe (identical renders are suppressed); under-declaring is a bug `livetest.AssertDirtyComplete` catches. |
 | `Event` | `Name` | `string` | The registered event name. |
 | | `FragmentID` | `string` | The fragment whose markup raised it. |
@@ -196,10 +218,10 @@ application can create and cannot inspect. The measured cost of the cut is in
 |---|---|---|---|---|
 | `Session` | struct | Identifies one live connection. Passed to `Init`, `Authorize`, and `Teardown`. | stable | FR-46 |
 | `(Session).ID() ID` | method | The session's 16-byte identifier. | stable | FR-41 |
-| `(Session).Identity() Identity` | method | The identity bound at handshake, immutable for the connection's life. | stable | FR-46 |
+| `(Session).Identity() IIdentity` | method | The identity bound at handshake, immutable for the connection's life. | stable | FR-46 |
 | `ID` | `[16]byte` | The session identifier carried in every frame. | stable | FR-40, FR-41 |
 | `(ID).String() string` | method | Lower-case hex. | stable | FR-58 |
-| `Identity` | interface | The application's identity for a session. One method, `Subject() string`, returning a stable non-secret identifier used for logging and per-identity session limits. | stable | FR-46, FR-51 |
+| `IIdentity` | interface | The application's identity for a session. One method, `Subject() string`, returning a stable non-secret identifier used for logging and per-identity session limits. | stable | FR-46, FR-51 |
 
 **Deliberately absent: `Session.Request()`.** Retaining the upgrade request for a
 connection's lifetime is a footgun (and a memory line item against RFC §6).
@@ -217,9 +239,9 @@ if the corresponding `Config` field is unset and no escape hatch is used
 | Symbol | Kind | Summary | Status | Req'd by |
 |---|---|---|---|---|
 | `AnyOrigin` | const `string` | Sentinel for `Config.Origins` disabling origin validation. Never use outside local development. | stable | FR-45 |
-| `Anonymous` | func | `func(*http.Request) (Identity, error)` — an `Authenticate` implementation binding every session to an anonymous identity. | stable | FR-46 |
-| `AllowAll` | func | `func(context.Context, Session, Event) error` — an `Authorize` implementation permitting every event. | stable | FR-47 |
-| `NoCSRFCheck` | func | `func(*http.Request) error` — a `CSRF` implementation performing no check. | stable | FR-48 |
+| `Anonymous` | func | `func(request *http.Request) (IIdentity, error)` — an `Authenticate` implementation binding every session to an anonymous identity. | stable | FR-46 |
+| `AllowAll` | func | `func(ctx context.Context, session Session, event Event) error` — an `Authorize` implementation permitting every event. | stable | FR-47 |
+| `NoCSRFCheck` | func | `func(request *http.Request) error` — a `CSRF` implementation performing no check. | stable | FR-48 |
 
 ---
 
@@ -322,7 +344,7 @@ emits none of the three and sets no mark, so hand-placing `Script` on a page
 that has declared itself not live still works and has no inspector to be ordered
 against. Both are pinned by specs in `live/document_test.go`.
 
-The route from `PageHandler(page func(S) templ.Component)` back to the `App` is
+The route from `PageHandler(page func(state S) templ.Component)` back to the `App` is
 the caller's and costs nothing: `docs/quickstart.md` holds the application in a
 package-level `var` (the same counted lines it spent on `app :=` inside `main`),
 and the three examples pass it into the templ component as a parameter, which
@@ -370,7 +392,7 @@ all. 50 → **51** identifiers, 50 → **51** fields.
 | `(*Client).Resync(lastApplied uint64, reason int32)` | method | Requests a snapshot, claiming to hold everything through `lastApplied`. | experimental | FR-36 |
 | `(*Client).WriteRaw(payload []byte) error` | method | Sends bytes the client did not build, and returns the error rather than failing — for specs about what the server does with a frame no correct client would send. | experimental | FR-49, protocol.md §9 |
 | `(*Client).WaitFor(fragmentID string, pred func(html string) bool) *Frame` | method | Blocks until a patch makes the fragment's markup satisfy the predicate. | experimental | FR-63 |
-| `(*Client).Await(what string, timeout time.Duration, pred func(*Frame) bool) *Frame` | method | Takes frames until one satisfies `pred`, failing with what it saw instead. `what` is the failure message's subject and is required. | experimental | FR-63, FR-62 |
+| `(*Client).Await(what string, timeout time.Duration, pred func(frame *Frame) bool) *Frame` | method | Takes frames until one satisfies `pred`, failing with what it saw instead. `what` is the failure message's subject and is required. | experimental | FR-63, FR-62 |
 | `(*Client).Next(timeout time.Duration) *Frame` | method | The next non-heartbeat frame, failing the spec if none arrives. | experimental | FR-63 |
 | `(*Client).NextErr(timeout time.Duration) (*Frame, error)` | method | `Next`, returning the error — for the specs where "nothing arrived" is the assertion. The error is the string `Next` would have failed with, prefix and all: `livetest: <name> (session <hex>): …`, so a value a spec stores or logs says which session it is about (FR-58; QA-1's F-1, error-audit.md §3.4). | experimental | FR-63, FR-58 |
 | `(*Client).Settle(idle time.Duration) []*Frame` | method | Drains what is in flight and returns once nothing has arrived for the idle period. | experimental | FR-62, FR-55 |
@@ -391,7 +413,7 @@ all. 50 → **51** identifiers, 50 → **51** fields.
 | `Origin` | struct | What caused a patch: `Kind int32`, `EventID`, `ClientRef`, `Source string`, `Contributing []uint64`. | experimental | FR-58, FR-62 |
 | `Update` | struct | One fragment update: `FragmentID string`, `HTML string`. | experimental | FR-63 |
 | `Error` | struct | A decoded Error frame: `Code int32`, `Message`, `EventID`, `ClientRef`, `Fatal bool`. | experimental | FR-49 |
-| `NewSession(testing.TB, live.ID, live.Identity) live.Session` | func | Builds the `live.Session` a spec needs to call an application's own `Init`, `Authorize`, `Teardown` or `Execute` directly. Both values are the caller's; a nil identity is `tb.Fatalf`. | stable | **FR-15**, FR-45–48 |
+| `NewSession(testing.TB, live.ID, live.IIdentity) live.Session` | func | Builds the `live.Session` a spec needs to call an application's own `Init`, `Authorize`, `Teardown` or `Execute` directly. Both values are the caller's; a nil identity is `tb.Fatalf`. | stable | **FR-15**, FR-45–48 |
 | `Audit(testing.TB, http.Handler, func(*Client)) Report` | func | Runs a scripted workload and cross-checks every self-reported metric against an independent, out-of-process measurement. | experimental | checklist §4.5, instrumentation.md §5.2 |
 | `Report` | struct | The audit result: per-signal reported value, externally observed value, and whether they agree. | experimental | checklist §4.5 |
 
@@ -561,6 +583,50 @@ patches from its own code rather than from telemetry, the hook lands in Phase 2
 ---
 
 ## 10. Changelog
+
+### P3 style retrofit — 2026-09-02: every parameter in the surface is named. Surface unchanged at 56/53 and 37/33
+
+**A second spelling-only pass, recorded for the same reason the `I`-prefix pass
+above it was.** CS-2 of the house style skill says every parameter in every
+signature carries a name — function declarations, function types and interface
+methods alike — and the operator ruled on 2026-09-02 that the rule is read
+literally, so a one-parameter hook type such as `Config.CSRF` is in scope
+exactly as an interface method is.
+
+`tools/apisurface` reads **`live 56/56` and `53/53`, `live/livetest 37/37` and
+`33/33`**: a parameter name is not an identifier this ledger counts, so nothing
+moves. That is the same blind spot the `I`-prefix entry records, and it is why
+the type column below was edited by reading rather than by the tool.
+
+| Change | Source |
+|---|---|
+| **Every `Config` hook type gains parameter names**, and the names are the ones the field's own godoc already uses in prose: `Init(ctx, session)`, `Execute(ctx, session, effect, emit)`, `Teardown(ctx, session, state)`, `Authenticate(request)`, `Authorize(ctx, session, event)`, `CSRF(request)`. No field is added, removed, retyped or reordered | operator ruling 2026-09-02, CS-2, house style skill |
+| **The three escape hatches move with the hooks they implement.** `Anonymous(request *http.Request)`, `AllowAll(ctx, session, event)` and `NoCSRFCheck(request *http.Request)` are declarations rather than types, and CS-2 makes no distinction between the two | CS-2, §4 |
+| **`Emitter` becomes `func(event Event) error` and `Fragment.Render` becomes `func(state S) templ.Component`.** Both are single-parameter func types, which is exactly the shape the literal reading of CS-2 covers and a narrower reading would have left alone | operator ruling 2026-09-02 |
+| **`(*App[S]).PageHandler(page func(state S) templ.Component)` and `(*Client).Await(..., pred func(frame *Frame) bool)`** are the two methods whose *parameter's* type is itself a func type. The method's own parameters were already named; the nested func type's were not | CS-2, §1, §6 |
+| **Nothing changes meaning.** A parameter name in a func type is documentation and nothing else: no call site moves, no implementation is invalidated, and a `Config` written yesterday compiles unchanged today | BL-30, checklist §1.7 |
+
+### P3 style retrofit — 2026-09-02: every interface takes the house `I` prefix. Surface unchanged at 56/53 and 37/33
+
+**This entry exists because the rename contradicts a `stable` marking on two
+rows, and it was broken deliberately rather than by drift.** `stable` here means
+"intended to survive to v1.0 unchanged" (§0), and `Effect` and `Identity` both
+carried it. The operator ruled on 2026-09-02 (Widget Foundry decision 2 and
+amendment 5) that every interface in the monorepo carries an `I` prefix,
+repo-wide and **including** the published `candacelabs/candace` API, and that
+the export gates are the check on that break rather than a veto on it. The
+precedent was already set by the `IWidget[S]` refactor in slice P1.
+
+`tools/apisurface` reads **`live 56/56` and `53/53`, `live/livetest 37/37` and
+`33/33`**: nothing is added, removed or split, so neither count moves. A rename
+is invisible to a counter, which is precisely why it is written down here.
+
+| Change | Source |
+|---|---|
+| **`Effect` → `IEffect`.** The interface a transition returns for the actor to perform. Every signature that named it moves with it: `Config.Init`, `Config.Execute`, `Reducer[S]`, and the widget SDK's `Mount`, `Reduce` and `Effect` methods. The `EffectSource`, `EffectFailedEvent`, `EffectFailedSourceField`, `EffectFailedErrorField` and `EffectFailedRetryableField` names are **not** interfaces and do not move | operator ruling 2026-09-02, `docs/widget_foundry.md` decision 2 |
+| **`Identity` → `IIdentity`.** The application's identity for a session, and the return of `Config.Authenticate`, `live.Anonymous` and `livetest.NewSession`'s third parameter. The `(Session).Identity()` **method** keeps its name — CS-1 renames types, not methods | operator ruling 2026-09-02, amendment 5 |
+| **Both were marked `stable`, and this breaks that marking.** Recorded rather than quietly re-marked: the rows still read `stable`, because the intent they describe — no further shape change before v1.0 — is unchanged by a spelling. What changed is the spelling, under a ruling that outranks the marking | **FR-65**, §0's stability definition |
+| The internal redeclarations move in the same commit: `internal/session.Effect`, `internal/session.Identity`, `internal/session.App`, `internal/livebridge.Identity` and `internal/protocol.Inbound` become `IEffect`, `IIdentity`, `IApp`, `IIdentity` and `IInbound`. They are exported inside `internal/`, so they take the exported spelling | CS-1, house style skill |
 
 ### Phase 4, FR-54 failure 1 — 2026-08-05: `F-CHT-3` becomes expressible. +0 identifiers, +2 fields (51 → 53), +38 gzipped bytes
 

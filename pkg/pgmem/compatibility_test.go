@@ -303,7 +303,7 @@ var _ = Describe("pg-mem v3.0.14 compatibility", func() {
 	// src/tests/schema-manipulation.spec.ts. pgmem v0.1 creates schemas through
 	// the Go API rather than CREATE SCHEMA SQL.
 	DescribeTable("isolates named schemas",
-		func(run func(*pgmem.DB)) {
+		func(run func(db *pgmem.DB)) {
 			run(database)
 		},
 		Entry("qualifies unqualified statements with the schema receiver", func(db *pgmem.DB) {

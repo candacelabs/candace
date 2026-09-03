@@ -18,32 +18,32 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockExecutor is a mock of Executor interface.
-type MockExecutor struct {
+// MockIExecutor is a mock of IExecutor interface.
+type MockIExecutor struct {
 	ctrl     *gomock.Controller
-	recorder *MockExecutorMockRecorder
+	recorder *MockIExecutorMockRecorder
 	isgomock struct{}
 }
 
-// MockExecutorMockRecorder is the mock recorder for MockExecutor.
-type MockExecutorMockRecorder struct {
-	mock *MockExecutor
+// MockIExecutorMockRecorder is the mock recorder for MockIExecutor.
+type MockIExecutorMockRecorder struct {
+	mock *MockIExecutor
 }
 
-// NewMockExecutor creates a new mock instance.
-func NewMockExecutor(ctrl *gomock.Controller) *MockExecutor {
-	mock := &MockExecutor{ctrl: ctrl}
-	mock.recorder = &MockExecutorMockRecorder{mock}
+// NewMockIExecutor creates a new mock instance.
+func NewMockIExecutor(ctrl *gomock.Controller) *MockIExecutor {
+	mock := &MockIExecutor{ctrl: ctrl}
+	mock.recorder = &MockIExecutorMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockExecutor) EXPECT() *MockExecutorMockRecorder {
+func (m *MockIExecutor) EXPECT() *MockIExecutorMockRecorder {
 	return m.recorder
 }
 
 // DryRun mocks base method.
-func (m *MockExecutor) DryRun() bool {
+func (m *MockIExecutor) DryRun() bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DryRun")
 	ret0, _ := ret[0].(bool)
@@ -51,13 +51,13 @@ func (m *MockExecutor) DryRun() bool {
 }
 
 // DryRun indicates an expected call of DryRun.
-func (mr *MockExecutorMockRecorder) DryRun() *gomock.Call {
+func (mr *MockIExecutorMockRecorder) DryRun() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DryRun", reflect.TypeOf((*MockExecutor)(nil).DryRun))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DryRun", reflect.TypeOf((*MockIExecutor)(nil).DryRun))
 }
 
 // Execute mocks base method.
-func (m *MockExecutor) Execute(ctx context.Context, plan agent.Plan) error {
+func (m *MockIExecutor) Execute(ctx context.Context, plan agent.Plan) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Execute", ctx, plan)
 	ret0, _ := ret[0].(error)
@@ -65,13 +65,13 @@ func (m *MockExecutor) Execute(ctx context.Context, plan agent.Plan) error {
 }
 
 // Execute indicates an expected call of Execute.
-func (mr *MockExecutorMockRecorder) Execute(ctx, plan any) *gomock.Call {
+func (mr *MockIExecutorMockRecorder) Execute(ctx, plan any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockExecutor)(nil).Execute), ctx, plan)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockIExecutor)(nil).Execute), ctx, plan)
 }
 
 // Plan mocks base method.
-func (m *MockExecutor) Plan(ctx context.Context, assignment *candaceosv1.Assignment) (agent.Plan, error) {
+func (m *MockIExecutor) Plan(ctx context.Context, assignment *candaceosv1.Assignment) (agent.Plan, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Plan", ctx, assignment)
 	ret0, _ := ret[0].(agent.Plan)
@@ -80,13 +80,13 @@ func (m *MockExecutor) Plan(ctx context.Context, assignment *candaceosv1.Assignm
 }
 
 // Plan indicates an expected call of Plan.
-func (mr *MockExecutorMockRecorder) Plan(ctx, assignment any) *gomock.Call {
+func (mr *MockIExecutorMockRecorder) Plan(ctx, assignment any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Plan", reflect.TypeOf((*MockExecutor)(nil).Plan), ctx, assignment)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Plan", reflect.TypeOf((*MockIExecutor)(nil).Plan), ctx, assignment)
 }
 
 // Workspace mocks base method.
-func (m *MockExecutor) Workspace() string {
+func (m *MockIExecutor) Workspace() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Workspace")
 	ret0, _ := ret[0].(string)
@@ -94,37 +94,37 @@ func (m *MockExecutor) Workspace() string {
 }
 
 // Workspace indicates an expected call of Workspace.
-func (mr *MockExecutorMockRecorder) Workspace() *gomock.Call {
+func (mr *MockIExecutorMockRecorder) Workspace() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Workspace", reflect.TypeOf((*MockExecutor)(nil).Workspace))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Workspace", reflect.TypeOf((*MockIExecutor)(nil).Workspace))
 }
 
-// MockComposeProcessExecutor is a mock of ComposeProcessExecutor interface.
-type MockComposeProcessExecutor struct {
+// MockIComposeProcessExecutor is a mock of IComposeProcessExecutor interface.
+type MockIComposeProcessExecutor struct {
 	ctrl     *gomock.Controller
-	recorder *MockComposeProcessExecutorMockRecorder
+	recorder *MockIComposeProcessExecutorMockRecorder
 	isgomock struct{}
 }
 
-// MockComposeProcessExecutorMockRecorder is the mock recorder for MockComposeProcessExecutor.
-type MockComposeProcessExecutorMockRecorder struct {
-	mock *MockComposeProcessExecutor
+// MockIComposeProcessExecutorMockRecorder is the mock recorder for MockIComposeProcessExecutor.
+type MockIComposeProcessExecutorMockRecorder struct {
+	mock *MockIComposeProcessExecutor
 }
 
-// NewMockComposeProcessExecutor creates a new mock instance.
-func NewMockComposeProcessExecutor(ctrl *gomock.Controller) *MockComposeProcessExecutor {
-	mock := &MockComposeProcessExecutor{ctrl: ctrl}
-	mock.recorder = &MockComposeProcessExecutorMockRecorder{mock}
+// NewMockIComposeProcessExecutor creates a new mock instance.
+func NewMockIComposeProcessExecutor(ctrl *gomock.Controller) *MockIComposeProcessExecutor {
+	mock := &MockIComposeProcessExecutor{ctrl: ctrl}
+	mock.recorder = &MockIComposeProcessExecutorMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockComposeProcessExecutor) EXPECT() *MockComposeProcessExecutorMockRecorder {
+func (m *MockIComposeProcessExecutor) EXPECT() *MockIComposeProcessExecutorMockRecorder {
 	return m.recorder
 }
 
 // Resolve mocks base method.
-func (m *MockComposeProcessExecutor) Resolve(executable string) (string, error) {
+func (m *MockIComposeProcessExecutor) Resolve(executable string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Resolve", executable)
 	ret0, _ := ret[0].(string)
@@ -133,13 +133,13 @@ func (m *MockComposeProcessExecutor) Resolve(executable string) (string, error) 
 }
 
 // Resolve indicates an expected call of Resolve.
-func (mr *MockComposeProcessExecutorMockRecorder) Resolve(executable any) *gomock.Call {
+func (mr *MockIComposeProcessExecutorMockRecorder) Resolve(executable any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockComposeProcessExecutor)(nil).Resolve), executable)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockIComposeProcessExecutor)(nil).Resolve), executable)
 }
 
 // Run mocks base method.
-func (m *MockComposeProcessExecutor) Run(ctx context.Context, invocation agent.ComposeInvocation) (string, error) {
+func (m *MockIComposeProcessExecutor) Run(ctx context.Context, invocation agent.ComposeInvocation) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Run", ctx, invocation)
 	ret0, _ := ret[0].(string)
@@ -148,7 +148,7 @@ func (m *MockComposeProcessExecutor) Run(ctx context.Context, invocation agent.C
 }
 
 // Run indicates an expected call of Run.
-func (mr *MockComposeProcessExecutorMockRecorder) Run(ctx, invocation any) *gomock.Call {
+func (mr *MockIComposeProcessExecutorMockRecorder) Run(ctx, invocation any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockComposeProcessExecutor)(nil).Run), ctx, invocation)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockIComposeProcessExecutor)(nil).Run), ctx, invocation)
 }

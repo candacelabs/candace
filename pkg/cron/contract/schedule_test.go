@@ -76,7 +76,7 @@ var _ = Describe("Liquid Proto schedule boundary", func() {
 	})
 
 	DescribeTable("round-trips each portable schedule rule",
-		func(schedule cron.Schedule, inspect func(*cronv1.ScheduleSpec)) {
+		func(schedule cron.Schedule, inspect func(spec *cronv1.ScheduleSpec)) {
 			message, err := contract.ScheduleToProto(schedule)
 			Expect(err).NotTo(HaveOccurred())
 			inspect(message)

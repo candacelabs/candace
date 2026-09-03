@@ -20,12 +20,12 @@ func TestExternalConsumer(t *testing.T) {
 	RunSpecs(t, "External CandaceOS Consumer Suite")
 }
 
-var _ harness.Host = (*MockHost)(nil)
+var _ harness.IHost = (*MockIHost)(nil)
 
 var _ = Describe("an external harness", func() {
 	It("publishes through the SDK host", func() {
 		controller := gomock.NewController(GinkgoT())
-		host := NewMockHost(controller)
+		host := NewMockIHost(controller)
 		gomock.InOrder(
 			host.EXPECT().Publish(gomock.Any(), gomock.Any()).DoAndReturn(
 				func(ctx context.Context, event *candaceosv1.HarnessEvent) error {

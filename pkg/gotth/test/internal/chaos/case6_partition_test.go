@@ -248,6 +248,11 @@ var _ = Describe("A network partition and a half-open connection (PRD case 6, FR
 
 // settledGoroutines counts goroutines after letting the scheduler quiesce, so
 // the figure is the settled one rather than whatever was mid-exit.
+//
+// CS-9 keep: a best-effort quiesce is not an await. Both callers wrap this in
+// an Eventually that polls it, so it must return whatever it last read rather
+// than failing — a fatal failure inside a poll aborts the retry that is doing
+// the waiting.
 func settledGoroutines() int {
 	var last int
 	for i := 0; i < 25; i++ {

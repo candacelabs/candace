@@ -27,18 +27,18 @@ var composeFileNames = []string{
 
 const commandOutputLimit = 8 << 10
 
-// Executor validates, plans, and executes a Compose reconciliation.
-type Executor interface {
+// IExecutor validates, plans, and executes a Compose reconciliation.
+type IExecutor interface {
 	Plan(ctx context.Context, assignment *candaceosv1.Assignment) (Plan, error)
 	Execute(ctx context.Context, plan Plan) error
 	DryRun() bool
 	Workspace() string
 }
 
-// ComposeProcessExecutor is the operating-system process boundary for Docker
+// IComposeProcessExecutor is the operating-system process boundary for Docker
 // Compose. DockerComposeRunner owns command policy; implementations only
 // resolve and execute the complete invocation they receive.
-type ComposeProcessExecutor interface {
+type IComposeProcessExecutor interface {
 	Resolve(executable string) (string, error)
 	Run(ctx context.Context, invocation ComposeInvocation) (string, error)
 }
@@ -53,12 +53,12 @@ type ComposeInvocation struct {
 type DockerComposeRunnerOption func(dependencies *dockerComposeRunnerDependencies)
 
 type dockerComposeRunnerDependencies struct {
-	composeProcess ComposeProcessExecutor
+	composeProcess IComposeProcessExecutor
 }
 
 // WithComposeProcessExecutor supplies the Docker Compose process boundary.
 // It is primarily useful when embedding the runner or testing command policy.
-func WithComposeProcessExecutor(executor ComposeProcessExecutor) DockerComposeRunnerOption {
+func WithComposeProcessExecutor(executor IComposeProcessExecutor) DockerComposeRunnerOption {
 	return func(dependencies *dockerComposeRunnerDependencies) {
 		dependencies.composeProcess = executor
 	}
@@ -76,7 +76,7 @@ type DockerComposeRunner struct {
 	revisionLimits *candaceosv1.RevisionLimits
 	sourceSync     *candaceosv1.SourceSync
 	logger         *telemetry.JSONLLogger
-	composeProcess ComposeProcessExecutor
+	composeProcess IComposeProcessExecutor
 	dryRun         bool
 	materializeMu  sync.Mutex
 }

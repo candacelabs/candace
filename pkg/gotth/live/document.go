@@ -92,7 +92,7 @@ const NoRuntime = "no-runtime"
 //     works, and there is no inspector for it to be ordered against.
 //
 // Reaching the App from the page function is the caller's problem and it has a
-// zero-cost answer: [App.PageHandler] takes a func(S) templ.Component and gives
+// zero-cost answer: [App.PageHandler] takes a func(state S) templ.Component and gives
 // it no receiver, so the application holds its App wherever it already holds
 // its state type — docs/quickstart.md makes it a package-level var, the
 // examples pass it into the templ component as a parameter. Both are one line

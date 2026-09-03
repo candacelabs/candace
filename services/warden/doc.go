@@ -8,7 +8,7 @@
 // path constants, and the eight interfaces keeping their meaning: a change
 // that redefines one of them is a change to the whole service, not to one
 // subsystem. The package is types, constants, pure helpers (Quorum, SortNodes,
-// SortPeers, NewIncidentID) and the one real-time Clock the production binary
+// SortPeers, NewIncidentID) and the one real-time IClock the production binary
 // runs on; it opens no connection, reads no file, and owns no shared mutable
 // state, which is what lets every other package import it without a cycle.
 // Behaviour lives in the packages that implement these interfaces.
@@ -26,11 +26,11 @@
 // carry the leader's authoritative ClusterView so that every follower can
 // render a correct cluster dashboard without extra gossip. The leader also
 // acts as the fleet watchdog: it tracks peer liveness transitions
-// (alive -> suspect -> dead and recovery) and emits Incidents to a Notifier
+// (alive -> suspect -> dead and recovery) and emits Incidents to an INotifier
 // (SMTP email in production, mock/file/log in tests) with per-incident
 // deduplication and a cooldown so flapping nodes do not spam the operator.
 //
-// Transport is the gRPC WardenService over h2c on the tailnet (WireGuard is
+// ITransport is the gRPC WardenService over h2c on the tailnet (WireGuard is
 // the node-to-node transport-security boundary). A single bound port per node
 // serves the cluster RPCs (Vote, Heartbeat, Identify, and the WatchCluster
 // stream) over gRPC, multiplexed by cmux with the HTTP surface: the SSR
@@ -42,12 +42,12 @@
 //
 //	warden         - this package: types, wire protocol, interfaces
 //	election       - election state machine + peer liveness tracking
-//	grpctransport  - gRPC client implementing Transport (h2c, pooled conns)
+//	grpctransport  - gRPC client implementing ITransport (h2c, pooled conns)
 //	grpcserver     - gRPC WardenService server: unary RPCs + WatchCluster
 //	grpcmux        - single-port cmux multiplexing the gRPC and HTTP surfaces
 //	testclock      - fake clock for deterministic tests
 //	watchdog       - leader-only incident engine with dedup/cooldown
-//	notify         - Notifier implementations: SMTP, log, file, mock
+//	notify         - INotifier implementations: SMTP, log, file, mock
 //	dashboard      - SSR dashboard (HTMX + embedded assets) + JSON API
 //	metrics        - Prometheus collectors + /metrics handler
 //	config         - YAML + environment configuration loading

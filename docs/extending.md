@@ -9,7 +9,7 @@ There are four seams, and this guide is one section each:
 
 | Seam | Option | What you supply |
 |---|---|---|
-| Agent harness | `bootstrap.WithHarnessFactory` | a `harness.Factory` your repository owns |
+| Agent harness | `bootstrap.WithHarnessFactory` | a `harness.IFactory` your repository owns |
 | Composed services | `bootstrap.WithComponent` | ordered bring-up for values your repository owns |
 | Identity | `bootstrap.WithBrand` | product name, agent name, wordmark, palette |
 | Presentation | `bootstrap.WithUIOverlay`, `WithNavItem`, `WithHTTPService` | templates, assets, sidebar entries, routes |
@@ -173,7 +173,7 @@ Core-facing surface:
 func StoreComponent() (*component.Definition, error) {
 	return component.New(
 		"steering-store",
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			steeringStore.mutex.Lock()
 			steeringStore.capacity = Capacity
 			steeringStore.inputs = make([]string, 0, Capacity)
@@ -194,7 +194,7 @@ func ServiceComponent(storeComponent *component.Definition) (*component.Definiti
 	return component.New(
 		"steering-service",
 		component.WithRequires(storeComponent),
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			steeringService.mutex.Lock()
 			steeringService.store = steeringStore
 			steeringService.mutex.Unlock()

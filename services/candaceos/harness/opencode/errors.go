@@ -10,7 +10,7 @@ import "errors"
 var (
 	// ErrConfigRequired reports a nil OpenCodeConfig supplied to NewFactory.
 	ErrConfigRequired = errors.New("opencode: configuration is required")
-	// ErrHostRequired reports a nil harness.Host supplied to Factory.New.
+	// ErrHostRequired reports a nil harness.IHost supplied to Factory.New.
 	ErrHostRequired = errors.New("opencode: host is required")
 	// ErrProviderRequired reports a runtime constructed with no provider.
 	ErrProviderRequired = errors.New("opencode: provider is required")

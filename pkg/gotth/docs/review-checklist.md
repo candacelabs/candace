@@ -231,7 +231,7 @@ that reaches the wire.*
       range-checked. A new frame field with an invariant expressed only in a
       comment is a block.
 - [ ] **3.4** Inbound frames cross the generated `Validate*` boundary at
-      ingress — handlers take the closed `protocol.Inbound` variants, never a
+      ingress — handlers take the closed `protocol.IInbound` variants, never a
       decoded frame that has not passed validation. Generated validators do
       not recurse into nested messages or repeated message elements, so the
       reviewer confirms `ValidateFrame`, the matched payload's validator, and

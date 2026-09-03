@@ -84,16 +84,16 @@ var _ = Describe("IsRetryable", func() {
 	// somebody ever gives the exported one its own body.
 	It("answers what the failure event will say", func() {
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.Effect{logEffect{Message: "boom"}}
+					return state, []live.IEffect{logEffect{Message: "boom"}}
 				case live.EffectFailedEvent:
 					state.Label = ev.Fields.Get(live.EffectFailedRetryableField)
 				}
 				return state, nil
 			}
-			c.Execute = func(context.Context, live.Session, live.Effect, live.Emitter) error {
+			c.Execute = func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
 				return live.Retryable(fmt.Errorf("pump: %w", errors.New("the broker is reconnecting")))
 			}
 		})

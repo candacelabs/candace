@@ -35,8 +35,8 @@ import (
 type Option func(settings *assemblyOptions) error
 
 type assemblyOptions struct {
-	harnessFactory harness.Factory
-	httpServices   []HTTPService
+	harnessFactory harness.IFactory
+	httpServices   []IHTTPService
 	includePII     bool
 	components     []*component.Definition
 	brand          webui.Brand
@@ -44,15 +44,15 @@ type assemblyOptions struct {
 	navItems       []webui.NavItem
 }
 
-// HTTPService is one optional component that mounts routes on Core's single
+// IHTTPService is one optional component that mounts routes on Core's single
 // caller-owned Gin engine.
-type HTTPService interface {
+type IHTTPService interface {
 	Register(router gin.IRouter)
 }
 
 // WithHTTPService adds a caller-supplied HTTP component beside Core's default
 // API and Web UI on the same Gin engine.
-func WithHTTPService(service HTTPService) Option {
+func WithHTTPService(service IHTTPService) Option {
 	return func(settings *assemblyOptions) error {
 		if service == nil {
 			return fmt.Errorf("CandaceOS HTTP service is required")
@@ -124,7 +124,7 @@ func WithNavItem(item webui.NavItem) Option {
 // WithHarnessFactory replaces the configuration-selected built-in harness.
 // Core continues to own persistence, fleet observation, reconciliation, and
 // the HTTP surface around the supplied implementation.
-func WithHarnessFactory(factory harness.Factory) Option {
+func WithHarnessFactory(factory harness.IFactory) Option {
 	return func(settings *assemblyOptions) error {
 		if factory == nil {
 			return fmt.Errorf("CandaceOS harness factory is required")
@@ -299,7 +299,7 @@ func (assembly *coreAssembly) definitions() ([]*component.Definition, error) {
 
 func (assembly *coreAssembly) loadConfiguration(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	cfg, err := loadConfig(assembly.settings.harnessFactory)
 	if err != nil {
@@ -312,7 +312,7 @@ func (assembly *coreAssembly) loadConfiguration(
 
 func (assembly *coreAssembly) openStore(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	var err error
@@ -325,7 +325,7 @@ func (assembly *coreAssembly) openStore(
 
 func (assembly *coreAssembly) recoverOperatorWork(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, reporter := assembly.core, assembly.reporter
 	recovery, err := core.store.RecoverInterruptedOperatorWork(ctx, time.Now().UTC())
@@ -340,7 +340,7 @@ func (assembly *coreAssembly) recoverOperatorWork(
 
 func (assembly *coreAssembly) newFleetClient(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	var err error
@@ -353,7 +353,7 @@ func (assembly *coreAssembly) newFleetClient(
 
 func (assembly *coreAssembly) newNodeAgentClient(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	agents, err := agentclient.NewNodeAgentClient(
@@ -369,7 +369,7 @@ func (assembly *coreAssembly) newNodeAgentClient(
 
 func (assembly *coreAssembly) newReconciler(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	reconciler, err := reconcile.NewService(
@@ -384,7 +384,7 @@ func (assembly *coreAssembly) newReconciler(
 
 func (assembly *coreAssembly) newController(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	var err error
@@ -399,7 +399,7 @@ func (assembly *coreAssembly) newController(
 
 func (assembly *coreAssembly) newRuntime(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	var err error
@@ -416,7 +416,7 @@ func (assembly *coreAssembly) newRuntime(
 
 func (assembly *coreAssembly) buildHTTPAPI(
 	ctx context.Context,
-	capabilities component.Capabilities,
+	capabilities component.ICapabilities,
 ) error {
 	core, cfg := assembly.core, assembly.core.config
 	router := httpserver.NewEngine()
@@ -464,7 +464,7 @@ func applyOptions(functionalOptions []Option) (assemblyOptions, error) {
 	return settings, nil
 }
 
-func loadConfig(factory harness.Factory) (*candaceosv1.CoreConfig, error) {
+func loadConfig(factory harness.IFactory) (*candaceosv1.CoreConfig, error) {
 	if factory == nil {
 		return config.Load()
 	}

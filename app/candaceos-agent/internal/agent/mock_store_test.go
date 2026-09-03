@@ -16,32 +16,32 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockStore is a mock of Store interface.
-type MockStore struct {
+// MockIStore is a mock of IStore interface.
+type MockIStore struct {
 	ctrl     *gomock.Controller
-	recorder *MockStoreMockRecorder
+	recorder *MockIStoreMockRecorder
 	isgomock struct{}
 }
 
-// MockStoreMockRecorder is the mock recorder for MockStore.
-type MockStoreMockRecorder struct {
-	mock *MockStore
+// MockIStoreMockRecorder is the mock recorder for MockIStore.
+type MockIStoreMockRecorder struct {
+	mock *MockIStore
 }
 
-// NewMockStore creates a new mock instance.
-func NewMockStore(ctrl *gomock.Controller) *MockStore {
-	mock := &MockStore{ctrl: ctrl}
-	mock.recorder = &MockStoreMockRecorder{mock}
+// NewMockIStore creates a new mock instance.
+func NewMockIStore(ctrl *gomock.Controller) *MockIStore {
+	mock := &MockIStore{ctrl: ctrl}
+	mock.recorder = &MockIStoreMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockStore) EXPECT() *MockStoreMockRecorder {
+func (m *MockIStore) EXPECT() *MockIStoreMockRecorder {
 	return m.recorder
 }
 
 // Load mocks base method.
-func (m *MockStore) Load() (agent.Snapshot, bool, error) {
+func (m *MockIStore) Load() (agent.Snapshot, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Load")
 	ret0, _ := ret[0].(agent.Snapshot)
@@ -51,13 +51,13 @@ func (m *MockStore) Load() (agent.Snapshot, bool, error) {
 }
 
 // Load indicates an expected call of Load.
-func (mr *MockStoreMockRecorder) Load() *gomock.Call {
+func (mr *MockIStoreMockRecorder) Load() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Load", reflect.TypeOf((*MockStore)(nil).Load))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Load", reflect.TypeOf((*MockIStore)(nil).Load))
 }
 
 // Save mocks base method.
-func (m *MockStore) Save(snapshot agent.Snapshot) error {
+func (m *MockIStore) Save(snapshot agent.Snapshot) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Save", snapshot)
 	ret0, _ := ret[0].(error)
@@ -65,7 +65,7 @@ func (m *MockStore) Save(snapshot agent.Snapshot) error {
 }
 
 // Save indicates an expected call of Save.
-func (mr *MockStoreMockRecorder) Save(snapshot any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Save(snapshot any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Save", reflect.TypeOf((*MockStore)(nil).Save), snapshot)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Save", reflect.TypeOf((*MockIStore)(nil).Save), snapshot)
 }

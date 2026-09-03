@@ -57,8 +57,8 @@ func pollLoop(
 	ctx context.Context,
 	ch chan<- warden.Roster,
 	interval time.Duration,
-	fetch func(context.Context) ([]warden.Node, error),
-	logErr func(error),
+	fetch func(ctx context.Context) ([]warden.Node, error),
+	logErr func(err error),
 ) {
 	defer close(ch)
 

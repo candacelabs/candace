@@ -169,7 +169,7 @@ var _ = Describe("OpenCode SDK adapter transport", func() {
 		done := make(chan error, 1)
 		go func() {
 			defer GinkgoRecover()
-			done <- adapter.streamEvents(streamContext, func(json.RawMessage) {})
+			done <- adapter.streamEvents(streamContext, func(event json.RawMessage) {})
 		}()
 		cancel()
 

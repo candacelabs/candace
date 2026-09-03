@@ -356,7 +356,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 			state := initialState()
 			asked, effects := Reduce(state, switched(RoomIDs[1], 7, baseTime))
 			Expect(asked.Room).To(Equal(RoomIDs[0]), "a local flip would make CHT-4 a same-frame paint")
-			Expect(effects).To(Equal([]live.Effect{SwitchEffect{Room: RoomIDs[1], Cause: 7}}))
+			Expect(effects).To(Equal([]live.IEffect{SwitchEffect{Room: RoomIDs[1], Cause: 7}}))
 
 			arrived, _ := Reduce(asked, entered(RoomIDs[1], baseTime))
 			Expect(arrived.Room).To(Equal(RoomIDs[1]))
@@ -467,7 +467,7 @@ var _ = Describe("§2.3 F-CHT — the feature table", func() {
 			r.AddCookie(&http.Cookie{Name: WhoCookie, Value: ReadonlyName})
 			id, err := DirectoryAuthenticate(r)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(id).To(Equal(live.Identity(Member{Name: ReadonlyName, Readonly: true})))
+			Expect(id).To(Equal(live.IIdentity(Member{Name: ReadonlyName, Readonly: true})))
 			Expect(id.Subject()).To(Equal(ReadonlyName))
 		})
 

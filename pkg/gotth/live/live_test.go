@@ -71,10 +71,10 @@ func text(format string, args ...any) templ.Component {
 
 func validConfig() live.Config[counter] {
 	return live.Config[counter]{
-		Init: func(context.Context, live.Session) (counter, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (counter, []live.IEffect, error) {
 			return counter{Label: "hits"}, nil, nil
 		},
-		Reduce: func(state counter, ev live.Event) (counter, []live.Effect) {
+		Reduce: func(state counter, ev live.Event) (counter, []live.IEffect) {
 			switch ev.Name {
 			case "counter.increment":
 				state.N++
@@ -90,7 +90,7 @@ func validConfig() live.Config[counter] {
 		}},
 		Events:       []string{"counter.increment", "counter.relabel"},
 		Origins:      []string{"https://app.example"},
-		Authenticate: func(*http.Request) (live.Identity, error) { return user("tester"), nil },
+		Authenticate: func(request *http.Request) (live.IIdentity, error) { return user("tester"), nil },
 		Authorize:    live.AllowAll,
 		CSRF:         live.NoCSRFCheck,
 	}
@@ -102,7 +102,7 @@ var _ = Describe("New", func() {
 	// startup is the difference between a failed deploy and a session that
 	// misbehaves in production.
 	DescribeTable("refuses an incomplete configuration, naming the field",
-		func(field string, break_ func(*live.Config[counter])) {
+		func(field string, break_ func(cfg *live.Config[counter])) {
 			cfg := validConfig()
 			break_(&cfg)
 
@@ -267,7 +267,7 @@ var _ = Describe("Fields", func() {
 	// matters in practice: an unchecked checkbox sends nothing at all.
 	It("distinguishes an absent key from an empty value", func() {
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				if _, ok := ev.Fields.Lookup("checked"); ok {
 					state.Label = "present"
 				} else {
@@ -288,7 +288,7 @@ var _ = Describe("Fields", func() {
 	It("iterates in wire order and stops when asked", func() {
 		var seen []string
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				seen = nil
 				ev.Fields.All(func(k, v string) bool {
 					seen = append(seen, k+"="+v)
@@ -705,7 +705,7 @@ var _ = Describe("An application end to end", func() {
 
 	It("treats an unrecognised authorization error as a denial rather than an allow", func() {
 		app := mount(func(c *live.Config[counter]) {
-			c.Authorize = func(context.Context, live.Session, live.Event) error {
+			c.Authorize = func(ctx context.Context, session live.Session, event live.Event) error {
 				return errors.New("the policy service is down")
 			}
 		})
@@ -718,16 +718,16 @@ var _ = Describe("An application end to end", func() {
 
 	It("performs an effect and folds its result back in", func() {
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.Effect{logEffect{Message: "done"}}
+					return state, []live.IEffect{logEffect{Message: "done"}}
 				case "counter.relabel":
 					state.Label = ev.Fields.Get("label")
 				}
 				return state, nil
 			}
-			c.Execute = func(_ context.Context, _ live.Session, e live.Effect, emit live.Emitter) error {
+			c.Execute = func(_ context.Context, _ live.Session, e live.IEffect, emit live.Emitter) error {
 				return emit(live.Event{
 					Name:   "counter.relabel",
 					Fields: live.Event{}.Fields,
@@ -752,10 +752,10 @@ var _ = Describe("An application end to end", func() {
 	It("hands an effect the session it is running for", func() {
 		seen := make(chan live.Session, 1)
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
-				return state, []live.Effect{logEffect{Message: "who"}}
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
+				return state, []live.IEffect{logEffect{Message: "who"}}
 			}
-			c.Execute = func(_ context.Context, s live.Session, _ live.Effect, _ live.Emitter) error {
+			c.Execute = func(_ context.Context, s live.Session, _ live.IEffect, _ live.Emitter) error {
 				seen <- s
 				return nil
 			}
@@ -781,10 +781,10 @@ var _ = Describe("An application end to end", func() {
 	// produces the patch this spec reads.
 	It("turns a failed effect into an event the reducer can handle", func() {
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.Effect{logEffect{Message: "boom"}}
+					return state, []live.IEffect{logEffect{Message: "boom"}}
 				case live.EffectFailedEvent:
 					retryable, err := strconv.ParseBool(
 						ev.Fields.Get(live.EffectFailedRetryableField))
@@ -796,7 +796,7 @@ var _ = Describe("An application end to end", func() {
 				}
 				return state, nil
 			}
-			c.Execute = func(context.Context, live.Session, live.Effect, live.Emitter) error {
+			c.Execute = func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
 				return errors.New("upstream refused")
 			}
 		})
@@ -821,19 +821,19 @@ var _ = Describe("An application end to end", func() {
 		}
 
 		app := mount(func(c *live.Config[counter]) {
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				switch ev.Name {
 				case "counter.increment":
-					return state, []live.Effect{logEffect{Message: "boom"}}
+					return state, []live.IEffect{logEffect{Message: "boom"}}
 				case live.EffectFailedEvent:
 					if retryable, _ := strconv.ParseBool(
 						ev.Fields.Get(live.EffectFailedRetryableField)); retryable {
-						return state, []live.Effect{logEffect{Message: "again"}}
+						return state, []live.IEffect{logEffect{Message: "again"}}
 					}
 				}
 				return state, nil
 			}
-			c.Execute = func(context.Context, live.Session, live.Effect, live.Emitter) error {
+			c.Execute = func(ctx context.Context, session live.Session, effect live.IEffect, emit live.Emitter) error {
 				mu.Lock()
 				attempts++
 				n := attempts
@@ -947,10 +947,10 @@ var _ = Describe("The error boundary", func() {
 	})
 })
 
-func panickingReducer(dev bool) func(*live.Config[counter]) {
+func panickingReducer(dev bool) func(cfg *live.Config[counter]) {
 	return func(c *live.Config[counter]) {
 		c.Dev = dev
-		c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+		c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 			if ev.Name == "counter.increment" {
 				panic("the reducer exploded")
 			}
@@ -960,13 +960,13 @@ func panickingReducer(dev bool) func(*live.Config[counter]) {
 	}
 }
 
-func panickingFragment(dev bool) func(*live.Config[counter]) {
+func panickingFragment(dev bool) func(cfg *live.Config[counter]) {
 	return func(c *live.Config[counter]) {
 		c.Dev = dev
 		c.Fragments = append(c.Fragments, live.Fragment[counter]{
 			ID: "bad",
-			Render: func(counter) templ.Component {
-				return templ.ComponentFunc(func(context.Context, io.Writer) error {
+			Render: func(state counter) templ.Component {
+				return templ.ComponentFunc(func(ctx context.Context, writer io.Writer) error {
 					panic("the render exploded")
 				})
 			},
@@ -986,11 +986,11 @@ type mounted struct {
 	ref      uint64
 }
 
-func mount(mutate func(*live.Config[counter])) *mounted {
+func mount(mutate func(cfg *live.Config[counter])) *mounted {
 	return mountAt("/", mutate)
 }
 
-func mountAt(prefix string, mutate func(*live.Config[counter])) *mounted {
+func mountAt(prefix string, mutate func(cfg *live.Config[counter])) *mounted {
 	GinkgoHelper()
 
 	cfg := validConfig()
@@ -1165,7 +1165,7 @@ var _ = Describe("The backpressure vocabulary", func() {
 			c.Limits.SlowClientGrace = time.Minute
 
 			reduce := c.Reduce
-			c.Reduce = func(state counter, ev live.Event) (counter, []live.Effect) {
+			c.Reduce = func(state counter, ev live.Event) (counter, []live.IEffect) {
 				mu.Lock()
 				seen = append(seen, ev.Name)
 				mu.Unlock()

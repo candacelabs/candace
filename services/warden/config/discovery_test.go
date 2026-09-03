@@ -161,7 +161,7 @@ advertise_addr: 100.64.0.29:7717
 
 	// TestValidateDiscoveryRules
 	DescribeTable("rejects each invalid discovery config with a clear message",
-		func(mutate func(*Config), wantSub string) {
+		func(mutate func(cfg *Config), wantSub string) {
 			cfg := baseValidConfig()
 			mutate(&cfg)
 			err := cfg.Validate()

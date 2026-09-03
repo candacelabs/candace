@@ -28,7 +28,7 @@ type Options struct {
 	// App is the application behaviour — mount, reduce, render, execute — as
 	// the type-erased interface this package can hold without knowing the
 	// state type.
-	App App
+	App IApp
 
 	// Limits are the resource bounds. Zero fields are filled by Normalize, so
 	// a caller may set one and leave the rest.
@@ -81,10 +81,10 @@ type Options struct {
 // makes the per-event authorization hook impossible to route around.
 type Actor struct {
 	peer   Peer
-	app    App
+	app    IApp
 	lim    Limits
 	fr     *protocol.Framer
-	closer func(protocol.CloseCode, string)
+	closer func(code protocol.CloseCode, reason string)
 	m      *obs.Metrics
 	tr     *obs.Tracer
 	log    *obs.Logger
@@ -111,7 +111,7 @@ type Actor struct {
 
 	// stateComparable is the application's answer to "may == decide whether
 	// this transition changed anything", asked once when the actor is built
-	// rather than on every transition. See App.StateComparable.
+	// rather than on every transition. See IApp.StateComparable.
 	stateComparable bool
 
 	// Actor-goroutine state. Nothing below this line is read or written from
@@ -475,7 +475,7 @@ type panicDetail struct {
 // closes over exactly the application's reducer and the guard around it — the
 // thing an operator attributing latency inside one event is asking about — and
 // so a panicking reducer's span records the error rather than ending clean.
-func (a *Actor) reduce(ctx context.Context, state any, ev Event) (next any, effects []Effect, failure *panicDetail) {
+func (a *Actor) reduce(ctx context.Context, state any, ev Event) (next any, effects []IEffect, failure *panicDetail) {
 	var span obs.Span
 	if a.tr.Enabled() {
 		_, span = a.tr.Start(ctx, obs.SpanReduce,
@@ -716,7 +716,7 @@ func (a *Actor) observeFragments() {
 	if !a.tr.Enabled() {
 		return
 	}
-	a.view.Observe(func(ctx context.Context, fragmentID string) (context.Context, func(bool, bool)) {
+	a.view.Observe(func(ctx context.Context, fragmentID string) (context.Context, func(suppressed, failed bool)) {
 		ctx, span := a.tr.Start(ctx, obs.SpanRenderFragment,
 			a.idAttr,
 			attribute.Int64(obs.AttrTransitionID, int64(a.transitionID)),
@@ -1356,7 +1356,7 @@ func firstFragment(us []render.Update) string {
 // and state_version was frozen anyway.
 //
 // The predicate is now the application's, resolved once at construction
-// (App.StateComparable), so the reference kinds fall through to "changed" and
+// (IApp.StateComparable), so the reference kinds fall through to "changed" and
 // the decision about what actually moved is left to each fragment's Dirty
 // declaration and to suppression, which compare the rendered bytes.
 //

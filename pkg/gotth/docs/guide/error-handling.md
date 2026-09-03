@@ -183,7 +183,7 @@ the reducer can see is replayable and one that only reaches the wire is not.
 
 <!-- sample: errorhandling/errors.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	if ev.Name != live.EffectFailedEvent {
 		return s, nil
 	}
@@ -196,7 +196,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 
 	if retryable && source == (FailedEffect{}).EffectSource() && s.Attempts < 3 {
 		s.Attempts++
-		return s, []live.Effect{FailedEffect{}}
+		return s, []live.IEffect{FailedEffect{}}
 	}
 	return s, nil
 }
@@ -264,7 +264,7 @@ carries: it can classify it, unwrap it, or pull structured fields off it with
 
 <!-- sample: errorhandling/errors.go -->
 ```go
-func (r *Reporter) Execute(ctx context.Context, sess live.Session, effect live.Effect, _ live.Emitter) error {
+func (r *Reporter) Execute(ctx context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
 	if _, ok := effect.(FailedEffect); !ok {
 		return fmt.Errorf("errorhandling: no executor for %T", effect)
 	}

@@ -443,7 +443,7 @@ const ReadonlyError = "You are a read-only participant in this room."
 // does — through a posted event. That is what server-authoritative means
 // concretely, and it is why CHT-2's predicate can require
 // data-bench-state="confirmed" and mean it.
-func Reduce(state State, ev live.Event) (State, []live.Effect) {
+func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 	if !ev.At.IsZero() {
 		state.NowMs = ev.At.UnixMilli()
 	}
@@ -456,7 +456,7 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 		// F-CHT-6 needs one, and a separate heartbeat would be a second event
 		// carrying the same fact.
 		state.Draft = ev.Fields.Get(fieldBody)
-		return state, []live.Effect{TypingEffect{Room: state.Room}}
+		return state, []live.IEffect{TypingEffect{Room: state.Room}}
 
 	case EventSend:
 		return send(state, ev)
@@ -468,7 +468,7 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 		}
 		// State.Room is NOT changed here; see its doc comment. The effect asks
 		// the rooms to move this session, and EventEntered is the answer.
-		return state, []live.Effect{SwitchEffect{Room: room, Cause: ev.ID}}
+		return state, []live.IEffect{SwitchEffect{Room: room, Cause: ev.ID}}
 
 	case EventPosted:
 		return posted(state, ev)
@@ -506,7 +506,7 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 	return state, nil
 }
 
-func send(state State, ev live.Event) (State, []live.Effect) {
+func send(state State, ev live.Event) (State, []live.IEffect) {
 	body := ev.Fields.Get(fieldBody)
 	// The draft is set from the submitted body rather than left at whatever the
 	// debounce last saw, so the counter and the error agree with what was
@@ -527,10 +527,10 @@ func send(state State, ev live.Event) (State, []live.Effect) {
 
 	state.DraftError = ""
 	state.PendingSend = ev.ID
-	return state, []live.Effect{SendEffect{Room: state.Room, Body: body, Cause: ev.ID}}
+	return state, []live.IEffect{SendEffect{Room: state.Room, Body: body, Cause: ev.ID}}
 }
 
-func posted(state State, ev live.Event) (State, []live.Effect) {
+func posted(state State, ev live.Event) (State, []live.IEffect) {
 	i := RoomIndex(ev.Fields.Get(fieldRoom))
 	if i < 0 {
 		return state, nil
@@ -580,10 +580,10 @@ func posted(state State, ev live.Event) (State, []live.Effect) {
 // the library says the failure was transient; re-running a terminal failure
 // re-runs whatever made it terminal, and an unreadable classification parses as
 // false.
-func retrySubscription(ev live.Event) []live.Effect {
+func retrySubscription(ev live.Event) []live.IEffect {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceSubscribe {
-		return []live.Effect{SubscribeEffect{}}
+		return []live.IEffect{SubscribeEffect{}}
 	}
 	return nil
 }
@@ -613,7 +613,7 @@ func Config(rooms *Rooms, origins []string) live.Config[State] {
 		// every room — which both reads the current logs and registers this
 		// session for pushes, under one lock, so no message can slip through the
 		// gap between the two — and asks for the subscription pump.
-		Init: func(ctx context.Context, s live.Session) (State, []live.Effect, error) {
+		Init: func(ctx context.Context, s live.Session) (State, []live.IEffect, error) {
 			member, ok := s.Identity().(Member)
 			if !ok {
 				return State{}, nil, fmt.Errorf("chat-gotth: the session identity is %T, not a Member", s.Identity())
@@ -631,7 +631,7 @@ func Config(rooms *Rooms, origins []string) live.Config[State] {
 				LastSeq:  snap.LastSeq,
 				NowMs:    time.Now().UnixMilli(),
 			}
-			return state, []live.Effect{SubscribeEffect{}}, nil
+			return state, []live.IEffect{SubscribeEffect{}}, nil
 		},
 
 		Reduce: Reduce,
@@ -715,7 +715,7 @@ func Config(rooms *Rooms, origins []string) live.Config[State] {
 	}
 }
 
-// Member is this application's live.Identity: a participant name and whether it
+// Member is this application's live.IIdentity: a participant name and whether it
 // may post.
 //
 // It is immutable for the life of a connection, which is why the read-only role

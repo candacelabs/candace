@@ -1,7 +1,7 @@
 # Candace cron
 
 `cron` is a durable in-process scheduler for Candace Go services. It runs as
-part of the service lifecycle; it is not a separate daemon. A `Store` is
+part of the service lifecycle; it is not a separate daemon. An `IStore` is
 required, and PostgreSQL is the production implementation.
 
 ```go
@@ -103,7 +103,7 @@ Both defaults are the conservative choice, and both are per job:
 | Job option | Values | Default | Effect |
 |---|---|---|---|
 | `WithCatchUp` | `CatchUpNone` · `CatchUpLatest` · `CatchUpAll` | `CatchUpNone` | What to do with occurrences missed while the process was down: skip past all of them (traditional cron), run only the most recent, or run every one up to the catch-up limit. |
-| `WithOverlap` | `OverlapSkip` · `OverlapAllow` | `OverlapSkip` | Whether a second occurrence may run while another holds a live lease. Enforced by the `Store`, so it holds across processes sharing one database, not just within one. |
+| `WithOverlap` | `OverlapSkip` · `OverlapAllow` | `OverlapSkip` | Whether a second occurrence may run while another holds a live lease. Enforced by the `IStore`, so it holds across processes sharing one database, not just within one. |
 
 Service-wide options: `WithStore` (required, no implicit default),
 `WithLeaseDuration` (30s; active jobs renew three times per duration),

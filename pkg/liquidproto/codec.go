@@ -28,7 +28,7 @@ var (
 type Constructor[T proto.Message] func() T
 
 // Validator checks the complete application contract for a message.
-type Validator[T proto.Message] func(T) error
+type Validator[T proto.Message] func(message T) error
 
 // Codec deterministically marshals and validates one protobuf message type.
 //

@@ -18,128 +18,128 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockStore is a mock of Store interface.
-type MockStore struct {
+// MockIStore is a mock of IStore interface.
+type MockIStore struct {
 	ctrl     *gomock.Controller
-	recorder *MockStoreMockRecorder
+	recorder *MockIStoreMockRecorder
 	isgomock struct{}
 }
 
-// MockStoreMockRecorder is the mock recorder for MockStore.
-type MockStoreMockRecorder struct {
-	mock *MockStore
+// MockIStoreMockRecorder is the mock recorder for MockIStore.
+type MockIStoreMockRecorder struct {
+	mock *MockIStore
 }
 
-// NewMockStore creates a new mock instance.
-func NewMockStore(ctrl *gomock.Controller) *MockStore {
-	mock := &MockStore{ctrl: ctrl}
-	mock.recorder = &MockStoreMockRecorder{mock}
+// NewMockIStore creates a new mock instance.
+func NewMockIStore(ctrl *gomock.Controller) *MockIStore {
+	mock := &MockIStore{ctrl: ctrl}
+	mock.recorder = &MockIStoreMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockStore) EXPECT() *MockStoreMockRecorder {
+func (m *MockIStore) EXPECT() *MockIStoreMockRecorder {
 	return m.recorder
 }
 
 // Claim mocks base method.
-func (m *MockStore) Claim(arg0 context.Context, arg1 cron.ClaimRequest) (cron.ClaimResult, error) {
+func (m *MockIStore) Claim(ctx context.Context, request cron.ClaimRequest) (cron.ClaimResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Claim", arg0, arg1)
+	ret := m.ctrl.Call(m, "Claim", ctx, request)
 	ret0, _ := ret[0].(cron.ClaimResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Claim indicates an expected call of Claim.
-func (mr *MockStoreMockRecorder) Claim(arg0, arg1 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Claim(ctx, request any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Claim", reflect.TypeOf((*MockStore)(nil).Claim), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Claim", reflect.TypeOf((*MockIStore)(nil).Claim), ctx, request)
 }
 
 // Complete mocks base method.
-func (m *MockStore) Complete(arg0 context.Context, arg1 cron.Completion) error {
+func (m *MockIStore) Complete(ctx context.Context, completion cron.Completion) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Complete", arg0, arg1)
+	ret := m.ctrl.Call(m, "Complete", ctx, completion)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Complete indicates an expected call of Complete.
-func (mr *MockStoreMockRecorder) Complete(arg0, arg1 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Complete(ctx, completion any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Complete", reflect.TypeOf((*MockStore)(nil).Complete), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Complete", reflect.TypeOf((*MockIStore)(nil).Complete), ctx, completion)
 }
 
 // Expired mocks base method.
-func (m *MockStore) Expired(arg0 context.Context, arg1 time.Time, arg2 int) ([]cron.OccurrenceRecord, error) {
+func (m *MockIStore) Expired(ctx context.Context, now time.Time, limit int) ([]cron.OccurrenceRecord, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Expired", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Expired", ctx, now, limit)
 	ret0, _ := ret[0].([]cron.OccurrenceRecord)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Expired indicates an expected call of Expired.
-func (mr *MockStoreMockRecorder) Expired(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Expired(ctx, now, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Expired", reflect.TypeOf((*MockStore)(nil).Expired), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Expired", reflect.TypeOf((*MockIStore)(nil).Expired), ctx, now, limit)
 }
 
 // Reconcile mocks base method.
-func (m *MockStore) Reconcile(arg0 context.Context, arg1 []cron.JobDefinition, arg2 time.Time) ([]cron.JobState, error) {
+func (m *MockIStore) Reconcile(ctx context.Context, definitions []cron.JobDefinition, now time.Time) ([]cron.JobState, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Reconcile", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Reconcile", ctx, definitions, now)
 	ret0, _ := ret[0].([]cron.JobState)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Reconcile indicates an expected call of Reconcile.
-func (mr *MockStoreMockRecorder) Reconcile(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Reconcile(ctx, definitions, now any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reconcile", reflect.TypeOf((*MockStore)(nil).Reconcile), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reconcile", reflect.TypeOf((*MockIStore)(nil).Reconcile), ctx, definitions, now)
 }
 
 // Renew mocks base method.
-func (m *MockStore) Renew(arg0 context.Context, arg1 cron.LeaseRenewal) error {
+func (m *MockIStore) Renew(ctx context.Context, renewal cron.LeaseRenewal) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Renew", arg0, arg1)
+	ret := m.ctrl.Call(m, "Renew", ctx, renewal)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Renew indicates an expected call of Renew.
-func (mr *MockStoreMockRecorder) Renew(arg0, arg1 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Renew(ctx, renewal any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Renew", reflect.TypeOf((*MockStore)(nil).Renew), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Renew", reflect.TypeOf((*MockIStore)(nil).Renew), ctx, renewal)
 }
 
 // Skip mocks base method.
-func (m *MockStore) Skip(arg0 context.Context, arg1 cron.SkipRequest) error {
+func (m *MockIStore) Skip(ctx context.Context, request cron.SkipRequest) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Skip", arg0, arg1)
+	ret := m.ctrl.Call(m, "Skip", ctx, request)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Skip indicates an expected call of Skip.
-func (mr *MockStoreMockRecorder) Skip(arg0, arg1 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Skip(ctx, request any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Skip", reflect.TypeOf((*MockStore)(nil).Skip), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Skip", reflect.TypeOf((*MockIStore)(nil).Skip), ctx, request)
 }
 
 // Snapshot mocks base method.
-func (m *MockStore) Snapshot(arg0 context.Context) (cron.StoreSnapshot, error) {
+func (m *MockIStore) Snapshot(ctx context.Context) (cron.StoreSnapshot, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Snapshot", arg0)
+	ret := m.ctrl.Call(m, "Snapshot", ctx)
 	ret0, _ := ret[0].(cron.StoreSnapshot)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Snapshot indicates an expected call of Snapshot.
-func (mr *MockStoreMockRecorder) Snapshot(arg0 any) *gomock.Call {
+func (mr *MockIStoreMockRecorder) Snapshot(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockStore)(nil).Snapshot), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockIStore)(nil).Snapshot), ctx)
 }

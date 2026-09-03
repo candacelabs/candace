@@ -17,7 +17,7 @@ import "github.com/candacelabs/candace/pkg/gotth/internal/livebridge"
 // See internal/livebridge for the containment argument, and internal/arch for
 // the assertion that holds it.
 func init() {
-	livebridge.NewSession = func(id [16]byte, identity livebridge.Identity) any {
+	livebridge.NewSession = func(id [16]byte, identity livebridge.IIdentity) any {
 		return Session{id: ID(id), identity: identity}
 	}
 }

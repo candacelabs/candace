@@ -466,7 +466,7 @@ in the file. That is stated in three documents and is a decision, not a gap.
       `0.0.0.0`, no wildcard
 - [ ] Nothing in the deployment reaches for `live.AnyOrigin`; one `grep`
       confirms it
-- [ ] `Authenticate` derives an `Identity` whose `Subject()` is stable and is
+- [ ] `Authenticate` derives an `IIdentity` whose `Subject()` is stable and is
       **not** a token
 - [ ] `CSRF` is a real token bound to the application session, unless the
       application is single-origin **and** `Origins` is a real allowlist

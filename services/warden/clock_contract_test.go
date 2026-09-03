@@ -17,7 +17,7 @@ import (
 // non-flaky under load.
 
 var _ = Describe("NewRealClock", func() {
-	var clock warden.Clock
+	var clock warden.IClock
 
 	BeforeEach(func() {
 		clock = warden.NewRealClock()
@@ -45,13 +45,13 @@ var _ = Describe("NewRealClock", func() {
 	Describe("Timer", func() {
 		It("fires on its channel after the duration", func() {
 			t := clock.NewTimer(5 * time.Millisecond)
-			Eventually(t.C(), "1s").Should(Receive())
+			Eventually(t.C, "1s").Should(Receive())
 		})
 
 		It("Stop() on a still-armed timer reports true and prevents the fire", func() {
 			t := clock.NewTimer(time.Hour) // long enough to never fire in-test
 			Expect(t.Stop()).To(BeTrue())
-			Consistently(t.C(), "50ms").ShouldNot(Receive())
+			Consistently(t.C, "50ms").ShouldNot(Receive())
 		})
 
 		It("Stop() on an already-stopped timer reports false", func() {
@@ -65,7 +65,7 @@ var _ = Describe("NewRealClock", func() {
 			Expect(t.Stop()).To(BeTrue())
 			// Reset on a stopped/drained timer is the documented safe usage.
 			t.Reset(5 * time.Millisecond)
-			Eventually(t.C(), "1s").Should(Receive())
+			Eventually(t.C, "1s").Should(Receive())
 		})
 	})
 
@@ -74,21 +74,21 @@ var _ = Describe("NewRealClock", func() {
 			tk := clock.NewTicker(5 * time.Millisecond)
 			defer tk.Stop()
 			// At least two ticks confirms it is periodic, not one-shot.
-			Eventually(tk.C(), "1s").Should(Receive())
-			Eventually(tk.C(), "1s").Should(Receive())
+			Eventually(tk.C, "1s").Should(Receive())
+			Eventually(tk.C, "1s").Should(Receive())
 		})
 
 		It("stops delivering ticks after Stop()", func() {
 			tk := clock.NewTicker(5 * time.Millisecond)
-			Eventually(tk.C(), "1s").Should(Receive())
+			Eventually(tk.C, "1s").Should(Receive())
 			tk.Stop()
 			// Drain any tick already buffered at the moment of Stop, then assert
 			// quiescence.
 			select {
-			case <-tk.C():
+			case <-tk.C:
 			default:
 			}
-			Consistently(tk.C(), "60ms").ShouldNot(Receive())
+			Consistently(tk.C, "60ms").ShouldNot(Receive())
 		})
 	})
 })

@@ -18,7 +18,7 @@ type Node struct {
 }
 
 // Term is a monotonically increasing election term, Raft-style. A node
-// persists its current term (and vote) via Store so terms never regress
+// persists its current term (and vote) via IStore so terms never regress
 // across restarts.
 type Term uint64
 
@@ -170,8 +170,8 @@ func (m Membership) HasVoter(id NodeID) bool {
 	return false
 }
 
-// Roster is a discovery snapshot: candidate cluster nodes as reported by a
-// PeerDiscoverer. It is advisory only — it never directly changes voting
+// Roster is a discovery snapshot: candidate cluster nodes as reported by an
+// IPeerDiscoverer. It is advisory only — it never directly changes voting
 // membership.
 type Roster struct {
 	Nodes []Node `json:"nodes"`

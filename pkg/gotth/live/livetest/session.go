@@ -37,7 +37,7 @@ import (
 // that is a guard and not decoration: reaching this constructor from production
 // code means importing a package that links testing and then fabricating a
 // testing.TB, which is a visible and absurd act rather than an accident.
-func NewSession(tb testing.TB, id live.ID, identity live.Identity) live.Session {
+func NewSession(tb testing.TB, id live.ID, identity live.IIdentity) live.Session {
 	tb.Helper()
 	if identity == nil {
 		tb.Fatalf("livetest.NewSession: identity is nil. A Session whose Identity() is nil is the " +

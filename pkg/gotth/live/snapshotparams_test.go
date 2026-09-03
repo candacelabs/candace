@@ -50,7 +50,7 @@ import (
 
 var _ = Describe("New, validating the Limits the mount snapshot carries (D-23)", func() {
 	DescribeTable("refuses a session parameter the protocol's refinement does not admit",
-		func(field string, set func(*live.Limits)) {
+		func(field string, set func(limits *live.Limits)) {
 			cfg := validConfig()
 			set(&cfg.Limits)
 
@@ -113,7 +113,7 @@ var _ = Describe("New, validating the Limits the mount snapshot carries (D-23)",
 		}
 		const wrap = int64(1) << 32
 
-		byField := map[string]func(*live.Limits){
+		byField := map[string]func(limits *live.Limits){
 			"HeartbeatInterval": func(l *live.Limits) {
 				l.HeartbeatInterval = time.Duration(wrap+20000) * time.Millisecond
 			},
@@ -167,7 +167,7 @@ var _ = Describe("New, validating the Limits the mount snapshot carries (D-23)",
 	})
 
 	DescribeTable("says what to set the other two to instead",
-		func(field string, set func(*live.Limits), want ...string) {
+		func(field string, set func(limits *live.Limits), want ...string) {
 			cfg := validConfig()
 			set(&cfg.Limits)
 
@@ -195,7 +195,7 @@ var _ = Describe("New, validating the Limits the mount snapshot carries (D-23)",
 	// HeartbeatInterval is milliseconds on the wire — so they cannot disagree
 	// without this going red.
 	DescribeTable("accepts every value the refinement admits, and carries it to the client",
-		func(set func(*live.Limits), read func(*pb.Snapshot) uint32, want uint32) {
+		func(set func(limits *live.Limits), read func(snapshot *pb.Snapshot) uint32, want uint32) {
 			m := mount(func(c *live.Config[counter]) { set(&c.Limits) })
 			defer m.stop()
 

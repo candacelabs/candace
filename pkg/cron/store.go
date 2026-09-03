@@ -16,7 +16,7 @@ var (
 	// ErrInvalidConfiguration reports a constructor or persisted-definition
 	// value that cannot form a safe scheduler.
 	ErrInvalidConfiguration = errors.New("cron: invalid configuration")
-	// ErrStoreRequired reports a Service constructed without an explicit Store.
+	// ErrStoreRequired reports a Service constructed without an explicit IStore.
 	ErrStoreRequired = errors.New("cron: store is required")
 	// ErrNoJobs reports a Service constructed without any static jobs.
 	ErrNoJobs = errors.New("cron: at least one job is required")
@@ -42,7 +42,7 @@ const (
 	maxStoreTextBytes  = 4096
 
 	// SnapshotOccurrenceLimit bounds the recent occurrence history returned by
-	// Store.Snapshot and the read-only status route.
+	// IStore.Snapshot and the read-only status route.
 	SnapshotOccurrenceLimit = 1_000
 )
 
@@ -75,7 +75,7 @@ const (
 )
 
 // OccurrenceRecord is the durable execution record for one scheduled instant.
-// LeaseToken is a fencing secret used only by Store implementations and is
+// LeaseToken is a fencing secret used only by IStore implementations and is
 // deliberately omitted from JSON snapshots.
 type OccurrenceRecord struct {
 	ID           string           `json:"id"`
@@ -157,22 +157,22 @@ type StoreSnapshot struct {
 	Occurrences []OccurrenceRecord `json:"occurrences"`
 }
 
-// Store is the durable scheduler boundary. Implementations must make Claim and
+// IStore is the durable scheduler boundary. Implementations must make Claim and
 // Skip atomic with the associated NextRunAt advance. Complete and Renew must
 // fence on LeaseToken. Reconcile must replace the active static definition set,
 // preserve an already established interval anchor, and leave abandoned runs
 // discoverable through Expired without rewinding the normal job cursor.
-type Store interface {
-	Reconcile(context.Context, []JobDefinition, time.Time) ([]JobState, error)
-	Claim(context.Context, ClaimRequest) (ClaimResult, error)
-	Renew(context.Context, LeaseRenewal) error
-	Complete(context.Context, Completion) error
-	Skip(context.Context, SkipRequest) error
-	Expired(context.Context, time.Time, int) ([]OccurrenceRecord, error)
-	Snapshot(context.Context) (StoreSnapshot, error)
+type IStore interface {
+	Reconcile(ctx context.Context, definitions []JobDefinition, now time.Time) ([]JobState, error)
+	Claim(ctx context.Context, request ClaimRequest) (ClaimResult, error)
+	Renew(ctx context.Context, renewal LeaseRenewal) error
+	Complete(ctx context.Context, completion Completion) error
+	Skip(ctx context.Context, request SkipRequest) error
+	Expired(ctx context.Context, now time.Time, limit int) ([]OccurrenceRecord, error)
+	Snapshot(ctx context.Context) (StoreSnapshot, error)
 }
 
-// MemoryStore is an explicit process-local Store for tests and disposable
+// MemoryStore is an explicit process-local IStore for tests and disposable
 // services. It implements the same lease and reconciliation semantics as a
 // durable adapter, but intentionally does not survive process restart.
 type MemoryStore struct {

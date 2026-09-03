@@ -2,7 +2,7 @@ package watchdog_test
 
 // Contract tests for the leader-only watchdog, exercised through its exported
 // surface (New, Run, Incidents) with a fake ViewSource, a recording
-// mocks.MockNotifier, and the deterministic testclock. These freeze the
+// mocks.MockINotifier, and the deterministic testclock. These freeze the
 // operator-visible alerting guarantees documented in the README:
 //   - exactly one death notification per continuous outage (per episode);
 //   - a repeat death within the cooldown window is recorded but NOT re-notified;
@@ -37,7 +37,7 @@ var wdStart = time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 
 // --- notifier recorder (replaces the retired notify.Mock) -------------------
 
-// notifyRecorder captures incidents delivered to a mocks.MockNotifier via a
+// notifyRecorder captures incidents delivered to a mocks.MockINotifier via a
 // DoAndReturn hook — the replacement for the retired notify.Mock's .Sent()
 // recording. Safe for concurrent delivery goroutines while the spec reads Sent.
 type notifyRecorder struct {
@@ -60,18 +60,18 @@ func (r *notifyRecorder) Sent() []warden.Incident {
 	return out
 }
 
-// recordingNotifier returns a MockNotifier whose Notify records every delivery
+// recordingNotifier returns a MockINotifier whose Notify records every delivery
 // into the returned recorder (DoAndReturn capture-to-slice).
-func recordingNotifier() (*mocks.MockNotifier, *notifyRecorder) {
+func recordingNotifier() (*mocks.MockINotifier, *notifyRecorder) {
 	GinkgoHelper()
 	rec := &notifyRecorder{}
 	ctrl := gomock.NewController(GinkgoT())
-	m := mocks.NewMockNotifier(ctrl)
+	m := mocks.NewMockINotifier(ctrl)
 	m.EXPECT().Notify(gomock.Any(), gomock.Any()).DoAndReturn(rec.record).AnyTimes()
 	return m, rec
 }
 
-// srcStub is a warden.ViewSource whose view is settable and whose Subscribe
+// srcStub is a warden.IViewSource whose view is settable and whose Subscribe
 // channels are signalled by push(), so a spec can wake the watchdog loop
 // deterministically without relying on the (test-suppressed) tick.
 type srcStub struct {
@@ -176,7 +176,7 @@ var _ = Describe("Watchdog death alerting", func() {
 	)
 
 	newWD := func(cfg watchdog.Config) {
-		var mock *mocks.MockNotifier
+		var mock *mocks.MockINotifier
 		mock, rec = recordingNotifier()
 		clk = testclock.New(wdStart)
 		src = newSrc(healthyView())

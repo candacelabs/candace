@@ -13,7 +13,7 @@ import (
 	harnesssdk "github.com/candacelabs/candace/services/candaceos/harness"
 )
 
-func newTestController(cfg *candaceosv1.CoreConfig, fleetClient *fleet.Client, reconciler Reconciler) *Controller {
+func newTestController(cfg *candaceosv1.CoreConfig, fleetClient *fleet.Client, reconciler IReconciler) *Controller {
 	if cfg == nil {
 		cfg = &candaceosv1.CoreConfig{}
 	}

@@ -57,18 +57,18 @@ func (lv *loopView) View() warden.ClusterView {
 
 func (lv *loopView) set(v warden.ClusterView) { lv.writes <- v }
 
-func (lv *loopView) Subscribe(int) (<-chan warden.ClusterView, func()) {
+func (lv *loopView) Subscribe(buf int) (<-chan warden.ClusterView, func()) {
 	return nil, func() {} // unused by metrics
 }
 
 func (lv *loopView) Close() { close(lv.done) }
 
-// mockView returns a MockViewSource whose View() always yields the fixed
+// mockView returns a MockIViewSource whose View() always yields the fixed
 // snapshot v (metrics never calls Subscribe). Used for the static-view specs.
-func mockView(v warden.ClusterView) warden.ViewSource {
+func mockView(v warden.ClusterView) *mocks.MockIViewSource {
 	GinkgoHelper()
 	ctrl := gomock.NewController(GinkgoT())
-	mv := mocks.NewMockViewSource(ctrl)
+	mv := mocks.NewMockIViewSource(ctrl)
 	mv.EXPECT().View().Return(v).AnyTimes()
 	return mv
 }

@@ -82,7 +82,7 @@ func causalClause(scheduledBy uint64) string {
 // owner, a stop condition, and a place that waits:
 //
 //   - wsx/handler.go, the session goroutine, started once register has
-//     succeeded. Waited for by App.Close through the conn's done channel, which
+//     succeeded. Waited for by IApp.Close through the conn's done channel, which
 //     serve closes after deregistering (C-34).
 //   - wsx/conn.go, the actor's Run. Joined by serve's own actorDone before that
 //     done channel closes.
@@ -108,7 +108,7 @@ func causalClause(scheduledBy uint64) string {
 // helper — whose whole job is to bound that wait — would be waiting for the
 // wait it bounds. Three of the four are also in wsx, which would have to hold
 // an Actor to reach this method at all.
-func (a *Actor) spawn(ctx context.Context, site string, fn func(context.Context)) {
+func (a *Actor) spawn(ctx context.Context, site string, fn func(ctx context.Context)) {
 	a.effects.Add(1)
 	a.m.Goroutines(ctx, 1)
 	go func() {
@@ -138,7 +138,7 @@ func (a *Actor) spawn(ctx context.Context, site string, fn func(context.Context)
 // patch that names only the effect leaves an operator able to reach
 // "effect:counter.watch" and unable to reach the click that scheduled it —
 // which is the causal edge the whole provenance story is about.
-func (a *Actor) runEffects(ctx context.Context, effects []Effect, scheduledBy uint64) {
+func (a *Actor) runEffects(ctx context.Context, effects []IEffect, scheduledBy uint64) {
 	for _, e := range effects {
 		if e == nil {
 			continue
@@ -160,7 +160,7 @@ var effectSourceRefused = fmt.Sprintf(
 		"the origin of every patch the effect causes",
 	protocol.MaxOriginSource-len(protocol.SourceEffectPrefix), protocol.SourceEffectPrefix)
 
-func (a *Actor) execute(ctx context.Context, e Effect, scheduledBy uint64) {
+func (a *Actor) execute(ctx context.Context, e IEffect, scheduledBy uint64) {
 	source := e.EffectSource()
 
 	// BR-2. The source is application input with no registration step
@@ -209,7 +209,7 @@ func (a *Actor) execute(ctx context.Context, e Effect, scheduledBy uint64) {
 
 // runOne performs one effect under the guard that turns any failure into a
 // deterministic event the reducer can handle, rather than into silence.
-func (a *Actor) runOne(ctx context.Context, e Effect, source string, scheduledBy uint64) (result string) {
+func (a *Actor) runOne(ctx context.Context, e IEffect, source string, scheduledBy uint64) (result string) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = "panicked"

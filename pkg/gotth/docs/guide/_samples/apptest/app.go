@@ -25,7 +25,7 @@ type State struct {
 }
 
 // Reduce is the pure state transition under test.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventInc:
 		s.N++
@@ -40,7 +40,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 // without a running server.
 func Config(origins []string) live.Config[State] {
 	return live.Config[State]{
-		Init:   func(context.Context, live.Session) (State, []live.Effect, error) { return State{}, nil, nil },
+		Init:   func(context.Context, live.Session) (State, []live.IEffect, error) { return State{}, nil, nil },
 		Reduce: Reduce,
 		Fragments: []live.Fragment[State]{
 			{

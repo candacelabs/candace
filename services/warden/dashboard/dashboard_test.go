@@ -22,18 +22,18 @@ import (
 // implementations return copies from a single-owner event loop), so they stand
 // in for the "already a snapshot" contract. The dashboard never calls Subscribe.
 
-func mockView(v warden.ClusterView) warden.ViewSource {
+func mockView(v warden.ClusterView) *mocks.MockIViewSource {
 	GinkgoHelper()
 	ctrl := gomock.NewController(GinkgoT())
-	mv := mocks.NewMockViewSource(ctrl)
+	mv := mocks.NewMockIViewSource(ctrl)
 	mv.EXPECT().View().Return(v).AnyTimes()
 	return mv
 }
 
-func mockIncidents(incs []warden.Incident) warden.IncidentLog {
+func mockIncidents(incs []warden.Incident) *mocks.MockIIncidentLog {
 	GinkgoHelper()
 	ctrl := gomock.NewController(GinkgoT())
-	ml := mocks.NewMockIncidentLog(ctrl)
+	ml := mocks.NewMockIIncidentLog(ctrl)
 	ml.EXPECT().Incidents().Return(incs).AnyTimes()
 	return ml
 }
@@ -118,7 +118,7 @@ func membershipView(now time.Time) warden.ClusterView {
 // newTestMux builds the dashboard router exactly as production does
 // (httpserver.NewEngine), so the tests exercise the real middleware, 405, and
 // 404 behavior. It returns an http.Handler (the underlying *gin.Engine).
-func newTestMux(view warden.ViewSource, incs warden.IncidentLog) http.Handler {
+func newTestMux(view warden.IViewSource, incs warden.IIncidentLog) http.Handler {
 	GinkgoHelper()
 	d, err := New(view, incs, "test-1.2.3")
 	Expect(err).NotTo(HaveOccurred())

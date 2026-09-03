@@ -63,10 +63,10 @@ func newApp() *live.App[state] {
 	GinkgoHelper()
 
 	app, err := live.New(live.Config[state]{
-		Init: func(context.Context, live.Session) (state, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
 			return state{}, nil, nil
 		},
-		Reduce: func(s state, ev live.Event) (state, []live.Effect) {
+		Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
 			if ev.Name == eventBump {
 				s.N++
 			}

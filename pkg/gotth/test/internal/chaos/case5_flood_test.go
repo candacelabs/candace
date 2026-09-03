@@ -122,6 +122,9 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 			if w.isClosed() {
 				break
 			}
+			// CS-9 keep: this sleep IS the flood's rate. It is the load
+			// generator's throttle, which is the independent variable of the
+			// whole case; replacing it with a wait would delete the experiment.
 			time.Sleep(time.Duration(float64(batch) / rate * float64(time.Second)))
 		}
 		elapsed := time.Since(start)
@@ -189,6 +192,10 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 			if err := w.sendBytes(payload); err != nil {
 				break
 			}
+			// CS-9 keep: pacing the sender, not waiting on it. Sixteen
+			// megabytes shoved down the socket at once would measure the
+			// kernel's buffer rather than whether the server retains a frame
+			// it refused.
 			time.Sleep(20 * time.Millisecond)
 		}
 
@@ -317,7 +324,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 	// the closure lives in live's own suite, which mounts a real session at each
 	// end of each range and reads the parameter back off the Snapshot.
 	DescribeTable("refuses at construction a limit that would kill every session at mount (D-23)",
-		func(mutate func(*live.Limits), field string) {
+		func(mutate func(limits *live.Limits), field string) {
 			cfg := chaosConfig(newLedger())
 			cfg.Logger = nil
 			mutate(&cfg.Limits)

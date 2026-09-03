@@ -13,7 +13,7 @@ import (
 // synchronization is needed.
 type LogNotifier struct{}
 
-var _ warden.Notifier = (*LogNotifier)(nil)
+var _ warden.INotifier = (*LogNotifier)(nil)
 
 // NewLogNotifier returns a LogNotifier.
 func NewLogNotifier() *LogNotifier { return &LogNotifier{} }

@@ -9,6 +9,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -21,6 +22,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 func TestCLIContract(t *testing.T) {
@@ -134,9 +137,23 @@ func (p *proc) kill() {
 	}
 }
 
-// awaitOutput waits until the captured output contains sub, or fails.
+// bootBudget is how long a spec waits for one line to appear in a warden
+// process's merged output.
+//
+// It used to be "5s", written inline in the one helper below, and that number
+// is why this suite flaked. What is being waited for is a real process
+// starting, binding a port, loading a config and winning an election, on a
+// host that may be running anything else at the time — so five seconds of wall
+// clock was a bet on the machine rather than a statement about the binary. A
+// minute costs a slower failure on a run that was going to fail; twenty
+// seconds too few costs a red build on a correct one.
+var bootBudget = patience.Budget{Within: time.Minute, Interval: 20 * time.Millisecond}
+
+// awaitOutput waits until the captured output contains sub, failing with
+// everything the process did print instead.
 func (p *proc) awaitOutput(sub string) {
-	Eventually(p.output, "5s", "20ms").Should(ContainSubstring(sub))
+	patience.Await(GinkgoTB(), fmt.Sprintf("the process to log %q", sub), bootBudget,
+		p.output, func(output string) bool { return strings.Contains(output, sub) })
 }
 
 var _ = Describe("warden -version", func() {

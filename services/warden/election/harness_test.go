@@ -58,17 +58,17 @@ func defaultTimings() harnessTimings {
 type node struct {
 	id      warden.NodeID
 	m       *Manager
-	store   warden.Store
+	store   warden.IStore
 	cancel  context.CancelFunc
 	runDone chan struct{}
 }
 
 // cluster is a deterministic in-memory harness. It is the shared
-// warden.Transport for every node and models partitions and node death. All
+// warden.ITransport for every node and models partitions and node death. All
 // nodes share one testclock so the whole fleet observes the same simulated
 // time.
 type cluster struct {
-	t       harnessT
+	t       iHarnessT
 	clock   *testclock.Clock
 	timings harnessTimings
 	ids     []warden.NodeID
@@ -91,14 +91,14 @@ type cluster struct {
 	seedPeers map[warden.NodeID][]warden.Node
 }
 
-var _ warden.Transport = (*cluster)(nil)
+var _ warden.ITransport = (*cluster)(nil)
 
 // newCluster builds and starts an n-node cluster with default timings.
-func newCluster(t harnessT, ids ...warden.NodeID) *cluster {
+func newCluster(t iHarnessT, ids ...warden.NodeID) *cluster {
 	return newClusterWithTimings(t, defaultTimings(), ids...)
 }
 
-func newClusterWithTimings(t harnessT, tim harnessTimings, ids ...warden.NodeID) *cluster {
+func newClusterWithTimings(t iHarnessT, tim harnessTimings, ids ...warden.NodeID) *cluster {
 	t.Helper()
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	c := &cluster{
@@ -151,7 +151,7 @@ func (c *cluster) configFor(id warden.NodeID) Config {
 }
 
 // start constructs and runs a Manager for id backed by st.
-func (c *cluster) start(id warden.NodeID, st warden.Store) {
+func (c *cluster) start(id warden.NodeID, st warden.IStore) {
 	c.t.Helper()
 	if c.discovery {
 		c.mu.Lock()
@@ -178,7 +178,7 @@ func (c *cluster) start(id warden.NodeID, st warden.Store) {
 
 // ---- discovery harness ----
 
-// fakeDiscoverer is a channel-driven warden.PeerDiscoverer. Tests push Roster
+// fakeDiscoverer is a channel-driven warden.IPeerDiscoverer. Tests push Roster
 // snapshots into it; Discover hands the Manager the receive end. It spawns no
 // goroutine of its own (so it can never leak) and never blocks a push once the
 // Run context is done.
@@ -215,12 +215,12 @@ func (f *fakeDiscoverer) push(r warden.Roster) {
 	}
 }
 
-var _ warden.PeerDiscoverer = (*fakeDiscoverer)(nil)
+var _ warden.IPeerDiscoverer = (*fakeDiscoverer)(nil)
 
 // newDiscoveryCluster builds and starts an n-node discovery-mode cluster. The
 // founder ids seed the initial voter set; join and remove configure
 // JoinStability and RemoveAfter.
-func newDiscoveryCluster(t harnessT, tim harnessTimings, join, remove time.Duration, ids ...warden.NodeID) *cluster {
+func newDiscoveryCluster(t iHarnessT, tim harnessTimings, join, remove time.Duration, ids ...warden.NodeID) *cluster {
 	t.Helper()
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	c := &cluster{
@@ -405,7 +405,7 @@ func (c *cluster) persistedVoters(id warden.NodeID) []warden.NodeID {
 	return out
 }
 
-// ---- warden.Transport ----
+// ---- warden.ITransport ----
 
 func (c *cluster) RequestVote(ctx context.Context, peer warden.Node, req warden.VoteRequest) (warden.VoteResponse, error) {
 	tgt, ok := c.route(req.CandidateID, peer.ID)
@@ -423,7 +423,7 @@ func (c *cluster) SendHeartbeat(ctx context.Context, peer warden.Node, req warde
 	return tgt.HandleHeartbeat(ctx, req), nil
 }
 
-// Identify implements warden.Transport for the harness. Reachability follows
+// Identify implements warden.ITransport for the harness. Reachability follows
 // the same partition/kill rules; src is unknown for identify, so it uses the
 // destination's own group (identify is only issued by nodes probing peers
 // they can reach; tests that need partition-aware identify drive route
@@ -439,10 +439,15 @@ func (c *cluster) Identify(ctx context.Context, peer warden.Node) (warden.Identi
 	return n.m.HandleIdentify(ctx), nil
 }
 
-// route resolves the target handler if src can reach dst right now. The lookup
+// route resolves the target Manager if src can reach dst right now. The lookup
 // is done under the harness mutex; the returned handler is invoked by the
 // caller outside the lock.
-func (c *cluster) route(src, dst warden.NodeID) (warden.RPCHandler, bool) {
+//
+// It returns the concrete *Manager rather than warden.IRPCHandler: the harness
+// only ever holds Managers, so the interface here was a widening on the way
+// out, which is the CS-8 defect spelled as a method. The `ok` bool is the
+// guard, so the failure arm's nil is never dereferenced.
+func (c *cluster) route(src, dst warden.NodeID) (*Manager, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.killed[src] || c.killed[dst] {

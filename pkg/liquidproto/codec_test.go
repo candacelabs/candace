@@ -87,7 +87,7 @@ var _ = Describe("Codec", func() {
 	})
 
 	It("reports invalid configuration and typed nil messages", func() {
-		_, err := liquidproto.NewCodec[*structpb.Struct](nil, func(*structpb.Struct) error { return nil })
+		_, err := liquidproto.NewCodec[*structpb.Struct](nil, func(message *structpb.Struct) error { return nil })
 		Expect(errors.Is(err, liquidproto.ErrNilConstructor)).To(BeTrue(), "error: %v", err)
 
 		_, err = liquidproto.NewCodec(func() *structpb.Struct { return new(structpb.Struct) }, nil)
@@ -95,7 +95,7 @@ var _ = Describe("Codec", func() {
 
 		_, err = liquidproto.NewCodec(
 			func() *structpb.Struct { return nil },
-			func(*structpb.Struct) error { return nil },
+			func(message *structpb.Struct) error { return nil },
 		)
 		Expect(errors.Is(err, liquidproto.ErrNilMessage)).To(BeTrue(), "error: %v", err)
 
@@ -107,7 +107,7 @@ var _ = Describe("Codec", func() {
 	It("binds broad codecs to their constructor's concrete protobuf type", func() {
 		codec, err := liquidproto.NewCodec[proto.Message](
 			func() proto.Message { return new(wrapperspb.StringValue) },
-			func(proto.Message) error { return nil },
+			func(message proto.Message) error { return nil },
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(codec.MessageType()).To(Equal("google.protobuf.StringValue"))

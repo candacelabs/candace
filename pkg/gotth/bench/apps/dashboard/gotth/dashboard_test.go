@@ -718,7 +718,7 @@ var _ = Describe("The subscription, and losing it", func() {
 	// looks right while being wrong.
 	It("re-subscribes when the library says the failure was transient", func() {
 		_, effects := Reduce(mounted(), effectFailed(SourceSubscribe, "true"))
-		Expect(effects).To(Equal([]live.Effect{SubscribeEffect{}}))
+		Expect(effects).To(Equal([]live.IEffect{SubscribeEffect{}}))
 	})
 
 	DescribeTable("and does not otherwise",

@@ -212,7 +212,7 @@ var _ = Describe("The outbound validation boundary", func() {
 	})
 
 	It("refuses a zero patch identifier, so a chain can have no hole", func() {
-		for _, break_ := range []func(*pb.Patch){
+		for _, break_ := range []func(patch *pb.Patch){
 			func(p *pb.Patch) { p.ServerSeq = 0 },
 			func(p *pb.Patch) { p.PatchId = 0 },
 			func(p *pb.Patch) { p.TransitionId = 0 },
@@ -324,7 +324,7 @@ var _ = Describe("The framer", func() {
 
 	It("reports a transport failure separately from an invalid frame", func() {
 		boom := errors.New("connection reset")
-		f = protocol.NewFramer(func(context.Context, []byte) error { return boom })
+		f = protocol.NewFramer(func(ctx context.Context, payload []byte) error { return boom })
 
 		_, err := f.Send(context.Background(), serverFrame("patch"))
 

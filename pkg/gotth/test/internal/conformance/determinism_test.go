@@ -163,7 +163,7 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 	}
 
 	It("passes a reducer that is a pure function of its inputs", func() {
-		pure := func(s tally, ev live.Event) (tally, []live.Effect) {
+		pure := func(s tally, ev live.Event) (tally, []live.IEffect) {
 			if ev.Name == "qa.increment" {
 				s.N++
 			}
@@ -179,7 +179,7 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 
 	// The mutation. If this passes, the helper is decoration.
 	It("fails a reducer that reads a clock", func() {
-		impure := func(s tally, ev live.Event) (tally, []live.Effect) {
+		impure := func(s tally, ev live.Event) (tally, []live.IEffect) {
 			s.N++
 			s.Label = fmt.Sprint(time.Now().UnixNano())
 			return s, nil
@@ -208,13 +208,13 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 	// replay 2 by construction, on every host and every schedule.
 	It("fails a reducer whose effects differ between replays", func() {
 		calls := 0
-		impure := func(s tally, ev live.Event) (tally, []live.Effect) {
+		impure := func(s tally, ev live.Event) (tally, []live.IEffect) {
 			// State advances identically on every replay, so the effects
 			// comparison is the only thing that can catch this.
 			s.N++
 			calls++
 			if calls%2 == 1 {
-				return s, []live.Effect{noisyEffect{}}
+				return s, []live.IEffect{noisyEffect{}}
 			}
 			return s, nil
 		}
@@ -231,7 +231,7 @@ var _ = Describe("The reducer determinism helper (FR-15)", func() {
 	})
 
 	It("refuses to certify anything from a single replay or an empty log", func() {
-		pure := func(s tally, _ live.Event) (tally, []live.Effect) { return s, nil }
+		pure := func(s tally, _ live.Event) (tally, []live.IEffect) { return s, nil }
 
 		tooFew, msgFew := runProbe(func(tb testing.TB) {
 			livetest.ReplayN(tb, pure, tally{}, log, 1)

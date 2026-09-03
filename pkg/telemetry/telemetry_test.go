@@ -72,7 +72,7 @@ var _ = Describe("trace contexts", func() {
 	})
 
 	DescribeTable("rejects malformed values",
-		func(mutate func(*telemetryv1.TraceContext)) {
+		func(mutate func(traceContext *telemetryv1.TraceContext)) {
 			trace := validTrace()
 			mutate(trace)
 			Expect(errors.Is(telemetry.ValidateTraceContext(trace), telemetry.ErrInvalidTraceContext)).To(BeTrue())

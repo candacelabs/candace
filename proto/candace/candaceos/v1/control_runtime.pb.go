@@ -36,7 +36,7 @@ const (
 	HarnessBackend_HARNESS_BACKEND_COPILOT_CLI HarnessBackend = 1
 	HarnessBackend_HARNESS_BACKEND_DEMO        HarnessBackend = 2
 	HarnessBackend_HARNESS_BACKEND_OLLAMA      HarnessBackend = 3
-	// EMBEDDED identifies a Go implementation supplied through harness.Factory
+	// EMBEDDED identifies a Go implementation supplied through harness.IFactory
 	// by the embedding binary. HarnessRuntimeIdentity.implementation records
 	// the implementation's stable name.
 	HarnessBackend_HARNESS_BACKEND_EMBEDDED HarnessBackend = 4

@@ -108,7 +108,7 @@ const (
 	RoleModerator
 )
 
-// Member is the application's identity. It satisfies live.Identity, is bound at
+// Member is the application's identity. It satisfies live.IIdentity, is bound at
 // the handshake by Authenticate, and is immutable for the connection's life:
 // a session cannot outlive its connection, so there is no re-authentication and
 // no privilege change mid-session. A role change takes effect on the next
@@ -190,7 +190,7 @@ func (PostEffect) EffectSource() string { return "room.post" }
 //
 // It is a pure function: it performs no I/O, reads no clock, and returns the
 // write it wants as a value for the executor to perform.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventPost:
 		if !s.CanPost() {
@@ -203,7 +203,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 			return s, nil
 		}
 		s.Notice = ""
-		return s, []live.Effect{PostEffect{Author: s.Me, Body: body}}
+		return s, []live.IEffect{PostEffect{Author: s.Me, Body: body}}
 
 	case EventPurge:
 		s.Notice = ""
@@ -224,7 +224,7 @@ type Room struct{ Posted []string }
 // a refactor, a branch nobody replayed. The identity is a parameter of this
 // hook rather than something to fish out of a context, which is what makes an
 // executor that forgot to ask impossible to write.
-func (r *Room) Execute(_ context.Context, sess live.Session, effect live.Effect, _ live.Emitter) error {
+func (r *Room) Execute(_ context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
 	member, ok := sess.Identity().(Member)
 	if !ok {
 		return fmt.Errorf("room: the session identity is not a member")
@@ -247,7 +247,7 @@ func (r *Room) Execute(_ context.Context, sess live.Session, effect live.Effect,
 // and greppable.
 func Config(room *Room, origins []string) live.Config[State] {
 	return live.Config[State]{
-		Init: func(_ context.Context, sess live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
 			member, ok := sess.Identity().(Member)
 			if !ok {
 				return State{}, nil, fmt.Errorf("room: the session identity is not a member")
@@ -295,9 +295,9 @@ func Config(room *Room, origins []string) live.Config[State] {
 // 401 rather than a close code.
 //
 // A real application reads whatever it already trusts here — a session cookie,
-// a bearer token — and turns it into a live.Identity. This one reads a header
+// a bearer token — and turns it into a live.IIdentity. This one reads a header
 // so the sample has no session store in it.
-func Authenticate(r *http.Request) (live.Identity, error) {
+func Authenticate(r *http.Request) (live.IIdentity, error) {
 	name := r.Header.Get("X-Room-Member")
 	if name == "" {
 		return nil, fmt.Errorf("room: no member on the request")

@@ -90,7 +90,7 @@ var _ = Describe("Copilot event projection", func() {
 			HarnessBackend: candaceosv1.HarnessBackend_HARNESS_BACKEND_DEMO,
 		}, nil, nil)
 		harness := testCopilotHarness(controller)
-		controller.OnRunStatus = func(string, string, time.Time) { panic("durable run status failed") }
+		controller.OnRunStatus = func(runID, status string, at time.Time) { panic("durable run status failed") }
 		Expect(controller.Start(ctx)).To(Succeed())
 		DeferCleanup(controller.Close)
 		_, err := controller.Send(ctx, "start a turn", candaceosv1.HarnessDelivery_HARNESS_DELIVERY_IMMEDIATE)

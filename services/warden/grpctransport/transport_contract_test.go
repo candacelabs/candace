@@ -1,6 +1,6 @@
 package grpctransport_test
 
-// Contract suite for the gRPC warden.Transport client, asserted against a REAL
+// Contract suite for the gRPC warden.ITransport client, asserted against a REAL
 // grpcmux server over a real TCP port. It freezes the two client guarantees the
 // election manager relies on:
 //
@@ -48,10 +48,10 @@ func (s *stubRPC) HandleVote(ctx context.Context, _ warden.VoteRequest) warden.V
 	}
 	return s.voteResp
 }
-func (s *stubRPC) HandleHeartbeat(context.Context, warden.HeartbeatRequest) warden.HeartbeatResponse {
+func (s *stubRPC) HandleHeartbeat(ctx context.Context, req warden.HeartbeatRequest) warden.HeartbeatResponse {
 	return s.hbResp
 }
-func (s *stubRPC) HandleIdentify(context.Context) warden.IdentifyResponse { return s.ident }
+func (s *stubRPC) HandleIdentify(ctx context.Context) warden.IdentifyResponse { return s.ident }
 
 // stubViews is a no-op ViewSource; WatchCluster is not exercised here.
 type stubViews struct{}
@@ -62,7 +62,7 @@ func (stubViews) Subscribe(buf int) (<-chan warden.ClusterView, func()) {
 	return ch, func() {}
 }
 
-func startServer(rpc warden.RPCHandler) (addr string, stop func()) {
+func startServer(rpc warden.IRPCHandler) (addr string, stop func()) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	Expect(err).NotTo(HaveOccurred())
 	srv := grpcmux.New(grpcmux.Config{Listener: lis, HTTP: httpserver.NewEngine(), RPC: rpc, Views: stubViews{}})
@@ -77,7 +77,7 @@ func startServer(rpc warden.RPCHandler) (addr string, stop func()) {
 	return srv.Addr().String(), stop
 }
 
-var _ = Describe("gRPC warden.Transport client", func() {
+var _ = Describe("gRPC warden.ITransport client", func() {
 	Describe("round-trips", func() {
 		var (
 			tr   *grpctransport.Transport

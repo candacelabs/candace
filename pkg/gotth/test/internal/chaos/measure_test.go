@@ -212,6 +212,11 @@ var _ = Describe("QA3-2 — MinResyncInterval and ResyncBurst against a legitima
 			ticks := int(window/dashboardInterval) + 100
 			w.startTicks(dashboardInterval, ticks, false)
 
+			// CS-9 keep: an observation window, not an await. This whole file
+			// measures rather than asserts, and what it measures is what a
+			// session does over a fixed span at a fixed loss rate. There is no
+			// condition to stop early on; stopping early would shorten the
+			// span the numbers below are per-unit of.
 			time.Sleep(window)
 
 			var refused int
@@ -444,7 +449,7 @@ func (s *provenanceSink) totals() (int64, int64) {
 	return s.counter.total(), s.records.Load()
 }
 
-func (s *provenanceSink) Enabled(context.Context, slog.Level) bool { return true }
+func (s *provenanceSink) Enabled(ctx context.Context, level slog.Level) bool { return true }
 
 func (s *provenanceSink) Handle(ctx context.Context, r slog.Record) error {
 	if s.prov {

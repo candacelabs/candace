@@ -1,5 +1,5 @@
 // Package testclock provides a deterministic, manually-advanced
-// implementation of warden.Clock for tests. Time only moves when Advance is
+// implementation of warden.IClock for tests. Time only moves when Advance is
 // called; timers and tickers fire from Advance in chronological order. This
 // lets the election and watchdog state machines be exercised without real
 // sleeps, so tests are fast and non-flaky.
@@ -9,7 +9,7 @@
 // global time.
 //
 // This is a supported test double, not an internal fixture: anything built on
-// warden.Clock — including code outside this repository — can drive it the same
+// warden.IClock — including code outside this repository — can drive it the same
 // way warden's own suites do. Callers may rely on Advance being the only thing
 // that moves time, and on the waiters due within one Advance firing in
 // deadline order, ties broken by creation order, so a test observes one fixed
@@ -29,7 +29,7 @@ import (
 	"github.com/candacelabs/candace/services/warden"
 )
 
-// Clock is a deterministic fake clock implementing warden.Clock. All methods
+// Clock is a deterministic fake clock implementing warden.IClock. All methods
 // are safe for concurrent use.
 type Clock struct {
 	mu       sync.Mutex
@@ -69,7 +69,7 @@ func (c *Clock) Now() time.Time {
 	return c.now
 }
 
-// After implements warden.Clock. It returns a channel that receives the time
+// After implements warden.IClock. It returns a channel that receives the time
 // once d has elapsed (via Advance).
 func (c *Clock) After(d time.Duration) <-chan time.Time {
 	c.mu.Lock()
@@ -77,15 +77,22 @@ func (c *Clock) After(d time.Duration) <-chan time.Time {
 	return c.addWaiterLocked(d, 0).ch
 }
 
-// NewTimer implements warden.Clock.
+// NewTimer implements warden.IClock. The returned warden.Timer is filled from
+// this clock's own machinery: the waiter's channel, and closures over the
+// waiter id that reach back into stop and reset.
 func (c *Clock) NewTimer(d time.Duration) warden.Timer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	w := c.addWaiterLocked(d, 0)
-	return &fakeTimer{clock: c, id: w.id, ch: w.ch}
+	id, ch := w.id, w.ch
+	return warden.Timer{
+		C:     ch,
+		Stop:  func() bool { return c.stop(id) },
+		Reset: func(d time.Duration) bool { return c.reset(id, ch, d) },
+	}
 }
 
-// NewTicker implements warden.Clock. It panics if d <= 0, mirroring
+// NewTicker implements warden.IClock. It panics if d <= 0, mirroring
 // time.NewTicker.
 func (c *Clock) NewTicker(d time.Duration) warden.Ticker {
 	if d <= 0 {
@@ -94,7 +101,11 @@ func (c *Clock) NewTicker(d time.Duration) warden.Ticker {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	w := c.addWaiterLocked(d, d)
-	return &fakeTicker{clock: c, id: w.id, ch: w.ch}
+	id, ch := w.id, w.ch
+	return warden.Ticker{
+		C:    ch,
+		Stop: func() { c.stop(id) },
+	}
 }
 
 // addWaiterLocked registers a new waiter. Caller must hold c.mu.
@@ -232,22 +243,3 @@ func (c *Clock) reset(id int, ch chan time.Time, d time.Duration) bool {
 	c.notifyBlockersLocked()
 	return active
 }
-
-type fakeTimer struct {
-	clock *Clock
-	id    int
-	ch    chan time.Time
-}
-
-func (t *fakeTimer) C() <-chan time.Time        { return t.ch }
-func (t *fakeTimer) Stop() bool                 { return t.clock.stop(t.id) }
-func (t *fakeTimer) Reset(d time.Duration) bool { return t.clock.reset(t.id, t.ch, d) }
-
-type fakeTicker struct {
-	clock *Clock
-	id    int
-	ch    chan time.Time
-}
-
-func (t *fakeTicker) C() <-chan time.Time { return t.ch }
-func (t *fakeTicker) Stop()               { t.clock.stop(t.id) }

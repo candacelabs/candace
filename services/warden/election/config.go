@@ -51,7 +51,7 @@ type Config struct {
 	// Manager runs in DISCOVERY mode: it consumes roster snapshots, verifies
 	// candidates via Transport.Identify, and — only as leader — grows/shrinks
 	// the voting membership one node at a time.
-	Discoverer warden.PeerDiscoverer
+	Discoverer warden.IPeerDiscoverer
 	// JoinStability is how long a discovered node must be continuously present
 	// in the roster AND identify-verified before it becomes admission-eligible.
 	// Default 30s. Discovery mode only. It also serves as the grace period
@@ -103,7 +103,7 @@ func applyDefaults(cfg *Config) {
 }
 
 // validateConfig checks structural invariants that defaults cannot repair.
-func validateConfig(cfg Config, tr warden.Transport, st warden.Store, clock warden.Clock) error {
+func validateConfig(cfg Config, tr warden.ITransport, st warden.IStore, clock warden.IClock) error {
 	if tr == nil {
 		return ErrNoTransport
 	}
@@ -146,7 +146,7 @@ func validateConfig(cfg Config, tr warden.Transport, st warden.Store, clock ward
 // Defaults for zero-valued Config durations: HeartbeatInterval 1s,
 // SuspectAfter 5s, DeadAfter 15s, ElectionTimeoutMin 1500ms,
 // ElectionTimeoutMax 3s, RPCTimeout 500ms, ViewFreshFor = DeadAfter.
-func NewManager(cfg Config, tr warden.Transport, st warden.Store, clock warden.Clock) (*Manager, error) {
+func NewManager(cfg Config, tr warden.ITransport, st warden.IStore, clock warden.IClock) (*Manager, error) {
 	if err := validateConfig(cfg, tr, st, clock); err != nil {
 		return nil, err
 	}

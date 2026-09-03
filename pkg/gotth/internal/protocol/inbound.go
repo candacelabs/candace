@@ -6,19 +6,19 @@ import (
 	pb "github.com/candacelabs/candace/pkg/gotth/internal/protocol/gotthlivepb"
 )
 
-// Inbound is a closed sum type over the frames a client may send. Values
+// IInbound is a closed sum type over the frames a client may send. Values
 // returned by ParseInbound hold immutable scalar snapshots copied only after
 // the generated Liquid Proto validators succeed.
 //
 // The type is closed by an unexported method: a package outside this one
 // cannot add a variant, which is what makes the switch in the session ingress
 // exhaustive in fact and not merely by convention.
-type Inbound interface {
+type IInbound interface {
 	isInbound()
 	// Kind reports which payload this variant carries.
 	Kind() Kind
 	// Envelope returns a fresh copy of the validated frame envelope. Mutating
-	// the copy cannot alter the accepted Inbound value.
+	// the copy cannot alter the accepted IInbound value.
 	Envelope() *pb.Frame
 	sessionIDValue() [16]byte
 }
@@ -135,7 +135,7 @@ func (r InboundResyncRequest) Reason() pb.ResyncReason { return r.reason }
 //
 // Errors are always *RejectError, so the caller has the metric label, the
 // reply code and the close code without re-deriving any of them.
-func ParseInbound(b []byte, limits Limits) (Inbound, error) {
+func ParseInbound(b []byte, limits Limits) (IInbound, error) {
 	if limits.MaxInboundFrameBytes > 0 && len(b) > limits.MaxInboundFrameBytes {
 		// The connection's read limit is the authoritative enforcement of H-5
 		// and has already refused this frame before allocating it. This is the
@@ -283,7 +283,7 @@ func checkVersion(v uint32) error {
 // value is transport state, and the transport ingress is the only place that
 // holds it. A mismatch is a protocol violation and closes the connection: a
 // client that names another session is not confused, it is probing.
-func CheckSessionID(in Inbound, want [16]byte) error {
+func CheckSessionID(in IInbound, want [16]byte) error {
 	got := in.sessionIDValue()
 	if got == want {
 		return nil

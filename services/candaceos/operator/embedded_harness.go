@@ -23,7 +23,7 @@ const maxHarnessStructuredDetailBytes = 256 * 1024
 // The adapter, rather than the provider, owns run correlation and the internal
 // UI event representation.
 type harnessAdapter struct {
-	runtime     harnesssdk.Runtime
+	runtime     harnesssdk.IRuntime
 	controller  *Controller
 	description string
 }
@@ -31,7 +31,7 @@ type harnessAdapter struct {
 func newHarnessAdapter(
 	cfg *candaceosv1.CoreConfig,
 	controller *Controller,
-	factory harnesssdk.Factory,
+	factory harnesssdk.IFactory,
 	expectedBackend candaceosv1.HarnessBackend,
 ) (*harnessAdapter, *candaceosv1.HarnessRuntimeIdentity, error) {
 	description := config.HarnessBackendName(expectedBackend)
@@ -371,5 +371,5 @@ func cloneStringMap(source map[string]string) map[string]string {
 	return result
 }
 
-var _ harnessImplementation = (*harnessAdapter)(nil)
-var _ harnesssdk.Host = (*harnessHost)(nil)
+var _ iHarnessImplementation = (*harnessAdapter)(nil)
+var _ harnesssdk.IHost = (*harnessHost)(nil)

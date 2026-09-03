@@ -26,8 +26,8 @@ func TestTestclockContract(t *testing.T) {
 var tcStart = time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 
 var _ = Describe("testclock.Clock", func() {
-	It("implements warden.Clock", func() {
-		var _ warden.Clock = testclock.New(tcStart)
+	It("implements warden.IClock", func() {
+		var _ warden.IClock = testclock.New(tcStart)
 	})
 
 	Describe("Now / Advance", func() {
@@ -44,7 +44,7 @@ var _ = Describe("testclock.Clock", func() {
 			c := testclock.New(tcStart)
 			tm := c.NewTimer(10 * time.Millisecond)
 			c.Advance(9 * time.Millisecond)
-			Consistently(tm.C(), "20ms").ShouldNot(Receive())
+			Consistently(tm.C, "20ms").ShouldNot(Receive())
 		})
 
 		It("fires exactly once at/after its deadline, delivering the fire time", func() {
@@ -52,11 +52,11 @@ var _ = Describe("testclock.Clock", func() {
 			tm := c.NewTimer(10 * time.Millisecond)
 			c.Advance(10 * time.Millisecond)
 			var got time.Time
-			Eventually(tm.C()).Should(Receive(&got))
+			Eventually(tm.C).Should(Receive(&got))
 			Expect(got).To(Equal(tcStart.Add(10 * time.Millisecond)))
 			// One-shot: no second fire even after more time passes.
 			c.Advance(time.Second)
-			Consistently(tm.C(), "20ms").ShouldNot(Receive())
+			Consistently(tm.C, "20ms").ShouldNot(Receive())
 		})
 
 		It("Stop() on an armed timer returns true and prevents the fire", func() {
@@ -64,7 +64,7 @@ var _ = Describe("testclock.Clock", func() {
 			tm := c.NewTimer(10 * time.Millisecond)
 			Expect(tm.Stop()).To(BeTrue())
 			c.Advance(time.Second)
-			Consistently(tm.C(), "20ms").ShouldNot(Receive())
+			Consistently(tm.C, "20ms").ShouldNot(Receive())
 		})
 
 		It("Stop() on an already-stopped timer returns false", func() {
@@ -80,7 +80,7 @@ var _ = Describe("testclock.Clock", func() {
 			Expect(tm.Stop()).To(BeTrue())
 			Expect(tm.Reset(5 * time.Millisecond)).To(BeFalse()) // was not armed
 			c.Advance(5 * time.Millisecond)
-			Eventually(tm.C()).Should(Receive())
+			Eventually(tm.C).Should(Receive())
 		})
 	})
 
@@ -91,11 +91,11 @@ var _ = Describe("testclock.Clock", func() {
 			late := c.NewTimer(30 * time.Millisecond)
 
 			c.Advance(15 * time.Millisecond)
-			Eventually(early.C()).Should(Receive())
-			Consistently(late.C(), "20ms").ShouldNot(Receive())
+			Eventually(early.C).Should(Receive())
+			Consistently(late.C, "20ms").ShouldNot(Receive())
 
 			c.Advance(20 * time.Millisecond) // now at 35ms total
-			Eventually(late.C()).Should(Receive())
+			Eventually(late.C).Should(Receive())
 		})
 	})
 
@@ -108,11 +108,11 @@ var _ = Describe("testclock.Clock", func() {
 			// as real time.Ticker), so a periodic ticker is exercised by advancing
 			// one interval at a time and draining between.
 			c.Advance(10 * time.Millisecond)
-			Eventually(tk.C()).Should(Receive())
+			Eventually(tk.C).Should(Receive())
 			c.Advance(10 * time.Millisecond)
-			Eventually(tk.C()).Should(Receive())
+			Eventually(tk.C).Should(Receive())
 			c.Advance(10 * time.Millisecond)
-			Eventually(tk.C()).Should(Receive())
+			Eventually(tk.C).Should(Receive())
 		})
 
 		It("drops an undrained tick across a wide Advance (size-1 buffer, like time.Ticker)", func() {
@@ -121,22 +121,22 @@ var _ = Describe("testclock.Clock", func() {
 			defer tk.Stop()
 			c.Advance(35 * time.Millisecond) // three ticks fire, but none are drained
 			// Exactly one tick is buffered; the rest were dropped.
-			Eventually(tk.C()).Should(Receive())
-			Consistently(tk.C(), "20ms").ShouldNot(Receive())
+			Eventually(tk.C).Should(Receive())
+			Consistently(tk.C, "20ms").ShouldNot(Receive())
 		})
 
 		It("stops firing after Stop()", func() {
 			c := testclock.New(tcStart)
 			tk := c.NewTicker(10 * time.Millisecond)
 			c.Advance(10 * time.Millisecond)
-			Eventually(tk.C()).Should(Receive())
+			Eventually(tk.C).Should(Receive())
 			tk.Stop()
 			select {
-			case <-tk.C():
+			case <-tk.C:
 			default:
 			}
 			c.Advance(time.Second)
-			Consistently(tk.C(), "20ms").ShouldNot(Receive())
+			Consistently(tk.C, "20ms").ShouldNot(Receive())
 		})
 
 		It("panics on a non-positive interval, mirroring time.NewTicker", func() {

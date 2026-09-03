@@ -24,16 +24,16 @@ var (
 type Runner[Event any] struct {
 	mailbox *mailbox.Mailbox[runnerState[Event]]
 	stopErr error
-	publish func(Event)
-	eventID func(Event) string
+	publish func(event Event)
+	eventID func(event Event) string
 }
 
 type runnerState[Event any] struct {
 	lifecycle context.Context
 	cancel    context.CancelFunc
 
-	send    func(context.Context, *candaceosv1.HarnessPrompt) error
-	abort   func(context.Context) error
+	send    func(ctx context.Context, prompt *candaceosv1.HarnessPrompt) error
+	abort   func(ctx context.Context) error
 	cleanup func() error
 	pending []Event
 
@@ -49,12 +49,12 @@ type runnerState[Event any] struct {
 // NewRunner starts the lifecycle owner. publish receives replay before
 // callbacks accepted prior to Activate; eventID supplies the deduplication key.
 // A nil publish discards events and a nil eventID disables deduplication.
-func NewRunner[Event any](publish func(Event), eventID func(Event) string) *Runner[Event] {
+func NewRunner[Event any](publish func(event Event), eventID func(event Event) string) *Runner[Event] {
 	if publish == nil {
-		publish = func(Event) {}
+		publish = func(event Event) {}
 	}
 	if eventID == nil {
-		eventID = func(Event) string { return "" }
+		eventID = func(event Event) string { return "" }
 	}
 	runner := &Runner[Event]{
 		mailbox: mailbox.New[runnerState[Event]](),
@@ -102,8 +102,8 @@ func (runner *Runner[Event]) BeginStart() error {
 // Until Install succeeds, the caller retains cleanup ownership. Installed
 // operations must return when their context is canceled or cleanup runs.
 func (runner *Runner[Event]) Install(
-	send func(context.Context, *candaceosv1.HarnessPrompt) error,
-	abort func(context.Context) error,
+	send func(ctx context.Context, prompt *candaceosv1.HarnessPrompt) error,
+	abort func(ctx context.Context) error,
 	cleanup func() error,
 ) error {
 	reply := make(chan error)
@@ -235,7 +235,7 @@ func (runner *Runner[Event]) startOperation(
 	state *runnerState[Event],
 	ctx context.Context,
 	reply chan error,
-	operation func(context.Context) error,
+	operation func(ctx context.Context) error,
 ) {
 	operationContext, cancel := context.WithCancel(ctx)
 	stopCancellation := context.AfterFunc(state.lifecycle, cancel)

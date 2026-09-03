@@ -14,7 +14,7 @@ import (
 func cyclic(name string) *Definition {
 	return &Definition{
 		name:     name,
-		assemble: func(ctx context.Context, capabilities Capabilities) error { return nil },
+		assemble: func(ctx context.Context, capabilities ICapabilities) error { return nil },
 	}
 }
 

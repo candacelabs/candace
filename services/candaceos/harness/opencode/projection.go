@@ -21,7 +21,7 @@ type projectedEvent struct {
 	// parentMessageID is the provider user message this event descends from.
 	// It is the key the run fence is evaluated against.
 	parentMessageID string
-	record          func(*projectionState)
+	record          func(projected *projectionState)
 }
 
 func (event projectedEvent) recordInto(projected *projectionState) {

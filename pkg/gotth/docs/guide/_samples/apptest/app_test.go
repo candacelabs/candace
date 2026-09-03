@@ -68,7 +68,7 @@ var _ = Describe("the authorization hook", func() {
 	// Both values are the caller's. Two tabs belonging to one user are two
 	// identifiers and one identity, which is what Limits.MaxSessionsPerIdentity
 	// is about.
-	newSession := func(b byte, identity live.Identity) live.Session {
+	newSession := func(b byte, identity live.IIdentity) live.Session {
 		return livetest.NewSession(GinkgoTB(), live.ID{b}, identity)
 	}
 

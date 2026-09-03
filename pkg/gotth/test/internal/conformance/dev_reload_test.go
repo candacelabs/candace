@@ -16,6 +16,8 @@ import (
 	"github.com/coder/websocket"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 // ---------------------------------------------------------------------------
@@ -467,40 +469,50 @@ func devMark(c *chrome, value string) {
 	Expect(page.Mark).To(Equal(value), "the marker this spec depends on did not stick")
 }
 
+// devPollInterval is how often the two waits below look. A CDP round trip is
+// not free, and neither wait is measuring latency at this resolution: the
+// elapsed figure awaitReload reports is a reload that takes seconds.
+const devPollInterval = 200 * time.Millisecond
+
+// devLiveBudget is how long the reloaded document has to come back live. It is
+// the second half of a reload the caller already waited for, on a browser
+// sharing a VM with everything else — see devHost — so it is stated at a
+// minute rather than at the couple of seconds it takes when the box is quiet.
+var devLiveBudget = patience.Budget{Within: 60 * time.Second, Interval: devPollInterval}
+
 // awaitReload waits for the document to be replaced, and reports how long it
 // took. The marker being GONE is the reload; nothing else here is evidence of
 // one.
+//
+// The timing loop is patience's; what is left here is the domain: a read that
+// lands inside the reload is the event being waited for rather than a failure,
+// so it reports the marker as still present and the wait continues.
 func awaitReload(c *chrome, marker string, within time.Duration) (devPage, time.Duration) {
 	GinkgoHelper()
 
-	started := time.Now()
-	var last devPage
-	Eventually(func() string {
+	read := func() devPage {
 		page, err := devRead(c)
 		if err != nil {
-			// A read that lands inside the reload. That is the event being
-			// waited for, not a failure.
-			return marker
+			return devPage{Mark: marker}
 		}
-		last = page
-		return page.Mark
-	}, within, 200*time.Millisecond).ShouldNot(Equal(marker),
-		"the document never reloaded: the marker set before the edit is still on window")
+		return page
+	}
+
+	started := time.Now()
+	patience.Await(GinkgoTB(),
+		"the document to be replaced: the marker set before the edit to leave window",
+		patience.Budget{Within: within, Interval: devPollInterval},
+		read, func(page devPage) bool { return page.Mark != marker })
 	elapsed := time.Since(started)
 
 	// The reload is a fresh document, so wait for it to be live again before
 	// anything reads what it renders.
-	Eventually(func() string {
-		page, err := devRead(c)
-		if err != nil {
-			return ""
-		}
-		last = page
-		return page.Status
-	}, 60*time.Second, 200*time.Millisecond).Should(Equal("live"),
-		"the reloaded document never reached data-gotth-status=live")
+	reloaded := patience.Await(GinkgoTB(),
+		"the reloaded document to reach data-gotth-status=live",
+		devLiveBudget,
+		read, func(page devPage) bool { return page.Status == "live" })
 
-	return last, elapsed
+	return reloaded, elapsed
 }
 
 // devHiddenVacuity is the precondition every spec here rests on, and the

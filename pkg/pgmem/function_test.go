@@ -50,7 +50,7 @@ var _ = Describe("Scalar functions", func() {
 		Expect(database.RegisterFunction(pgmem.Function{
 			Name:  "words",
 			Arity: 2,
-			Implementation: func(...any) (any, error) {
+			Implementation: func(arguments ...any) (any, error) {
 				return "fixed", nil
 			},
 		})).To(Succeed())
@@ -93,7 +93,7 @@ var _ = Describe("Scalar functions", func() {
 			Expect(schema.RegisterFunction(pgmem.Function{
 				Name:  name,
 				Arity: 0,
-				Implementation: func(...any) (any, error) {
+				Implementation: func(arguments ...any) (any, error) {
 					return value, nil
 				},
 			})).To(Succeed())
@@ -138,7 +138,7 @@ var _ = Describe("Scalar functions", func() {
 		Expect(target.RegisterFunction(pgmem.Function{
 			Name:  "private_value",
 			Arity: 0,
-			Implementation: func(...any) (any, error) {
+			Implementation: func(arguments ...any) (any, error) {
 				callbackCalls.Add(1)
 				return "secret", nil
 			},
@@ -163,21 +163,21 @@ var _ = Describe("Scalar functions", func() {
 		Expect(database.RegisterFunction(pgmem.Function{
 			Name:  "fail_safely",
 			Arity: 0,
-			Implementation: func(...any) (any, error) {
+			Implementation: func(arguments ...any) (any, error) {
 				return nil, failure
 			},
 		})).To(Succeed())
 		Expect(database.RegisterFunction(pgmem.Function{
 			Name:  "panic_safely",
 			Arity: 0,
-			Implementation: func(...any) (any, error) {
+			Implementation: func(arguments ...any) (any, error) {
 				panic("callback panic")
 			},
 		})).To(Succeed())
 		Expect(database.RegisterFunction(pgmem.Function{
 			Name:  "invalid_result",
 			Arity: 0,
-			Implementation: func(...any) (any, error) {
+			Implementation: func(arguments ...any) (any, error) {
 				return struct{}{}, nil
 			},
 		})).To(Succeed())
@@ -207,7 +207,7 @@ var _ = Describe("Scalar functions", func() {
 			return pgmem.Function{
 				Name:  "changing_value",
 				Arity: 0,
-				Implementation: func(...any) (any, error) {
+				Implementation: func(arguments ...any) (any, error) {
 					return value, nil
 				},
 			}
@@ -259,7 +259,7 @@ var _ = Describe("Scalar functions", func() {
 		database, err := pgmem.New()
 		Expect(err).NotTo(HaveOccurred())
 
-		validImplementation := func(...any) (any, error) { return nil, nil }
+		validImplementation := func(arguments ...any) (any, error) { return nil, nil }
 		Expect(database.RegisterFunction(pgmem.Function{
 			Name:           "",
 			Implementation: validImplementation,
@@ -293,13 +293,13 @@ var _ = Describe("Scalar functions", func() {
 		Expect(database.RegisterFunction(pgmem.Function{
 			Name:  "register_during_close",
 			Arity: 0,
-			Implementation: func(...any) (any, error) {
+			Implementation: func(arguments ...any) (any, error) {
 				close(entered)
 				<-release
 				return nil, database.RegisterFunction(pgmem.Function{
 					Name:  "late_registration",
 					Arity: 0,
-					Implementation: func(...any) (any, error) {
+					Implementation: func(arguments ...any) (any, error) {
 						return int64(1), nil
 					},
 				})

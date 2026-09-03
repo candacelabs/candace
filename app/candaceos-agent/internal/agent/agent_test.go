@@ -100,7 +100,7 @@ var _ = Describe("DockerComposeRunner", func() {
 	})
 
 	It("plans preflight then a non-destructive running convergence", func() {
-		composeProcess := NewMockComposeProcessExecutor(gomock.NewController(GinkgoT()))
+		composeProcess := NewMockIComposeProcessExecutor(gomock.NewController(GinkgoT()))
 		runner, err := agent.NewDockerComposeRunner(
 			testDockerCLI.Configured, workspace, revisionRoot, testRevisionLimits(), true,
 			agent.WithComposeProcessExecutor(composeProcess),
@@ -125,7 +125,7 @@ var _ = Describe("DockerComposeRunner", func() {
 	})
 
 	It("stops by Compose identity even after the app source is removed", func() {
-		composeProcess := NewMockComposeProcessExecutor(gomock.NewController(GinkgoT()))
+		composeProcess := NewMockIComposeProcessExecutor(gomock.NewController(GinkgoT()))
 		runner, err := agent.NewDockerComposeRunner(
 			testDockerCLI.Configured, workspace, revisionRoot, testRevisionLimits(), true,
 			agent.WithComposeProcessExecutor(composeProcess),
@@ -156,7 +156,7 @@ var _ = Describe("DockerComposeRunner", func() {
 	})
 
 	It("executes the exact source-independent stop plan in live mode", func() {
-		composeProcess := NewMockComposeProcessExecutor(gomock.NewController(GinkgoT()))
+		composeProcess := NewMockIComposeProcessExecutor(gomock.NewController(GinkgoT()))
 		composeProcess.EXPECT().Resolve(testDockerCLI.Configured).Return(testDockerCLI.Resolved, nil)
 		runner, err := agent.NewDockerComposeRunner(
 			testDockerCLI.Configured, workspace, revisionRoot, testRevisionLimits(), false,
@@ -441,13 +441,13 @@ var _ = Describe("Fenced reconciliation", func() {
 		controller := gomock.NewController(GinkgoT())
 		loaded := agent.Snapshot{Fence: &candaceosv1.Fence{Term: 2, LeaderId: "warden-a"}}
 		var saved agent.Snapshot
-		store := NewMockStore(controller)
+		store := NewMockIStore(controller)
 		store.EXPECT().Load().Return(loaded, true, nil)
 		store.EXPECT().Save(gomock.Any()).DoAndReturn(func(snapshot agent.Snapshot) error {
 			saved = snapshot
 			return nil
 		}).Times(2)
-		executor := NewMockExecutor(controller)
+		executor := NewMockIExecutor(controller)
 		executor.EXPECT().Plan(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, assignment *candaceosv1.Assignment) (agent.Plan, error) {
 				assignment.App = "executor-mutated"
@@ -503,12 +503,12 @@ var _ = Describe("Fenced reconciliation", func() {
 
 	It("does not publish a fence that failed its durable write", func() {
 		controller := gomock.NewController(GinkgoT())
-		store := NewMockStore(controller)
+		store := NewMockIStore(controller)
 		store.EXPECT().Load().Return(
 			agent.Snapshot{Fence: &candaceosv1.Fence{Term: 4, LeaderId: "warden-a"}}, true, nil,
 		)
 		store.EXPECT().Save(gomock.Any()).Return(errors.New("simulated durable write failure"))
-		executor := NewMockExecutor(controller)
+		executor := NewMockIExecutor(controller)
 		reconciler, err := agent.NewReconciler(store, executor)
 		Expect(err).NotTo(HaveOccurred())
 		request := &candaceosv1.ReconcileRequest{
@@ -529,7 +529,7 @@ var _ = Describe("Fenced reconciliation", func() {
 	It("retains the last durable assignment when the completed write fails", func() {
 		previous := testAssignment("previous", "previous", "previous", candaceosv1.DesiredState_DESIRED_STATE_RUNNING)
 		controller := gomock.NewController(GinkgoT())
-		store := NewMockStore(controller)
+		store := NewMockIStore(controller)
 		store.EXPECT().Load().Return(agent.Snapshot{
 			Fence:      &candaceosv1.Fence{Term: 4, LeaderId: "warden-a"},
 			Assignment: previous,
@@ -538,7 +538,7 @@ var _ = Describe("Fenced reconciliation", func() {
 			store.EXPECT().Save(gomock.Any()).Return(nil),
 			store.EXPECT().Save(gomock.Any()).Return(errors.New("simulated completed-state failure")),
 		)
-		executor := NewMockExecutor(controller)
+		executor := NewMockIExecutor(controller)
 		executor.EXPECT().Plan(gomock.Any(), gomock.Any()).Return(stubPlan(), nil)
 		executor.EXPECT().DryRun().Return(true)
 		executor.EXPECT().Execute(gomock.Any(), gomock.Any()).Return(nil)
@@ -563,7 +563,7 @@ var _ = Describe("Fenced reconciliation", func() {
 
 	It("durably accepts a new fence before attempting Compose", func() {
 		store := &agent.MemoryStore{}
-		executor := NewMockExecutor(gomock.NewController(GinkgoT()))
+		executor := NewMockIExecutor(gomock.NewController(GinkgoT()))
 		executor.EXPECT().Plan(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, assignment *candaceosv1.Assignment) (agent.Plan, error) {
 				persisted, ok, err := store.Load()
@@ -595,7 +595,7 @@ var _ = Describe("Fenced reconciliation", func() {
 		Expect(err).To(MatchError(ContainSubstring("simulated Compose failure")))
 		Expect(errors.Is(err, agent.ErrExecution)).To(BeTrue())
 
-		restartedExecutor := NewMockExecutor(gomock.NewController(GinkgoT()))
+		restartedExecutor := NewMockIExecutor(gomock.NewController(GinkgoT()))
 		restarted, err := agent.NewReconciler(store, restartedExecutor)
 		Expect(err).NotTo(HaveOccurred())
 		request.Fence.Term = 7
@@ -606,7 +606,7 @@ var _ = Describe("Fenced reconciliation", func() {
 	It("rejects stale and conflicting fences before planning", func() {
 		store := &agent.MemoryStore{}
 		Expect(store.Save(agent.Snapshot{Fence: &candaceosv1.Fence{Term: 4, LeaderId: "warden-a"}})).To(Succeed())
-		executor := NewMockExecutor(gomock.NewController(GinkgoT()))
+		executor := NewMockIExecutor(gomock.NewController(GinkgoT()))
 		reconciler, err := agent.NewReconciler(store, executor)
 		Expect(err).NotTo(HaveOccurred())
 		assignment := testAssignment("notes", "notes", "notes", candaceosv1.DesiredState_DESIRED_STATE_STOPPED)
@@ -627,7 +627,7 @@ var _ = Describe("Fenced reconciliation", func() {
 		Expect(os.Mkdir(filepath.Join(workspace, "notes"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(workspace, "notes", "compose.yaml"), []byte("services: {}\n"), 0o600)).To(Succeed())
 		sourceRevision, sourceDigest := commitAgentWorkspace(workspace)
-		composeProcess := NewMockComposeProcessExecutor(gomock.NewController(GinkgoT()))
+		composeProcess := NewMockIComposeProcessExecutor(gomock.NewController(GinkgoT()))
 		composeProcess.EXPECT().Run(gomock.Any(), gomock.Any()).Return("", nil)
 		revisionRoot := GinkgoT().TempDir()
 		DeferCleanup(removeSealedAgentTestTree, revisionRoot)
@@ -664,7 +664,7 @@ var _ = Describe("Fenced reconciliation", func() {
 		workspace := GinkgoT().TempDir()
 		Expect(os.Mkdir(filepath.Join(workspace, "notes"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(workspace, "notes", "compose.yaml"), []byte("services: {}\n"), 0o600)).To(Succeed())
-		composeProcess := NewMockComposeProcessExecutor(gomock.NewController(GinkgoT()))
+		composeProcess := NewMockIComposeProcessExecutor(gomock.NewController(GinkgoT()))
 		composeProcess.EXPECT().Run(gomock.Any(), gomock.Any()).Return("", nil).Times(2)
 		revisionRoot := GinkgoT().TempDir()
 		DeferCleanup(removeSealedAgentTestTree, revisionRoot)

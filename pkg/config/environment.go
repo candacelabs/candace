@@ -13,14 +13,14 @@ import (
 
 // Environment reads configuration from a named string source.
 type Environment struct {
-	lookup func(string) (string, bool)
+	lookup func(name string) (string, bool)
 }
 
 // NewEnvironment constructs an environment reader around lookup. A nil lookup
 // is an empty environment, which keeps zero-input configuration deterministic.
-func NewEnvironment(lookup func(string) (string, bool)) Environment {
+func NewEnvironment(lookup func(name string) (string, bool)) Environment {
 	if lookup == nil {
-		lookup = func(string) (string, bool) { return "", false }
+		lookup = func(name string) (string, bool) { return "", false }
 	}
 	return Environment{lookup: lookup}
 }

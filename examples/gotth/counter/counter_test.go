@@ -78,7 +78,7 @@ var _ = Describe("The reducer", func() {
 
 			next, effects := Reduce(state, click(event, 1, baseTime))
 
-			Expect(effects).To(Equal([]live.Effect{want}))
+			Expect(effects).To(Equal([]live.IEffect{want}))
 			Expect(next.Value).To(Equal(int64(41)), "a reducer must not apply the change itself")
 			Expect(next.Version).To(Equal(uint64(7)))
 		},
@@ -160,7 +160,7 @@ var _ = Describe("The reducer", func() {
 	// while proving nothing. live.EffectFailedEvent exists so the name is not
 	// something an application has to remember.
 	DescribeTable("acts on a failed effect only when the library says a retry is safe",
-		func(source, retryable string, want []live.Effect) {
+		func(source, retryable string, want []live.IEffect) {
 			state := State{Self: tabA, Value: 3, Version: 1}
 
 			next, effects := Reduce(state, live.Event{
@@ -177,7 +177,7 @@ var _ = Describe("The reducer", func() {
 			Expect(next.Value).To(Equal(int64(3)), "a failed effect is not a change to the counter")
 		},
 		Entry("a transient subscription failure is re-subscribed",
-			SourceWatch, "true", []live.Effect{WatchEffect{}}),
+			SourceWatch, "true", []live.IEffect{WatchEffect{}}),
 		Entry("a terminal subscription failure is not",
 			SourceWatch, "false", nil),
 		Entry("an unreadable classification is terminal",

@@ -34,8 +34,8 @@ import (
 
 // compile-time interface assertions.
 var (
-	_ warden.Store = (*FileStore)(nil)
-	_ warden.Store = (*MemStore)(nil)
+	_ warden.IStore = (*FileStore)(nil)
+	_ warden.IStore = (*MemStore)(nil)
 )
 
 // stateMarshal renders PersistentState with proto field names (snake_case);
@@ -165,7 +165,7 @@ func syncDir(dir string) error {
 	return f.Sync()
 }
 
-// MemStore is an in-memory warden.Store for tests. It is safe for concurrent
+// MemStore is an in-memory warden.IStore for tests. It is safe for concurrent
 // use and can be reused across simulated process restarts (construct a new
 // Manager against the same MemStore to model a restart with intact state).
 type MemStore struct {

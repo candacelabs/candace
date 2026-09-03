@@ -67,10 +67,10 @@ func emitting(ev live.Event) (*mounted, *obstest.Metrics, chan error) {
 
 	app := mount(func(c *live.Config[counter]) {
 		c.Metrics = metrics
-		c.Reduce = func(state counter, e live.Event) (counter, []live.Effect) {
+		c.Reduce = func(state counter, e live.Event) (counter, []live.IEffect) {
 			switch e.Name {
 			case "counter.increment":
-				return state, []live.Effect{logEffect{Message: "emit"}}
+				return state, []live.IEffect{logEffect{Message: "emit"}}
 			case "counter.relabel":
 				state.Label = "emitted"
 			case live.EffectFailedEvent:
@@ -78,7 +78,7 @@ func emitting(ev live.Event) (*mounted, *obstest.Metrics, chan error) {
 			}
 			return state, nil
 		}
-		c.Execute = func(_ context.Context, _ live.Session, _ live.Effect, emit live.Emitter) error {
+		c.Execute = func(_ context.Context, _ live.Session, _ live.IEffect, emit live.Emitter) error {
 			err := emit(ev)
 			returned <- err
 			return err

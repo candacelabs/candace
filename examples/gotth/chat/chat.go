@@ -125,7 +125,7 @@ func (r Role) String() string {
 	return "unknown"
 }
 
-// Member is this application's live.Identity: a name and what it may do.
+// Member is this application's live.IIdentity: a name and what it may do.
 //
 // Identity is immutable for the life of a connection, which is why the role
 // lives here. A member promoted to moderator is a member until they reconnect,
@@ -346,7 +346,7 @@ func Validate(body string) string {
 // learns the result the same way every other session does — through an event
 // the room pushed. That is what makes two tabs unable to disagree, and it is
 // why the author on a message is not something this function gets to choose.
-func Reduce(state State, ev live.Event) (State, []live.Effect) {
+func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventDraft:
 		return applyDraft(state, ev.Fields.Get(fieldBody)), nil
@@ -356,7 +356,7 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 		return applySend(state, ev)
 	case EventPurge:
 		state.Notice = ""
-		return state, []live.Effect{PurgeEffect{Cause: ev.ID}}
+		return state, []live.IEffect{PurgeEffect{Cause: ev.ID}}
 	case EventPosted:
 		return applyPosted(state, ev), nil
 	case EventPresence:
@@ -414,7 +414,7 @@ func applyClear(state State) State {
 }
 
 // applySend handles the form submission.
-func applySend(state State, ev live.Event) (State, []live.Effect) {
+func applySend(state State, ev live.Event) (State, []live.IEffect) {
 	raw := ev.Fields.Get(fieldBody)
 	body := strings.TrimSpace(raw)
 
@@ -432,7 +432,7 @@ func applySend(state State, ev live.Event) (State, []live.Effect) {
 		// actor boundary. It comes back as an ordinary event, which is why the
 		// notice below is rendered by applyFailure and not from here.
 		state.Draft, state.DraftError = "", ""
-		return state, []live.Effect{PanicEffect{Cause: ev.ID}}
+		return state, []live.IEffect{PanicEffect{Cause: ev.ID}}
 
 	case CmdPanicRender:
 		// FR-23's third site, armed for this session only.
@@ -453,7 +453,7 @@ func applySend(state State, ev live.Event) (State, []live.Effect) {
 	state.Draft = ""
 	state.DraftError = ""
 	state.Notice = ""
-	return state, []live.Effect{PostEffect{Body: body, Cause: ev.ID}}
+	return state, []live.IEffect{PostEffect{Body: body, Cause: ev.ID}}
 }
 
 // applyPosted folds a message the room pushed.
@@ -526,13 +526,13 @@ func applyPurged(state State, ev live.Event) State {
 // The one failure worth retrying is a dead subscription, because a session
 // without one keeps rendering the last log it saw and stops learning about
 // anybody else — it looks right while being wrong.
-func applyFailure(state State, ev live.Event) (State, []live.Effect) {
+func applyFailure(state State, ev live.Event) (State, []live.IEffect) {
 	source := ev.Fields.Get(live.EffectFailedSourceField)
 	state.Notice = "something went wrong on the server: " + source
 
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && source == SourceSubscribe {
-		return state, []live.Effect{SubscribeEffect{}}
+		return state, []live.IEffect{SubscribeEffect{}}
 	}
 	return state, nil
 }
@@ -601,7 +601,7 @@ func (d Directory) Names() []string {
 // allocated. The message names no untrusted input: it is an error an operator
 // reads, and echoing back the cookie value would put whatever a client chose
 // to send into a server log.
-func (d Directory) Authenticate(r *http.Request) (live.Identity, error) {
+func (d Directory) Authenticate(r *http.Request) (live.IIdentity, error) {
 	cookie, err := r.Cookie(IdentityCookie)
 	if err != nil {
 		return nil, fmt.Errorf("chat: no %s cookie on the upgrade request: sign in at /login?user=alice first", IdentityCookie)
@@ -673,7 +673,7 @@ func Config(room *Room, dir Directory, origins []string) live.Config[State] {
 		// under one lock — split in two, a message landing between them is
 		// either shown twice or missed entirely, and the window is exactly as
 		// wide as a page load.
-		Init: func(_ context.Context, s live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
 			member, ok := s.Identity().(Member)
 			if !ok {
 				return State{}, nil, fmt.Errorf("chat: the session identity is %T, not a Member", s.Identity())
@@ -683,7 +683,7 @@ func Config(room *Room, dir Directory, origins []string) live.Config[State] {
 				Me:   member.Name,
 				Role: member.Role,
 				Room: room.Join(s.ID(), member.Name),
-			}, []live.Effect{SubscribeEffect{}}, nil
+			}, []live.IEffect{SubscribeEffect{}}, nil
 		},
 
 		Reduce: Reduce,

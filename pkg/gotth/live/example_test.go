@@ -50,7 +50,7 @@ func Example() {
 		})
 	}
 
-	reduce := func(s state, ev live.Event) (state, []live.Effect) {
+	reduce := func(s state, ev live.Event) (state, []live.IEffect) {
 		if ev.Name == "counter.increment" {
 			s.Count++
 		}
@@ -58,7 +58,9 @@ func Example() {
 	}
 
 	app, err := live.New(live.Config[state]{
-		Init:   func(context.Context, live.Session) (state, []live.Effect, error) { return state{}, nil, nil },
+		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
+			return state{}, nil, nil
+		},
 		Reduce: reduce,
 		Fragments: []live.Fragment[state]{{
 			ID:     "counter",
@@ -135,10 +137,10 @@ func exampleRender(s exampleState) templ.Component {
 // that meant them would still have to write them.
 func exampleApp(dev bool) *live.App[exampleState] {
 	app, err := live.New(live.Config[exampleState]{
-		Init: func(context.Context, live.Session) (exampleState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (exampleState, []live.IEffect, error) {
 			return exampleState{}, nil, nil
 		},
-		Reduce: func(s exampleState, ev live.Event) (exampleState, []live.Effect) {
+		Reduce: func(s exampleState, ev live.Event) (exampleState, []live.IEffect) {
 			if ev.Name == "counter.increment" {
 				s.N++
 			}
@@ -230,10 +232,10 @@ func ExampleApp_PageHandler() {
 
 	app, err := live.New(live.Config[exampleState]{
 		// The loader. Its answer changes; the frozen page's cannot.
-		Init: func(context.Context, live.Session) (exampleState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (exampleState, []live.IEffect, error) {
 			return exampleState{N: loaded}, nil, nil
 		},
-		Reduce:       func(s exampleState, _ live.Event) (exampleState, []live.Effect) { return s, nil },
+		Reduce:       func(s exampleState, _ live.Event) (exampleState, []live.IEffect) { return s, nil },
 		Fragments:    []live.Fragment[exampleState]{{ID: "counter", Render: exampleRender}},
 		Events:       []string{"counter.increment"},
 		Origins:      []string{"https://app.example"},
@@ -307,7 +309,7 @@ func ExampleApp_Mux() {
 // *ConfigError New would have returned, naming the field and what to set it to.
 func ExampleMustNew() {
 	app := live.MustNew(live.Config[exampleState]{
-		Reduce:       func(s exampleState, _ live.Event) (exampleState, []live.Effect) { return s, nil },
+		Reduce:       func(s exampleState, _ live.Event) (exampleState, []live.IEffect) { return s, nil },
 		Fragments:    []live.Fragment[exampleState]{{ID: "counter", Render: exampleRender}},
 		Events:       []string{"counter.increment"},
 		Origins:      []string{"https://app.example"},

@@ -22,12 +22,12 @@ const (
 
 // --- notifier recorder (replaces the retired notify.Mock) -------------------
 
-// errDeliveryFailed is the error a fail-primed MockNotifier returns; it stands
+// errDeliveryFailed is the error a fail-primed MockINotifier returns; it stands
 // in for the retired notify.Mock's ErrMockFailure. The retry specs only assert
 // on the recorded-delivery count, so the exact error value is irrelevant.
 var errDeliveryFailed = errors.New("watchdog test: simulated delivery failure")
 
-// notifyRecorder captures incidents delivered to a mocks.MockNotifier via a
+// notifyRecorder captures incidents delivered to a mocks.MockINotifier via a
 // DoAndReturn hook — the replacement for the retired notify.Mock's .Sent()
 // recording. It is concurrency-safe because deliveries run on watchdog
 // goroutines while the test goroutine reads Sent().
@@ -52,22 +52,22 @@ func (r *notifyRecorder) Sent() []warden.Incident {
 	return out
 }
 
-// recordingNotifier returns a MockNotifier whose Notify records every delivery
+// recordingNotifier returns a MockINotifier whose Notify records every delivery
 // into the returned recorder (DoAndReturn capture-to-slice).
-func recordingNotifier(ctrl *gomock.Controller) (*mocks.MockNotifier, *notifyRecorder) {
+func recordingNotifier(ctrl *gomock.Controller) (*mocks.MockINotifier, *notifyRecorder) {
 	rec := &notifyRecorder{}
-	m := mocks.NewMockNotifier(ctrl)
+	m := mocks.NewMockINotifier(ctrl)
 	m.EXPECT().Notify(gomock.Any(), gomock.Any()).DoAndReturn(rec.record).AnyTimes()
 	return m, rec
 }
 
-// failThenRecordNotifier returns a MockNotifier that fails its first n Notify
+// failThenRecordNotifier returns a MockINotifier that fails its first n Notify
 // calls (returning errDeliveryFailed) and records every call thereafter — the
 // gomock equivalent of the retired notify.Mock's FailNext(n) retry priming
 // (first-N-error .Return sequencing, then DoAndReturn capture).
-func failThenRecordNotifier(ctrl *gomock.Controller, n int) (*mocks.MockNotifier, *notifyRecorder) {
+func failThenRecordNotifier(ctrl *gomock.Controller, n int) (*mocks.MockINotifier, *notifyRecorder) {
 	rec := &notifyRecorder{}
-	m := mocks.NewMockNotifier(ctrl)
+	m := mocks.NewMockINotifier(ctrl)
 	seq := make([]any, 0, n+1)
 	for i := 0; i < n; i++ {
 		seq = append(seq, m.EXPECT().Notify(gomock.Any(), gomock.Any()).Return(errDeliveryFailed))
@@ -79,18 +79,25 @@ func failThenRecordNotifier(ctrl *gomock.Controller, n int) (*mocks.MockNotifier
 
 // --- fake clock -------------------------------------------------------------
 
-// fakeClock is a deterministic warden.Clock. Now advances only via Advance,
+// fakeClock is a deterministic warden.IClock. Now advances only via Advance,
 // and its single Ticker fires only when the test calls tick(). After/NewTimer
 // return channels that never fire; the watchdog uses neither. It is a
 // behavioral simulator of time, not a mock.
 type fakeClock struct {
 	mu     sync.Mutex
 	now    time.Time
-	ticker *fakeTicker
+	ticks  chan time.Time
+	ticker warden.Ticker
 }
 
 func newFakeClock(now time.Time) *fakeClock {
-	return &fakeClock{now: now, ticker: &fakeTicker{c: make(chan time.Time, 1)}}
+	ticks := make(chan time.Time, 1)
+	return &fakeClock{
+		now:   now,
+		ticks: ticks,
+		// Stop is a no-op: this ticker is driven by tick(), never by time.
+		ticker: warden.Ticker{C: ticks, Stop: func() {}},
+	}
 }
 
 func (c *fakeClock) Now() time.Time {
@@ -105,29 +112,27 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-func (c *fakeClock) After(time.Duration) <-chan time.Time { return make(chan time.Time) }
+func (c *fakeClock) After(d time.Duration) <-chan time.Time { return make(chan time.Time) }
 
-func (c *fakeClock) NewTimer(time.Duration) warden.Timer { return &fakeTimer{c: make(chan time.Time)} }
+// NewTimer hands back a timer that never fires. The watchdog does not arm one;
+// the fields exist so the value satisfies the documented Timer contract if it
+// ever does.
+func (c *fakeClock) NewTimer(d time.Duration) warden.Timer {
+	return warden.Timer{
+		C:     make(chan time.Time),
+		Stop:  func() bool { return false },
+		Reset: func(d time.Duration) bool { return false },
+	}
+}
 
-func (c *fakeClock) NewTicker(time.Duration) warden.Ticker { return c.ticker }
+func (c *fakeClock) NewTicker(d time.Duration) warden.Ticker { return c.ticker }
 
 // tick fires the ticker once with the current time.
-func (c *fakeClock) tick() { c.ticker.c <- c.Now() }
-
-type fakeTicker struct{ c chan time.Time }
-
-func (t *fakeTicker) C() <-chan time.Time { return t.c }
-func (t *fakeTicker) Stop()               {}
-
-type fakeTimer struct{ c chan time.Time }
-
-func (t *fakeTimer) C() <-chan time.Time      { return t.c }
-func (t *fakeTimer) Stop() bool               { return false }
-func (t *fakeTimer) Reset(time.Duration) bool { return false }
+func (c *fakeClock) tick() { c.ticks <- c.Now() }
 
 // --- fake view source -------------------------------------------------------
 
-// fakeSource is a test warden.ViewSource. Tests set the view directly and,
+// fakeSource is a test warden.IViewSource. Tests set the view directly and,
 // for Run-loop tests, push it to subscribers. viewCalls counts View() reads so
 // tests can deterministically wait for the loop to have processed an evaluation
 // without sleeping. It is a behavioral simulator, not a mock.

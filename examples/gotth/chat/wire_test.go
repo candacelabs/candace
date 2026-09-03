@@ -647,6 +647,10 @@ var _ = Describe("Lifecycle", func() {
 		Eventually(m.room.Occupants, 5*time.Second).Should(BeZero())
 
 		runtime.GC()
+		// CS-9 keep: settling before a measurement, not waiting for one. There
+		// is no condition here — the baseline is whatever the runtime has
+		// reached, and this is the pause that lets the collector's own workers
+		// retire so the number is about the test rather than about the GC.
 		time.Sleep(100 * time.Millisecond)
 		baseline := runtime.NumGoroutine()
 

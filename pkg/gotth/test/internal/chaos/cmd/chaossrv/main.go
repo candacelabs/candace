@@ -125,15 +125,15 @@ func main() {
 
 	app, err := live.New(live.Config[state]{
 		Logger: logger,
-		Init: func(context.Context, live.Session) (state, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
 			return state{Total: led.total(), Note: "ok"}, nil, nil
 		},
-		Reduce: func(s state, ev live.Event) (state, []live.Effect) {
+		Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
 			switch ev.Name {
 			case "chaos.commit":
 				ref, _ := strconv.ParseUint(ev.Fields.Get("ref"), 10, 64)
 				s.Total++
-				return s, []live.Effect{commit{ref: ref}}
+				return s, []live.IEffect{commit{ref: ref}}
 			case "chaos.note":
 				s.Note = ev.Fields.Get("note")
 			}
@@ -152,7 +152,7 @@ func main() {
 			},
 		},
 		Events: []string{"chaos.commit", "chaos.note"},
-		Execute: func(_ context.Context, _ live.Session, e live.Effect, _ live.Emitter) error {
+		Execute: func(_ context.Context, _ live.Session, e live.IEffect, _ live.Emitter) error {
 			if c, ok := e.(commit); ok {
 				return led.commit(c.ref)
 			}
@@ -165,7 +165,7 @@ func main() {
 		// restart fleet is simply not what it is sized for.
 		Limits:       live.Limits{MaxSessionsPerIdentity: 200},
 		Origins:      []string{*origin},
-		Authenticate: func(*http.Request) (live.Identity, error) { return user("chaos"), nil },
+		Authenticate: func(request *http.Request) (live.IIdentity, error) { return user("chaos"), nil },
 		Authorize:    live.AllowAll,
 		CSRF:         live.NoCSRFCheck,
 	})

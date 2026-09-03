@@ -26,7 +26,7 @@ One fragment, one event. This is the counter from
 // app is the application, and it is a package-level var rather than a local in
 // main so that view.templ can reach it: app.Document renders the page shell.
 var app = live.MustNew(live.Config[State]{
-	Reduce: func(s State, ev live.Event) (State, []live.Effect) {
+	Reduce: func(s State, ev live.Event) (State, []live.IEffect) {
 		if ev.Name == EventInc {
 			s.N++
 		}

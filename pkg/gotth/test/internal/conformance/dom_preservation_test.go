@@ -301,10 +301,10 @@ func domPage(s domState) string {
 
 func domConfig() live.Config[domState] {
 	return live.Config[domState]{
-		Init: func(context.Context, live.Session) (domState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (domState, []live.IEffect, error) {
 			return domState{}, nil, nil
 		},
-		Reduce: func(s domState, ev live.Event) (domState, []live.Effect) {
+		Reduce: func(s domState, ev live.Event) (domState, []live.IEffect) {
 			switch ev.Name {
 			case eventTick:
 				s.Tick++
@@ -368,10 +368,10 @@ func (tickEffect) EffectSource() string { return "qa.ticker" }
 // domTickingConfig is domConfig plus that ticker.
 func domTickingConfig(every time.Duration) live.Config[domState] {
 	cfg := domConfig()
-	cfg.Init = func(context.Context, live.Session) (domState, []live.Effect, error) {
-		return domState{}, []live.Effect{tickEffect{every: every}}, nil
+	cfg.Init = func(ctx context.Context, session live.Session) (domState, []live.IEffect, error) {
+		return domState{}, []live.IEffect{tickEffect{every: every}}, nil
 	}
-	cfg.Execute = func(ctx context.Context, _ live.Session, e live.Effect, emit live.Emitter) error {
+	cfg.Execute = func(ctx context.Context, _ live.Session, e live.IEffect, emit live.Emitter) error {
 		t, ok := e.(tickEffect)
 		if !ok {
 			return fmt.Errorf("conformance: no executor for effect %T", e)

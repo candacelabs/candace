@@ -30,7 +30,7 @@ type File struct {
 	poll time.Duration
 }
 
-var _ warden.PeerDiscoverer = (*File)(nil)
+var _ warden.IPeerDiscoverer = (*File)(nil)
 
 // NewFile returns a File discoverer for path, polling every poll (defaulting a
 // non-positive poll to 2s).
@@ -45,7 +45,7 @@ func NewFile(path string, poll time.Duration) *File {
 // ends, then closes the channel.
 func (f *File) Discover(ctx context.Context) (<-chan warden.Roster, error) {
 	ch := make(chan warden.Roster, 1)
-	fetch := func(context.Context) ([]warden.Node, error) { return f.read() }
+	fetch := func(ctx context.Context) ([]warden.Node, error) { return f.read() }
 	logErr := func(err error) {
 		if core.Logger != nil {
 			core.Logger.Warn().Err(err).Str("file", f.path).

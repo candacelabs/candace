@@ -19,15 +19,15 @@ import (
 // reports true to retire that goroutine.
 type command = mailbox.Command[sessionState]
 
-// harnessRuntime is the harness.Runtime implementation for one OpenCode
+// harnessRuntime is the harness.IRuntime implementation for one OpenCode
 // session. Every field below is immutable after construction except the
 // channels, which are the mailbox; all session state lives behind the command
 // goroutine started by newRuntime.
 type harnessRuntime struct {
 	config    *candaceosv1.OpenCodeConfig
 	workspace string
-	host      harness.Host
-	sdk       provider
+	host      harness.IHost
+	sdk       iProvider
 	model     promptModel
 
 	// commands is the session's mailbox: every field of sessionState is read
@@ -41,7 +41,7 @@ type harnessRuntime struct {
 	watchers       sync.WaitGroup
 }
 
-var _ harness.Runtime = (*harnessRuntime)(nil)
+var _ harness.IRuntime = (*harnessRuntime)(nil)
 
 // newRuntime starts the command goroutine for one session against sdk. The
 // caller owns the returned runtime and must Close it, including when Start
@@ -50,8 +50,8 @@ var _ harness.Runtime = (*harnessRuntime)(nil)
 func newRuntime(
 	config *candaceosv1.OpenCodeConfig,
 	workspace string,
-	host harness.Host,
-	sdk provider,
+	host harness.IHost,
+	sdk iProvider,
 ) (*harnessRuntime, error) {
 	if config == nil {
 		return nil, ErrConfigRequired
@@ -93,7 +93,7 @@ func (h *harnessRuntime) submit(ctx context.Context, canceled <-chan struct{}, w
 // call runs operation on the command goroutine and returns its error, mapping a
 // mailbox that is no longer accepting work to the caller's own cancellation or
 // to ErrSessionUnavailable.
-func (h *harnessRuntime) call(ctx context.Context, operation func(*sessionState) error) error {
+func (h *harnessRuntime) call(ctx context.Context, operation func(state *sessionState) error) error {
 	reply := make(chan error, 1)
 	if !h.submit(ctx, h.shutdown.Done(), func(state *sessionState) bool {
 		reply <- operation(state)

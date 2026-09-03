@@ -1,7 +1,7 @@
 // Package grpcserver implements the candacenet.warden.v1 WardenService: the
 // three unary cluster RPCs (Vote/Heartbeat/Identify) delegating to the existing
-// warden.RPCHandler through the wireconv boundary, and the server-streaming
-// WatchCluster that pushes full ClusterView snapshots from a warden.ViewSource.
+// warden.IRPCHandler through the wireconv boundary, and the server-streaming
+// WatchCluster that pushes full ClusterView snapshots from a warden.IViewSource.
 //
 // The server holds no mutable state of its own: the unary handlers are pure
 // delegations and every WatchCluster invocation is an independent consumer
@@ -28,14 +28,14 @@ import (
 // compile-time assertion: Server satisfies the generated service interface.
 var _ wardenv1.WardenServiceServer = (*Server)(nil)
 
-// Server adapts a warden.RPCHandler and a warden.ViewSource to the generated
+// Server adapts a warden.IRPCHandler and a warden.IViewSource to the generated
 // WardenService. Embedding the Unimplemented base keeps it forward-compatible
 // with additive schema growth.
 type Server struct {
 	wardenv1.UnimplementedWardenServiceServer
 
-	rpc   warden.RPCHandler
-	views warden.ViewSource
+	rpc   warden.IRPCHandler
+	views warden.IViewSource
 	// drain is canceled when the process begins a graceful shutdown; active
 	// WatchCluster streams observe it and return errDraining so in-flight
 	// streams end cleanly instead of being force-closed. A nil drain means
@@ -48,7 +48,7 @@ type Server struct {
 // streams; pass a never-canceled context (or nil) when there is no drain
 // coordinator (e.g. focused tests). The structured logger is captured from
 // core.Logger at construction, matching the election manager.
-func New(rpc warden.RPCHandler, views warden.ViewSource, drain context.Context) *Server {
+func New(rpc warden.IRPCHandler, views warden.IViewSource, drain context.Context) *Server {
 	if drain == nil {
 		drain = context.Background()
 	}

@@ -17,7 +17,7 @@ import (
 const (
 	// MaxNameBytes bounds a component name.
 	MaxNameBytes = 64
-	// MaxEventBytes bounds an event passed to Capabilities.Log. Together with
+	// MaxEventBytes bounds an event passed to ICapabilities.Log. Together with
 	// MaxNameBytes it keeps the namespaced record "component.<name>.<event>"
 	// inside the 128-byte telemetry event field.
 	MaxEventBytes = 48
@@ -50,7 +50,7 @@ var (
 // state, so a resolved order can be computed without any infrastructure.
 type Definition struct {
 	name         string
-	assemble     func(ctx context.Context, capabilities Capabilities) error
+	assemble     func(ctx context.Context, capabilities ICapabilities) error
 	start        func(ctx context.Context) error
 	stop         func(ctx context.Context) error
 	requirements []*Definition
@@ -60,7 +60,7 @@ type Definition struct {
 func (definition *Definition) Name() string { return definition.name }
 
 // Assemble runs the required assembly function.
-func (definition *Definition) Assemble(ctx context.Context, capabilities Capabilities) error {
+func (definition *Definition) Assemble(ctx context.Context, capabilities ICapabilities) error {
 	return definition.assemble(ctx, capabilities)
 }
 
@@ -80,8 +80,8 @@ func (definition *Definition) Stop(ctx context.Context) error {
 	return definition.stop(ctx)
 }
 
-// Capabilities is the only typed Core surface a component receives.
-type Capabilities interface {
+// ICapabilities is the only typed Core surface a component receives.
+type ICapabilities interface {
 	// Log writes one INFO record through Core's reporter as event
 	// "component.<name>.<event>", with message redacted of Core's configured
 	// secrets unless the embedding binary opted into raw diagnostics.
@@ -93,7 +93,7 @@ type Capabilities interface {
 type Option func(settings *settings) error
 
 type settings struct {
-	assemble     func(ctx context.Context, capabilities Capabilities) error
+	assemble     func(ctx context.Context, capabilities ICapabilities) error
 	start        func(ctx context.Context) error
 	stop         func(ctx context.Context) error
 	requirements []*Definition
@@ -132,7 +132,7 @@ func New(name string, options ...Option) (*Definition, error) {
 // bootstrap.AssembleCore, before the harness factory is invoked. The component
 // stores what it builds in the embedding repository's own variables; Core
 // injects nothing.
-func WithAssemble(assemble func(ctx context.Context, capabilities Capabilities) error) Option {
+func WithAssemble(assemble func(ctx context.Context, capabilities ICapabilities) error) Option {
 	return func(settings *settings) error {
 		if assemble == nil {
 			return ErrMissingAssemble

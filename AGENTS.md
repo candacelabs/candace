@@ -50,9 +50,10 @@ depend on whom:
 | `app/` | runnable compositions — each owns a `cmd/` and wires services into a binary | everything |
 
 `pkg/` is `boundedbuffer` `config` `core` `cron` `labels` `liquidproto`
-`mailbox` `pgmem` `redact` `telemetry`, plus [`pkg/gotth`](pkg/gotth) — a
-library large enough to have its own documentation set — and two directories
-that hold tooling rather than a package, `pkg/proto` and `pkg/scripts`.
+`mailbox` `patience` `pgmem` `redact` `telemetry`, plus [`pkg/gotth`](pkg/gotth)
+and [`pkg/widget`](pkg/widget) — two libraries large enough to have their own
+documentation sets — and two directories that hold tooling rather than a
+package, `pkg/proto` and `pkg/scripts`.
 `services/` is [`candaceos`](services/candaceos) and
 [`warden`](services/warden). `app/` is
 `candaceos-core`, `candaceos-agent`, and `warden`; each carries a `CLAUDE.md`
@@ -109,7 +110,7 @@ the guide that walks all four.
 | Seam | Option | Worked example |
 |---|---|---|
 | Ordered component graph | `bootstrap.WithComponent` | [`examples/external-consumer`](examples/external-consumer) — a three-component chain resolved by `component.Order` |
-| Agent harness | `bootstrap.WithHarnessFactory` | [`examples/external-consumer`](examples/external-consumer) — a full `harness.Factory` compiled outside this tree |
+| Agent harness | `bootstrap.WithHarnessFactory` | [`examples/external-consumer`](examples/external-consumer) — a full `harness.IFactory` compiled outside this tree |
 | Identity: name, agent, wordmark, palette | `bootstrap.WithBrand` | [`examples/custom-brand`](examples/custom-brand) — a total rebrand with no Core edit |
 | Presentation: overlay, sidebar, routes | `WithUIOverlay`, `WithNavItem`, `WithHTTPService` | [`examples/custom-ui-page`](examples/custom-ui-page) for the smallest shape; `custom-brand` for all of it |
 
@@ -218,7 +219,11 @@ on every snapshot in `.github/workflows/ci.yml`.
 
 - **Ginkgo/Gomega** for behavior suites, with `go.uber.org/mock` doubles where a
   package already uses them. Ginkgo rejects `go test -count` above 1; repeat a
-  suite with the Ginkgo CLI's `-repeat` instead.
+  suite with the Ginkgo CLI's `-repeat` instead. `pkg/scripts/check-test-style.sh`
+  enforces this over `pkg/` (minus `pkg/gotth`, which has its own gate) and
+  `tools/`; a stdlib `TestXxx` is allowed only as the `RunSpecs` bootstrap.
+- **Tests never hand-roll time.** Poll with [`pkg/patience`](pkg/patience) rather
+  than a sleep loop or a bespoke deadline.
 - **Structured logging** through `pkg/core` (zerolog) in the Go trees, and
   `pkg/gotth/internal/obs` inside gotth, which is a deliberately separate
   boundary with its own redaction rules.

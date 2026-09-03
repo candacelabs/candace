@@ -147,10 +147,10 @@ func modPanelHTML(s modState) string {
 
 func modConfig() live.Config[modState] {
 	return live.Config[modState]{
-		Init: func(context.Context, live.Session) (modState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (modState, []live.IEffect, error) {
 			return modState{}, nil, nil
 		},
-		Reduce: func(s modState, ev live.Event) (modState, []live.Effect) {
+		Reduce: func(s modState, ev live.Event) (modState, []live.IEffect) {
 			s.Events++
 			s.Log = strings.TrimSpace(s.Log + " " + ev.Name)
 			switch ev.Name {

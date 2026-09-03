@@ -28,7 +28,7 @@ func TestMetricsContract(t *testing.T) {
 	RunSpecs(t, "metrics contract suite")
 }
 
-// stubSource is a warden.ViewSource that returns a settable view. Its viewReads
+// stubSource is a warden.IViewSource that returns a settable view. Its viewReads
 // counter proves the collector reads a fresh snapshot on every scrape.
 type stubSource struct {
 	mu        sync.Mutex
@@ -62,7 +62,7 @@ func (s *stubSource) Subscribe(buf int) (<-chan warden.ClusterView, func()) {
 
 // newMetricsServer isolates the concrete-mux dependency: the eventual Gin port
 // changes this one helper, and the scrape assertions below stay unchanged.
-func newMetricsServer(src warden.ViewSource) *httptest.Server {
+func newMetricsServer(src warden.IViewSource) *httptest.Server {
 	engine := httpserver.NewEngine()
 	metrics.New(src).Register(engine)
 	return httptest.NewServer(engine)

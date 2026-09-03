@@ -21,7 +21,7 @@ type FileNotifier struct {
 	path string
 }
 
-var _ warden.Notifier = (*FileNotifier)(nil)
+var _ warden.INotifier = (*FileNotifier)(nil)
 
 // NewFileNotifier returns a FileNotifier writing to path.
 func NewFileNotifier(path string) *FileNotifier { return &FileNotifier{path: path} }

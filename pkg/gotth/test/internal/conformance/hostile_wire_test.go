@@ -62,7 +62,7 @@ var validSessionID = []byte("0123456789abcdef")
 var defaultLimits = protocol.DefaultLimits()
 
 // parse is the boundary under test.
-func parse(b []byte) (protocol.Inbound, error) {
+func parse(b []byte) (protocol.IInbound, error) {
 	return protocol.ParseInbound(b, defaultLimits)
 }
 
@@ -228,7 +228,7 @@ var _ = Describe("The parse boundary, given wire data no encoder would produce",
 	It("refuses every server-to-client kind arriving from a client", func() {
 		for _, payload := range []struct {
 			name string
-			set  func(*pb.Frame)
+			set  func(frame *pb.Frame)
 		}{
 			{"patch", func(f *pb.Frame) {
 				f.Payload = &pb.Frame_Patch{Patch: &pb.Patch{

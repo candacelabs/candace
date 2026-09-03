@@ -27,14 +27,14 @@ var (
 type Reconciler struct {
 	operationMu sync.Mutex
 	stateMu     sync.RWMutex
-	store       Store
-	executor    Executor
+	store       IStore
+	executor    IExecutor
 	now         func() time.Time
 	state       Snapshot
 }
 
 // NewReconciler restores durable state before accepting requests.
-func NewReconciler(store Store, executor Executor) (*Reconciler, error) {
+func NewReconciler(store IStore, executor IExecutor) (*Reconciler, error) {
 	state, ok, err := store.Load()
 	if err != nil {
 		return nil, fmt.Errorf("%w: loading reconciliation state: %v", ErrPersistence, err)

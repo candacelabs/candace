@@ -79,7 +79,7 @@ The whole of that table is one compiled `Config`:
 <!-- sample: architecture/architecture.go -->
 ```go
 	return live.Config[State]{
-		Init: func(_ context.Context, sess live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
 			room.Join(sess.ID())
 			return State{}, nil, nil
 		},
@@ -107,7 +107,7 @@ synchronise, and is reached from `Init`, `Execute` and `Teardown`, never from
 
 <!-- sample: architecture/architecture.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	if ev.Name != EventShout {
 		return s, nil
 	}
@@ -118,7 +118,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 	}
 	s.Heard++
 	s.Notice = ""
-	return s, []live.Effect{ShoutEffect{Body: body}}
+	return s, []live.IEffect{ShoutEffect{Body: body}}
 }
 ```
 

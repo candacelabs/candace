@@ -18,7 +18,7 @@ func TestComponent(t *testing.T) {
 	RunSpecs(t, "CandaceOS Component Suite")
 }
 
-func noop(ctx context.Context, capabilities component.Capabilities) error { return nil }
+func noop(ctx context.Context, capabilities component.ICapabilities) error { return nil }
 
 func define(name string, requirements ...*component.Definition) *component.Definition {
 	GinkgoHelper()
@@ -216,7 +216,7 @@ var _ = Describe("Order", func() {
 		}
 		first, err := component.New(
 			"first",
-			component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+			component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 				return record()
 			}),
 			component.WithStart(func(ctx context.Context) error { return record() }),

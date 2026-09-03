@@ -43,10 +43,10 @@ type subject string
 func (s subject) Subject() string { return string(s) }
 
 type app struct {
-	authorize func(context.Context, session.Peer, session.Event) error
+	authorize func(ctx context.Context, peer session.Peer, event session.Event) error
 }
 
-func (a *app) Init(context.Context, session.Peer) (any, []session.Effect, error) {
+func (a *app) Init(ctx context.Context, peer session.Peer) (any, []session.IEffect, error) {
 	return state{}, nil, nil
 }
 
@@ -57,7 +57,7 @@ func (a *app) Authorize(ctx context.Context, p session.Peer, ev session.Event) e
 	return a.authorize(ctx, p, ev)
 }
 
-func (a *app) Reduce(s any, ev session.Event) (any, []session.Effect) {
+func (a *app) Reduce(s any, ev session.Event) (any, []session.IEffect) {
 	st := s.(state)
 	if ev.Name == "counter.increment" {
 		st.N++
@@ -65,11 +65,11 @@ func (a *app) Reduce(s any, ev session.Event) (any, []session.Effect) {
 	return st, nil
 }
 
-func (a *app) Execute(context.Context, session.Peer, session.Effect, uint64, session.Emit) error {
+func (a *app) Execute(ctx context.Context, peer session.Peer, effect session.IEffect, scheduledBy uint64, emit session.Emit) error {
 	return nil
 }
 
-func (a *app) Teardown(context.Context, session.Peer, any) {}
+func (a *app) Teardown(ctx context.Context, peer session.Peer, state any) {}
 
 func (a *app) Registry() *render.Registry {
 	reg, err := render.NewRegistry([]render.Fragment{{
@@ -96,15 +96,15 @@ type server struct {
 	url     string
 }
 
-func newServer(mutate func(*wsx.Options)) *server {
+func newServer(mutate func(options *wsx.Options)) *server {
 	GinkgoHelper()
 
 	behaviour := &app{}
 	opts := wsx.Options{
 		Origins:      []string{allowedOrigin},
-		Authenticate: func(*http.Request) (session.Identity, error) { return subject("tester"), nil },
-		CSRF:         func(*http.Request) error { return nil },
-		NewApp:       func(*http.Request) session.App { return behaviour },
+		Authenticate: func(request *http.Request) (session.IIdentity, error) { return subject("tester"), nil },
+		CSRF:         func(request *http.Request) error { return nil },
+		NewApp:       func(request *http.Request) session.IApp { return behaviour },
 		Limits:       session.DefaultLimits(),
 	}
 	if mutate != nil {
@@ -215,7 +215,7 @@ var _ = Describe("The handshake", func() {
 
 	It("refuses an unauthenticated request before allocating anything", func() {
 		s = newServer(func(o *wsx.Options) {
-			o.Authenticate = func(*http.Request) (session.Identity, error) {
+			o.Authenticate = func(request *http.Request) (session.IIdentity, error) {
 				return nil, errors.New("no cookie")
 			}
 		})
@@ -229,7 +229,7 @@ var _ = Describe("The handshake", func() {
 
 	It("refuses a request that fails the CSRF check", func() {
 		s = newServer(func(o *wsx.Options) {
-			o.CSRF = func(*http.Request) error { return errors.New("bad token") }
+			o.CSRF = func(request *http.Request) error { return errors.New("bad token") }
 		})
 
 		_, resp, err := s.dial(contextWithTimeout(time.Second), nil)
@@ -466,8 +466,8 @@ var _ = Describe("A live connection", func() {
 
 	It("answers an unauthorized event without closing, and never reduces it", func() {
 		denied := newServer(func(o *wsx.Options) {
-			o.NewApp = func(*http.Request) session.App {
-				return &app{authorize: func(context.Context, session.Peer, session.Event) error {
+			o.NewApp = func(request *http.Request) session.IApp {
+				return &app{authorize: func(ctx context.Context, peer session.Peer, event session.Event) error {
 					return &session.DenyError{Reason: "not yours"}
 				}}
 			}
@@ -705,6 +705,11 @@ var _ = Describe("Connection lifecycle", func() {
 
 // settled lets the scheduler quiesce before counting, so the figure is the one
 // that matters rather than whatever was mid-exit.
+//
+// CS-9 keep: a best-effort quiesce is not an await. It asserts nothing and
+// cannot fail — a count that never stops moving is returned anyway — so there
+// is no condition for patience.Await to own, and making one up here would turn
+// a sampling helper into an assertion its callers never asked for.
 func settled() int {
 	var last int
 	for i := 0; i < 40; i++ {

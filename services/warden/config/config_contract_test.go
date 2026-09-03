@@ -25,7 +25,7 @@ func TestConfigContract(t *testing.T) {
 }
 
 // env builds a getenv function from a map (absent keys return "").
-func env(m map[string]string) func(string) string {
+func env(m map[string]string) func(name string) string {
 	return func(k string) string { return m[k] }
 }
 
@@ -47,7 +47,7 @@ var _ = Describe("config.Load defaults (no file, no env)", func() {
 	})
 
 	DescribeTable("resolve to the documented built-in defaults",
-		func(get func(config.Config) any, want any) {
+		func(get func(cfg config.Config) any, want any) {
 			Expect(get(cfg)).To(Equal(want))
 		},
 		Entry("bind :7717", func(c config.Config) any { return c.Bind }, ":7717"),
@@ -84,7 +84,7 @@ var _ = Describe("config.Load defaults (no file, no env)", func() {
 
 var _ = Describe("config.Load env var mapping", func() {
 	DescribeTable("each documented env var overrides its field",
-		func(key, val string, get func(config.Config) any, want any) {
+		func(key, val string, get func(cfg config.Config) any, want any) {
 			cfg, err := config.Load("", env(map[string]string{key: val}))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(get(cfg)).To(Equal(want))
@@ -252,7 +252,7 @@ var _ = Describe("Config.Validate", func() {
 	})
 
 	DescribeTable("rejects non-positive timing durations",
-		func(mut func(*config.Config), substr string) {
+		func(mut func(cfg *config.Config), substr string) {
 			cfg := base()
 			mut(&cfg)
 			Expect(cfg.Validate().Error()).To(ContainSubstring(substr))
@@ -286,7 +286,7 @@ var _ = Describe("Config.Validate", func() {
 	})
 
 	DescribeTable("enforces notify-mode requirements",
-		func(mut func(*config.Config), substr string) {
+		func(mut func(cfg *config.Config), substr string) {
 			cfg := base()
 			mut(&cfg)
 			Expect(cfg.Validate().Error()).To(ContainSubstring(substr))

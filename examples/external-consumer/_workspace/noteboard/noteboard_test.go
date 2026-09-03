@@ -32,14 +32,14 @@ func (stub *steeringStub) Observed() []string { return append([]string(nil), stu
 
 type noCapabilities struct{}
 
-func (noCapabilities) Log(context.Context, string, string) error { return nil }
+func (noCapabilities) Log(ctx context.Context, event string, message string) error { return nil }
 
 // upstream is the definition the board declares its requirement on. Its
 // identity is all the board uses; the resolver reads the edge, not the value.
 func upstream() *component.Definition {
 	GinkgoHelper()
 	definition, err := component.New("steering-service", component.WithAssemble(
-		func(context.Context, component.Capabilities) error { return nil },
+		func(ctx context.Context, capabilities component.ICapabilities) error { return nil },
 	))
 	Expect(err).NotTo(HaveOccurred())
 	return definition

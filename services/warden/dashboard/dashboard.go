@@ -63,8 +63,8 @@ type StatusResponse struct {
 // Dashboard serves the warden observability endpoints. It is safe for
 // concurrent use: after New returns, all of its fields are read-only.
 type Dashboard struct {
-	view      warden.ViewSource
-	incidents warden.IncidentLog
+	view      warden.IViewSource
+	incidents warden.IIncidentLog
 	version   string
 	tmpl      *template.Template
 }
@@ -81,7 +81,7 @@ type viewData struct {
 
 // New parses the embedded templates and returns a Dashboard that renders live
 // snapshots from view and incidents. version is displayed in the page footer.
-func New(view warden.ViewSource, incidents warden.IncidentLog, version string) (*Dashboard, error) {
+func New(view warden.IViewSource, incidents warden.IIncidentLog, version string) (*Dashboard, error) {
 	tmpl, err := template.New("warden").Funcs(funcMap()).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing warden dashboard templates: %w", err)

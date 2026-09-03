@@ -197,12 +197,12 @@ func (s *Schema) translate(ctx context.Context, statement string) (string, error
 	return translated, nil
 }
 
-type statementExecutor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
+type iStatementExecutor interface {
+	ExecContext(ctx context.Context, statement string, arguments ...any) (sql.Result, error)
 }
 
-type statementQuerier interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+type iStatementQuerier interface {
+	QueryContext(ctx context.Context, statement string, arguments ...any) (*sql.Rows, error)
 }
 
 type executableStatement struct {
@@ -210,7 +210,7 @@ type executableStatement struct {
 	translated string
 }
 
-func (s *Schema) execOne(ctx context.Context, executor statementExecutor, statement executableStatement, arguments ...any) (Result, error) {
+func (s *Schema) execOne(ctx context.Context, executor iStatementExecutor, statement executableStatement, arguments ...any) (Result, error) {
 	execution, err := executor.ExecContext(ctx, statement.translated, arguments...)
 	if err != nil {
 		return Result{}, s.database.executionError(statement.source, err)
@@ -222,7 +222,7 @@ func (s *Schema) execOne(ctx context.Context, executor statementExecutor, statem
 	return Result{RowCount: rowCount, Command: statementCommand(statement.source)}, nil
 }
 
-func (s *Schema) queryOne(ctx context.Context, querier statementQuerier, statement executableStatement, arguments ...any) (Result, error) {
+func (s *Schema) queryOne(ctx context.Context, querier iStatementQuerier, statement executableStatement, arguments ...any) (Result, error) {
 	rows, err := querier.QueryContext(ctx, statement.translated, arguments...)
 	if err != nil {
 		return Result{}, s.database.executionError(statement.source, err)
@@ -251,7 +251,7 @@ func (s *Schema) translateStatements(ctx context.Context, script string) ([]exec
 
 	parts, err := pgquery.SplitWithParser(script, true)
 	if err != nil {
-		// The configured Translator owns syntax diagnostics and may intentionally
+		// The configured ITranslator owns syntax diagnostics and may intentionally
 		// accept a project-specific language, so let it produce the public error.
 		translated, translateErr := s.translate(ctx, script)
 		if translateErr != nil {

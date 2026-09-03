@@ -54,10 +54,10 @@ func text(format string, args ...any) templ.Component {
 // properties are about.
 func qaConfig() live.Config[tally] {
 	return live.Config[tally]{
-		Init: func(context.Context, live.Session) (tally, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (tally, []live.IEffect, error) {
 			return tally{Label: "hits"}, nil, nil
 		},
-		Reduce: func(state tally, ev live.Event) (tally, []live.Effect) {
+		Reduce: func(state tally, ev live.Event) (tally, []live.IEffect) {
 			switch ev.Name {
 			case "qa.increment":
 				state.N++
@@ -82,7 +82,7 @@ func qaConfig() live.Config[tally] {
 		},
 		Events:       []string{"qa.increment", "qa.relabel", "qa.noop"},
 		Origins:      []string{allowedOrigin},
-		Authenticate: func(*http.Request) (live.Identity, error) { return qaUser("qa"), nil },
+		Authenticate: func(request *http.Request) (live.IIdentity, error) { return qaUser("qa"), nil },
 		Authorize:    live.AllowAll,
 		CSRF:         live.NoCSRFCheck,
 	}
@@ -131,7 +131,7 @@ func newLogSink() *logSink {
 	return &logSink{mu: &sync.Mutex{}, records: &[]capturedRecord{}}
 }
 
-func (s *logSink) Enabled(context.Context, slog.Level) bool { return true }
+func (s *logSink) Enabled(ctx context.Context, level slog.Level) bool { return true }
 
 func (s *logSink) Handle(_ context.Context, r slog.Record) error {
 	fields := map[string]any{}
@@ -156,7 +156,7 @@ func (s *logSink) WithAttrs(a []slog.Attr) slog.Handler {
 	return &logSink{mu: s.mu, records: s.records, attrs: merged}
 }
 
-func (s *logSink) WithGroup(string) slog.Handler { return s }
+func (s *logSink) WithGroup(name string) slog.Handler { return s }
 
 // provenance returns every provenance row captured so far, in emission order.
 func (s *logSink) provenance() []provRecord {
@@ -252,7 +252,7 @@ type driven struct {
 }
 
 // dial mounts qaConfig, optionally mutated, and connects to it.
-func dial(mutate func(*live.Config[tally])) *driven {
+func dial(mutate func(cfg *live.Config[tally])) *driven {
 	GinkgoHelper()
 
 	cfg := qaConfig()
@@ -421,7 +421,7 @@ func (d *driven) ack(seq uint64) {
 }
 
 // until reads frames until pick returns true, returning that frame.
-func (d *driven) until(pick func(*pb.Frame) bool) *pb.Frame {
+func (d *driven) until(pick func(frame *pb.Frame) bool) *pb.Frame {
 	GinkgoHelper()
 	for {
 		f := d.read()

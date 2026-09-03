@@ -26,7 +26,7 @@ func steeringComponents() (*component.Definition, *component.Definition) {
 func standaloneComponent(name string) *component.Definition {
 	GinkgoHelper()
 	definition, err := component.New(name, component.WithAssemble(
-		func(context.Context, component.Capabilities) error { return nil },
+		func(ctx context.Context, capabilities component.ICapabilities) error { return nil },
 	))
 	Expect(err).NotTo(HaveOccurred())
 	return definition

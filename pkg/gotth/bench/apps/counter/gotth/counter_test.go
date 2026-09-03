@@ -101,7 +101,7 @@ var _ = Describe("§2.1 F-CTR — the feature table", func() {
 				Expect(next.Value).To(Equal(state.Value),
 					"a click never changes the value locally: the store decides and the sync reports")
 				Expect(effects).To(HaveLen(1))
-				Expect(effects[0]).To(Equal(live.Effect(ChangeEffect{
+				Expect(effects[0]).To(Equal(live.IEffect(ChangeEffect{
 					Op: wantOp, Delta: wantDelta, By: tabA, Cause: 1,
 				})))
 			},

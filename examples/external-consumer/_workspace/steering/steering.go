@@ -97,7 +97,7 @@ func Instance() *Service { return steeringService }
 func StoreComponent() (*component.Definition, error) {
 	return component.New(
 		"steering-store",
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			steeringStore.mutex.Lock()
 			steeringStore.capacity = Capacity
 			steeringStore.inputs = make([]string, 0, Capacity)
@@ -118,7 +118,7 @@ func ServiceComponent(storeComponent *component.Definition) (*component.Definiti
 	return component.New(
 		"steering-service",
 		component.WithRequires(storeComponent),
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			steeringService.mutex.Lock()
 			steeringService.store = steeringStore
 			steeringService.mutex.Unlock()
@@ -133,7 +133,7 @@ func ServiceComponent(storeComponent *component.Definition) (*component.Definiti
 			steeringService.running = true
 			return ctx.Err()
 		}),
-		component.WithStop(func(context.Context) error {
+		component.WithStop(func(ctx context.Context) error {
 			steeringService.mutex.Lock()
 			defer steeringService.mutex.Unlock()
 			steeringService.running = false

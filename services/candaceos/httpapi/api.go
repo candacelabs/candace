@@ -3,12 +3,12 @@
 // The package owns the action, event-stream, and health endpoints: request
 // decoding and validation, same-origin enforcement on every mutation, the
 // response shapes, and the server-sent-event channel the browser client
-// subscribes to. All behavior behind those endpoints is supplied by Backend,
+// subscribes to. All behavior behind those endpoints is supplied by IBackend,
 // which the embedding core implements.
 //
 // Callers may rely on Register mounting onto a caller-owned gin.IRouter and on
 // the package serving no path that browserroutes does not name: it never
-// creates an engine, never proxies, and never reaches past Backend for state.
+// creates an engine, never proxies, and never reaches past IBackend for state.
 package httpapi
 
 import (
@@ -55,9 +55,9 @@ const (
 // ErrNilBackend reports an API assembled without its behavior owner.
 var ErrNilBackend = errors.New("httpapi: nil backend")
 
-// Backend is the complete behavior required by the local operator transport.
-type Backend interface {
-	webui.SnapshotProvider
+// IBackend is the complete behavior required by the local operator transport.
+type IBackend interface {
+	webui.ISnapshotProvider
 	Send(ctx context.Context, prompt string) (string, error)
 	SendToClaw(ctx context.Context, sessionID, expectedRunID, prompt string, delivery candaceosv1.HarnessDelivery) (string, error)
 	Abort(ctx context.Context) error
@@ -70,7 +70,7 @@ type Backend interface {
 // API is Core's action, event, and health transport. It registers onto a
 // caller-owned Gin router and never creates or proxies another router.
 type API struct {
-	backend Backend
+	backend IBackend
 }
 
 type statusResponse struct {
@@ -86,7 +86,7 @@ type errorResponse struct {
 }
 
 // New constructs Core's action, event, and health transport.
-func New(backend Backend) (*API, error) {
+func New(backend IBackend) (*API, error) {
 	if backend == nil {
 		return nil, ErrNilBackend
 	}

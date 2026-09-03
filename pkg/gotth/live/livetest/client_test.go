@@ -46,10 +46,10 @@ func probeApp() *live.App[counter] {
 	GinkgoHelper()
 
 	app, err := live.New(live.Config[counter]{
-		Init: func(context.Context, live.Session) (counter, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (counter, []live.IEffect, error) {
 			return counter{}, nil, nil
 		},
-		Reduce: func(state counter, ev live.Event) (counter, []live.Effect) {
+		Reduce: func(state counter, ev live.Event) (counter, []live.IEffect) {
 			switch ev.Name {
 			case eventIncrement:
 				state.N++
@@ -189,6 +189,10 @@ var _ = Describe("Client: events and patches", func() {
 			defer GinkgoRecover()
 			for i := 0; i < 3; i++ {
 				c.Send(eventIncrement, fragmentValue, nil)
+				// CS-9 keep: pacing, not an await. The point of this spec is
+				// that WaitFor blocks across several patches, so the sends have
+				// to arrive spread out; three sent back to back could coalesce
+				// into one patch and the spec would prove nothing.
 				time.Sleep(20 * time.Millisecond)
 			}
 		}()

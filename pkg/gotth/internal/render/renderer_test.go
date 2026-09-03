@@ -18,7 +18,7 @@ type counter struct {
 	Label string
 }
 
-func text(format string, pick func(counter) any) render.RenderFunc {
+func text(format string, pick func(state counter) any) render.RenderFunc {
 	return func(_ context.Context, state any, w io.Writer) error {
 		_, err := fmt.Fprintf(w, format, pick(state.(counter)))
 		return err
@@ -191,7 +191,7 @@ var _ = Describe("A session's renderer", func() {
 		BeforeEach(func() {
 			bad := render.Fragment{
 				ID:     "bad",
-				Render: func(context.Context, any, io.Writer) error { panic("render exploded") },
+				Render: func(ctx context.Context, state any, w io.Writer) error { panic("render exploded") },
 			}
 			boom = mustRegistry(bad, countFragment())
 			v = boom.NewRenderer()
@@ -216,7 +216,7 @@ var _ = Describe("A session's renderer", func() {
 
 		It("treats a change declaration that panics as a change", func() {
 			bad := countFragment()
-			bad.Dirty = func(any, any) bool { panic("dirty exploded") }
+			bad.Dirty = func(prev, next any) bool { panic("dirty exploded") }
 			v = mustRegistry(bad).NewRenderer()
 			v.Render(ctx, state)
 
@@ -230,7 +230,7 @@ var _ = Describe("A session's renderer", func() {
 		It("reports a render that returns an error the same way it reports a panic", func() {
 			bad := render.Fragment{
 				ID: "bad",
-				Render: func(context.Context, any, io.Writer) error {
+				Render: func(ctx context.Context, state any, w io.Writer) error {
 					return fmt.Errorf("template failed")
 				},
 			}

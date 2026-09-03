@@ -368,7 +368,7 @@ func broadcast(subs []*subscriber, u update) {
 // is the identity the effect it scheduled must still act as — so the author
 // and the purger are read from here rather than from the effect value. A
 // reducer that got it wrong cannot make this get it wrong.
-func (r *Room) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (r *Room) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	switch e := effect.(type) {
 	case SubscribeEffect:
 		return r.pump(ctx, sess.ID(), emit)

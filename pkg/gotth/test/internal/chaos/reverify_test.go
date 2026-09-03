@@ -116,6 +116,10 @@ var _ = Describe("A legitimate client refused by the resync budget, with the lan
 		)
 		deadline := time.Now().Add(window)
 		for time.Now().Before(deadline) {
+			// CS-9 keep: a sampler, not an await. Nothing here is waiting for
+			// a condition — the loop runs the whole window on purpose and the
+			// interval is the sampling resolution the stall figure is reported
+			// at. Stopping early at a match would be measuring something else.
 			time.Sleep(25 * time.Millisecond)
 			samples++
 			if w.isClosed() {
@@ -250,7 +254,7 @@ var _ = Describe("The heartbeat pair, each inside its range and fatal together (
 	// file measured dying on the wire, so they are the two whose closure this
 	// file should be the one to assert.
 	DescribeTable("refuses at construction the pair that used to kill every quiet session",
-		func(mutate func(*live.Limits), wantSubstrings ...string) {
+		func(mutate func(limits *live.Limits), wantSubstrings ...string) {
 			cfg := chaosConfig(newLedger())
 			cfg.Logger = nil
 			mutate(&cfg.Limits)

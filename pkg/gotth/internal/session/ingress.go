@@ -40,7 +40,7 @@ const consecutiveDenialsBeforeClose = 3
 // accounted for: an acknowledgement and a heartbeat are transport plumbing
 // that no reducer can observe, and client telemetry is a report about a patch
 // this session already sent. None of them can reach application state.
-func (a *Actor) Ingress(ctx context.Context, in protocol.Inbound) {
+func (a *Actor) Ingress(ctx context.Context, in protocol.IInbound) {
 	now := a.now()
 	a.lastInboundNS.Store(now.UnixNano())
 

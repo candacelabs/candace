@@ -44,7 +44,7 @@ type State struct {
 }
 
 // Reduce is the pure state transition.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventDraft:
 		// One field, sent as the user types. The client sends the control's

@@ -168,7 +168,7 @@ func (tickEffect) EffectSource() string { return "chaos.ticker" }
 // carries all of them, which is half of what a resync is.
 func chaosConfig(led *ledger) live.Config[board] {
 	return live.Config[board]{
-		Init: func(_ context.Context, _ live.Session) (board, []live.Effect, error) {
+		Init: func(_ context.Context, _ live.Session) (board, []live.IEffect, error) {
 			led.mounts.Add(1)
 			// Server truth at mount. This is the line that makes a reconnect
 			// converge: a new actor reads the ledger rather than starting at
@@ -178,19 +178,19 @@ func chaosConfig(led *ledger) live.Config[board] {
 		Teardown: func(_ context.Context, _ live.Session, _ board) {
 			led.teardowns.Add(1)
 		},
-		Reduce: func(state board, ev live.Event) (board, []live.Effect) {
+		Reduce: func(state board, ev live.Event) (board, []live.IEffect) {
 			switch ev.Name {
 			case "chaos.commit":
 				ref, _ := strconv.ParseUint(ev.Fields.Get("ref"), 10, 64)
 				delay, _ := time.ParseDuration(ev.Fields.Get("delay"))
 				state.Total++
-				return state, []live.Effect{commitEffect{ref: ref, delay: delay}}
+				return state, []live.IEffect{commitEffect{ref: ref, delay: delay}}
 			case "chaos.note":
 				state.Note = ev.Fields.Get("note")
 			case "chaos.ticks":
 				every, _ := time.ParseDuration(ev.Fields.Get("every"))
 				count, _ := strconv.Atoi(ev.Fields.Get("count"))
-				return state, []live.Effect{tickEffect{
+				return state, []live.IEffect{tickEffect{
 					every:        every,
 					count:        count,
 					contributing: ev.Fields.Get("contributing") == "true",
@@ -220,7 +220,7 @@ func chaosConfig(led *ledger) live.Config[board] {
 			},
 		},
 		Events: []string{"chaos.commit", "chaos.note", "chaos.noop", "chaos.ticks"},
-		Execute: func(ctx context.Context, _ live.Session, e live.Effect, emit live.Emitter) error {
+		Execute: func(ctx context.Context, _ live.Session, e live.IEffect, emit live.Emitter) error {
 			switch eff := e.(type) {
 			case commitEffect:
 				if eff.delay > 0 {
@@ -267,7 +267,7 @@ func chaosConfig(led *ledger) live.Config[board] {
 			return nil
 		},
 		Origins:      []string{chaosOrigin},
-		Authenticate: func(*http.Request) (live.Identity, error) { return chaosUser("chaos"), nil },
+		Authenticate: func(request *http.Request) (live.IIdentity, error) { return chaosUser("chaos"), nil },
 		Authorize:    live.AllowAll,
 		CSRF:         live.NoCSRFCheck,
 	}

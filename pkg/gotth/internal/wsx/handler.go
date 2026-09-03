@@ -29,13 +29,13 @@ type Options struct {
 
 	// Authenticate derives the session identity from the upgrade request. It
 	// runs before any per-session memory is allocated.
-	Authenticate func(*http.Request) (session.Identity, error)
+	Authenticate func(request *http.Request) (session.IIdentity, error)
 
 	// CSRF validates a token bound to the authenticated application session.
-	CSRF func(*http.Request) error
+	CSRF func(request *http.Request) error
 
 	// NewApp returns the application behaviour for one connection.
-	NewApp func(*http.Request) session.App
+	NewApp func(request *http.Request) session.IApp
 
 	// Limits are the per-session resource bounds, handed to every session this
 	// handler starts. Zero fields take their documented defaults, which
@@ -325,7 +325,7 @@ func offersSubprotocol(r *http.Request) bool {
 //
 // Exactly one of releaseAdmission or register must follow, and register is what
 // converts the reservation into a registry entry.
-func (h *Handler) admit(identity session.Identity) error {
+func (h *Handler) admit(identity session.IIdentity) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -360,7 +360,7 @@ func (h *Handler) admit(identity session.Identity) error {
 // releaseAdmission undoes admit for a connection that never registered: the
 // upgrade failed, the identifier could not be minted, or the drain won the
 // race. Both halves of the reservation go back.
-func (h *Handler) releaseAdmission(identity session.Identity) {
+func (h *Handler) releaseAdmission(identity session.IIdentity) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pending--
@@ -372,7 +372,7 @@ func (h *Handler) releaseAdmission(identity session.Identity) {
 // what returns that one, so this must not touch pending — a session counted
 // once in the registry and once in pending would bound the process at half
 // what the operator set.
-func (h *Handler) release(identity session.Identity) {
+func (h *Handler) release(identity session.IIdentity) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.dropIdentity(identity)
@@ -381,7 +381,7 @@ func (h *Handler) release(identity session.Identity) {
 // dropIdentity decrements one subject's count, deleting the entry at zero so
 // the map does not grow with every subject the process has ever seen. The
 // caller holds mu.
-func (h *Handler) dropIdentity(identity session.Identity) {
+func (h *Handler) dropIdentity(identity session.IIdentity) {
 	subject := identity.Subject()
 	if h.perID[subject] <= 1 {
 		delete(h.perID, subject)

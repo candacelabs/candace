@@ -13,6 +13,17 @@ import (
 	candaceosv1 "github.com/candacelabs/candace/proto/candace/candaceos/v1"
 )
 
+// Live-contract budgets are generous on purpose. This spec talks to an external
+// OpenCode server; a tight wall-clock budget flakes red under CI load (observed
+// on CandaceOS acceptance, 2026-09-03) — the CS-9 pattern the house style gate
+// does not yet reach under services/. Widen, never race. Native Ginkgo
+// Eventually is kept: this is a Gomega suite where matcher composition earns it.
+const (
+	liveContractRequestTimeout = 30 * time.Second
+	liveContractStreamBudget   = 30 * time.Second
+	liveContractSpecTimeout    = 3 * time.Minute
+)
+
 var _ = Describe("OpenCode SDK live contract", func() {
 	It("connects v0.19.2 to the pinned 1.18.21 server", func(ctx SpecContext) {
 		endpoint := os.Getenv("CANDACEOS_OPENCODE_CONTRACT_URL")
@@ -28,7 +39,7 @@ var _ = Describe("OpenCode SDK live contract", func() {
 
 		adapter, err := newSDKAdapter(&candaceosv1.OpenCodeConfig{
 			Url: endpoint, Username: username, Password: password,
-			RequestTimeout: int64(5 * time.Second),
+			RequestTimeout: int64(liveContractRequestTimeout),
 		}, "/workspace", nil)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -61,7 +72,7 @@ var _ = Describe("OpenCode SDK live contract", func() {
 		)).To(Succeed())
 		assertGeneratedMessageUnions(ctx, adapter, session.ID, messageID)
 		Expect(adapter.abort(ctx, session.ID)).To(Succeed())
-	}, SpecTimeout(30*time.Second))
+	}, SpecTimeout(liveContractSpecTimeout))
 })
 
 func assertEventStreamContract(ctx context.Context, adapter *sdkAdapter) {
@@ -80,7 +91,7 @@ func assertEventStreamContract(ctx context.Context, adapter *sdkAdapter) {
 		})
 	}()
 	var event json.RawMessage
-	Eventually(events).WithContext(ctx).WithTimeout(5 * time.Second).Should(Receive(&event))
+	Eventually(events).WithContext(ctx).WithTimeout(liveContractStreamBudget).Should(Receive(&event))
 	var envelope struct {
 		ID   string `json:"id"`
 		Type string `json:"type"`
@@ -88,7 +99,7 @@ func assertEventStreamContract(ctx context.Context, adapter *sdkAdapter) {
 	Expect(json.Unmarshal(event, &envelope)).To(Succeed())
 	Expect(envelope.ID).NotTo(BeEmpty())
 	Expect(envelope.Type).To(Equal(string(opencodesdk.EventListResponseTypeServerConnected)))
-	Eventually(done).WithContext(ctx).WithTimeout(5 * time.Second).Should(Receive())
+	Eventually(done).WithContext(ctx).WithTimeout(liveContractStreamBudget).Should(Receive())
 }
 
 func assertGeneratedMessageUnions(
@@ -114,5 +125,5 @@ func assertGeneratedMessageUnions(
 			GinkgoWriter.Printf("generated message parts=%d raw=%s\n", len(message.Parts), message.JSON.RawJSON())
 		}
 		return false
-	}).WithContext(ctx).WithTimeout(5 * time.Second).WithPolling(50 * time.Millisecond).Should(BeTrue())
+	}).WithContext(ctx).WithTimeout(liveContractStreamBudget).WithPolling(50 * time.Millisecond).Should(BeTrue())
 }

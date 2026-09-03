@@ -50,11 +50,11 @@ func ReplayN[S any](tb testing.TB, reduce live.Reducer[S], initial S, log []live
 	}
 }
 
-func fold[S any](reduce live.Reducer[S], initial S, log []live.Event) (S, []live.Effect) {
+func fold[S any](reduce live.Reducer[S], initial S, log []live.Event) (S, []live.IEffect) {
 	state := initial
-	var effects []live.Effect
+	var effects []live.IEffect
 	for _, ev := range log {
-		var produced []live.Effect
+		var produced []live.IEffect
 		state, produced = reduce(state, ev)
 		effects = append(effects, produced...)
 	}

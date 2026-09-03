@@ -27,7 +27,7 @@ type DB struct {
 	mu         sync.RWMutex
 	topologyMu sync.Mutex
 	sqlDB      *sql.DB
-	translator Translator
+	translator ITranslator
 	schemas    map[string]*Schema
 	dispatchID string
 	functions  functionRegistry

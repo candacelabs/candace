@@ -159,7 +159,7 @@ var _ = Describe("A session actor", func() {
 			})
 			aliased.pointerState = true
 			aliased.initState = &ptrState{}
-			aliased.reduce = func(state any, _ session.Event) (any, []session.Effect) {
+			aliased.reduce = func(state any, _ session.Event) (any, []session.IEffect) {
 				s := state.(*ptrState)
 				s.N++
 				return s, nil
@@ -400,7 +400,7 @@ var _ = Describe("A session actor", func() {
 			wideApp := newTestApp(counter, blob)
 			wideApp.initState = wide{}
 			wideApp.events = map[string]bool{"go.huge": true, "go.small": true}
-			wideApp.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+			wideApp.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 				s := state.(wide)
 				switch ev.Name {
 				case "go.huge":
@@ -511,7 +511,7 @@ var _ = Describe("The authorization hook", func() {
 	})
 
 	It("keeps a denied event out of the reducer entirely", func() {
-		app.authorize = func(context.Context, session.Peer, session.Event) error {
+		app.authorize = func(ctx context.Context, peer session.Peer, event session.Event) error {
 			return &session.DenyError{Reason: "not yours"}
 		}
 		h.start()
@@ -527,7 +527,7 @@ var _ = Describe("The authorization hook", func() {
 	})
 
 	It("closes the connection on a fatal denial", func() {
-		app.authorize = func(context.Context, session.Peer, session.Event) error {
+		app.authorize = func(ctx context.Context, peer session.Peer, event session.Event) error {
 			return &session.FatalDenyError{Reason: "forged identity"}
 		}
 		h.start()
@@ -631,7 +631,7 @@ var _ = Describe("Panic containment", func() {
 
 	It("keeps the pre-transition state when a reducer panics", func() {
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			if ev.Name == "counter.increment" {
 				panic("reducer exploded")
 			}
@@ -652,7 +652,7 @@ var _ = Describe("Panic containment", func() {
 
 	It("closes the session once one site exhausts its panic budget", func() {
 		app = newTestApp()
-		app.reduce = func(any, session.Event) (any, []session.Effect) { panic("always") }
+		app.reduce = func(state any, event session.Event) (any, []session.IEffect) { panic("always") }
 		lim := session.DefaultLimits()
 		lim.PanicBudget = 3
 		h = newHarness(app, lim)
@@ -668,7 +668,7 @@ var _ = Describe("Panic containment", func() {
 	It("patches every other fragment when one fragment's render panics", func() {
 		bad := render.Fragment{
 			ID:     "bad",
-			Render: func(context.Context, any, io.Writer) error { panic("render exploded") },
+			Render: func(ctx context.Context, state any, w io.Writer) error { panic("render exploded") },
 		}
 		app = newTestApp(bad, counterFragment())
 		h = newHarness(app, session.DefaultLimits())
@@ -926,7 +926,7 @@ func generousBudget() session.Limits {
 func panickingRender(id, message string) render.Fragment {
 	return render.Fragment{
 		ID:     id,
-		Render: func(context.Context, any, io.Writer) error { panic(message) },
+		Render: func(ctx context.Context, state any, w io.Writer) error { panic(message) },
 	}
 }
 
@@ -937,13 +937,13 @@ func panickingDirty(id, message string) render.Fragment {
 			_, err := io.WriteString(w, "<i>fine</i>")
 			return err
 		},
-		Dirty: func(any, any) bool { panic(message) },
+		Dirty: func(prev, next any) bool { panic(message) },
 	}
 }
 
 func panickingReducerApp(message string) *testApp {
 	app := newTestApp()
-	app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+	app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 		if ev.Name == "counter.increment" {
 			panic(message)
 		}
@@ -967,18 +967,18 @@ var _ = Describe("Effects", func() {
 	It("executes an effect at the actor boundary and folds its result back in as an event", func() {
 		app = newTestApp()
 		app.events["counter.increment"] = true
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			s := state.(counterState)
 			switch ev.Name {
 			case "counter.increment":
-				return s, []session.Effect{testEffect{Source: "test.fetch", Reply: "fetched"}}
+				return s, []session.IEffect{testEffect{Source: "test.fetch", Reply: "fetched"}}
 			case "test.result":
 				s.Label = ev.Fields[0].Value
 				return s, nil
 			}
 			return s, nil
 		}
-		app.execute = func(_ context.Context, _ session.Peer, e session.Effect, emit session.Emit) error {
+		app.execute = func(_ context.Context, _ session.Peer, e session.IEffect, emit session.Emit) error {
 			return emit(session.Event{
 				Name:   "test.result",
 				Fields: []session.Field{{Key: "label", Value: e.(testEffect).Reply}},
@@ -1003,16 +1003,16 @@ var _ = Describe("Effects", func() {
 		var mu sync.Mutex
 
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			mu.Lock()
 			seen = append(seen, ev)
 			mu.Unlock()
 			if ev.Name == "counter.increment" {
-				return state, []session.Effect{testEffect{Source: "test.explode"}}
+				return state, []session.IEffect{testEffect{Source: "test.explode"}}
 			}
 			return state, nil
 		}
-		app.execute = func(context.Context, session.Peer, session.Effect, session.Emit) error {
+		app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
 			panic("effect exploded")
 		}
 		h = newHarness(app, session.DefaultLimits())
@@ -1047,16 +1047,16 @@ var _ = Describe("Effects", func() {
 		var mu sync.Mutex
 
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			if ev.Name == "counter.increment" {
 				mu.Lock()
 				scheduling = ev.ID
 				mu.Unlock()
-				return state, []session.Effect{testEffect{Source: "test.explode"}}
+				return state, []session.IEffect{testEffect{Source: "test.explode"}}
 			}
 			return state, nil
 		}
-		app.execute = func(context.Context, session.Peer, session.Effect, session.Emit) error {
+		app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
 			panic("effect exploded")
 		}
 		h = newHarness(app, session.DefaultLimits())
@@ -1085,18 +1085,18 @@ var _ = Describe("Effects", func() {
 		var mu sync.Mutex
 
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			if ev.Name == session.EffectFailedEvent {
 				mu.Lock()
 				failure = ev
 				mu.Unlock()
 			}
 			if ev.Name == "counter.increment" {
-				return state, []session.Effect{testEffect{Source: "test.fail"}}
+				return state, []session.IEffect{testEffect{Source: "test.fail"}}
 			}
 			return state, nil
 		}
-		app.execute = func(context.Context, session.Peer, session.Effect, session.Emit) error {
+		app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
 			return errors.New("upstream refused")
 		}
 		h = newHarness(app, session.DefaultLimits())
@@ -1132,18 +1132,18 @@ var _ = Describe("Effects", func() {
 			var mu sync.Mutex
 
 			app = newTestApp()
-			app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+			app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 				if ev.Name == session.EffectFailedEvent {
 					mu.Lock()
 					failure = ev
 					mu.Unlock()
 				}
 				if ev.Name == "counter.increment" {
-					return state, []session.Effect{testEffect{Source: source}}
+					return state, []session.IEffect{testEffect{Source: source}}
 				}
 				return state, nil
 			}
-			app.execute = func(context.Context, session.Peer, session.Effect, session.Emit) error {
+			app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
 				return nil
 			}
 			h = newHarness(app, session.DefaultLimits())
@@ -1181,10 +1181,10 @@ var _ = Describe("Effects", func() {
 		source := strings.Repeat("s", protocol.MaxOriginSource-len(protocol.SourceEffectPrefix))
 
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			switch ev.Name {
 			case "counter.increment":
-				return state, []session.Effect{testEffect{Source: source, Reply: "done"}}
+				return state, []session.IEffect{testEffect{Source: source, Reply: "done"}}
 			case "test.result":
 				s := state.(counterState)
 				s.Label = ev.Fields[0].Value
@@ -1192,7 +1192,7 @@ var _ = Describe("Effects", func() {
 			}
 			return state, nil
 		}
-		app.execute = func(_ context.Context, _ session.Peer, e session.Effect, emit session.Emit) error {
+		app.execute = func(_ context.Context, _ session.Peer, e session.IEffect, emit session.Emit) error {
 			return emit(session.Event{
 				Name:   "test.result",
 				Fields: []session.Field{{Key: "label", Value: e.(testEffect).Reply}},
@@ -1217,18 +1217,18 @@ var _ = Describe("Effects", func() {
 		var mu sync.Mutex
 
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			if ev.Name == session.EffectFailedEvent {
 				mu.Lock()
 				failure = ev
 				mu.Unlock()
 			}
 			if ev.Name == "counter.increment" {
-				return state, []session.Effect{testEffect{Source: "test.flaky"}}
+				return state, []session.IEffect{testEffect{Source: "test.flaky"}}
 			}
 			return state, nil
 		}
-		app.execute = func(context.Context, session.Peer, session.Effect, session.Emit) error {
+		app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
 			// Wrapped, because an application reports its own context around a
 			// failure and the mark has to survive that.
 			return fmt.Errorf("publishing: %w",
@@ -1260,18 +1260,18 @@ var _ = Describe("Effects", func() {
 		var mu sync.Mutex
 
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			if ev.Name == session.EffectFailedEvent {
 				mu.Lock()
 				failure = ev
 				mu.Unlock()
 			}
 			if ev.Name == "counter.increment" {
-				return state, []session.Effect{testEffect{Source: "test.explode"}}
+				return state, []session.IEffect{testEffect{Source: "test.explode"}}
 			}
 			return state, nil
 		}
-		app.execute = func(context.Context, session.Peer, session.Effect, session.Emit) error {
+		app.execute = func(ctx context.Context, peer session.Peer, effect session.IEffect, emit session.Emit) error {
 			panic("effect exploded")
 		}
 		h = newHarness(app, session.DefaultLimits())
@@ -1293,10 +1293,10 @@ var _ = Describe("Effects", func() {
 	It("does not block shutdown on an effect that will not return", func() {
 		release := make(chan struct{})
 		app = newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
-			return state, []session.Effect{testEffect{Source: "test.hang"}}
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
+			return state, []session.IEffect{testEffect{Source: "test.hang"}}
 		}
-		app.execute = func(ctx context.Context, _ session.Peer, _ session.Effect, _ session.Emit) error {
+		app.execute = func(ctx context.Context, _ session.Peer, _ session.IEffect, _ session.Emit) error {
 			<-release
 			return nil
 		}
@@ -1330,19 +1330,19 @@ var _ = Describe("Concurrent event injection", func() {
 	// ticks, all while the actor reduces and renders.
 	It("keeps one owner for session state under every input at once", func() {
 		app := newTestApp()
-		app.reduce = func(state any, ev session.Event) (any, []session.Effect) {
+		app.reduce = func(state any, ev session.Event) (any, []session.IEffect) {
 			s := state.(counterState)
 			switch ev.Name {
 			case "counter.increment":
 				s.N++
-				return s, []session.Effect{testEffect{Source: "test.echo", Reply: fmt.Sprint(s.N)}}
+				return s, []session.IEffect{testEffect{Source: "test.echo", Reply: fmt.Sprint(s.N)}}
 			case "test.result":
 				s.Label = ev.Fields[0].Value
 			}
 			return s, nil
 		}
 		app.events["test.result"] = true
-		app.execute = func(_ context.Context, _ session.Peer, e session.Effect, emit session.Emit) error {
+		app.execute = func(_ context.Context, _ session.Peer, e session.IEffect, emit session.Emit) error {
 			return emit(session.Event{
 				Name:   "test.result",
 				Fields: []session.Field{{Key: "label", Value: e.(testEffect).Reply}},

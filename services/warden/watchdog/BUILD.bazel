@@ -24,6 +24,7 @@ go_test(
     ],
     embed = [":watchdog"],
     deps = [
+        "//pkg/patience",
         "//services/warden",
         "//services/warden/internal/mocks",
         "//services/warden/testclock",

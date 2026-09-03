@@ -13,4 +13,4 @@ package warden
 //
 //	go generate ./services/warden
 //
-//go:generate mockgen -destination=internal/mocks/mocks.go -package=mocks github.com/candacelabs/candace/services/warden Transport,Notifier,Store,Clock,PeerDiscoverer,ViewSource,IncidentLog,RPCHandler
+//go:generate mockgen -destination=internal/mocks/mocks.go -package=mocks github.com/candacelabs/candace/services/warden ITransport,INotifier,IStore,IClock,IPeerDiscoverer,IViewSource,IIncidentLog,IRPCHandler

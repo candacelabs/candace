@@ -26,7 +26,7 @@ type capture struct {
 	parent  *capture
 }
 
-func (c *capture) Enabled(context.Context, slog.Level) bool { return true }
+func (c *capture) Enabled(ctx context.Context, level slog.Level) bool { return true }
 
 func (c *capture) Handle(_ context.Context, r slog.Record) error {
 	r.AddAttrs(c.attrs...)
@@ -42,7 +42,7 @@ func (c *capture) WithAttrs(a []slog.Attr) slog.Handler {
 	return &capture{attrs: a, parent: c}
 }
 
-func (c *capture) WithGroup(string) slog.Handler { return c }
+func (c *capture) WithGroup(name string) slog.Handler { return c }
 
 func (c *capture) fields(i int) map[string]any {
 	out := map[string]any{}

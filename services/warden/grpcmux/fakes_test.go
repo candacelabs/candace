@@ -7,7 +7,7 @@ import (
 	"github.com/candacelabs/candace/services/warden"
 )
 
-// fakeRPC is a warden.RPCHandler that records the last decoded request and
+// fakeRPC is a warden.IRPCHandler that records the last decoded request and
 // returns canned responses, so specs can assert both the decode (conversion)
 // path and the response encoding. It can be told to panic to exercise the
 // server's recovery -> Internal mapping. Guarded by a small mutex because
@@ -45,7 +45,7 @@ func (f *fakeRPC) HandleHeartbeat(_ context.Context, req warden.HeartbeatRequest
 	return f.hbResp
 }
 
-func (f *fakeRPC) HandleIdentify(context.Context) warden.IdentifyResponse {
+func (f *fakeRPC) HandleIdentify(ctx context.Context) warden.IdentifyResponse {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.identResp
@@ -63,7 +63,7 @@ func (f *fakeRPC) sawHeartbeat() *warden.HeartbeatRequest {
 	return f.lastHB
 }
 
-// fakeViewSource is a controllable warden.ViewSource. It models the election
+// fakeViewSource is a controllable warden.IViewSource. It models the election
 // manager's Subscribe contract: a fresh subscriber gets an immediate snapshot,
 // delivery is best-effort (non-blocking send, dropped when the buffer is full),
 // and cancel closes the channel. It additionally exposes the live subscription

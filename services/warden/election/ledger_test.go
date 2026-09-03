@@ -8,6 +8,11 @@ package election
 //   - static mode must ignore a persisted Membership (fan-in collision:
 //     main.go once passed a NewStatic discoverer in static mode, which would
 //     have made persisted rosters override config edits);
+//   - a *typed* nil discoverer is not a nil discoverer: discoveryMode is
+//     `cfg.Discoverer != nil`, so a nil concrete pointer stored in the
+//     interface silently selects dynamic membership. This is the hazard that
+//     kept the mode switch inside main's wiring rather than in a factory
+//     returning warden.IPeerDiscoverer (house rule CS-8);
 //   - a restarted node must not replay its previous election-timeout
 //     schedule (review ratification of the seed-entropy fix).
 
@@ -41,7 +46,7 @@ func (ledgerDisc) Discover(ctx context.Context) (<-chan warden.Roster, error) {
 	return ch, nil
 }
 
-func ledgerLeader(t harnessT) *Manager {
+func ledgerLeader(t iHarnessT) *Manager {
 	t.Helper()
 	tim := defaultTimings()
 	cfg := Config{
@@ -139,6 +144,54 @@ var _ = Describe("election regression ledger", func() {
 		Expect(v.Membership.HasVoter("ghost")).To(BeFalse(), "persisted ghost voter must not appear")
 		// Term/vote persistence is unaffected by static membership semantics.
 		Expect(v.Term).To(Equal(warden.Term(3)), "term durability must survive")
+	})
+
+	// TestTypedNilDiscovererIsNotStatic pins the trap the spec above depends on
+	// for its meaning. discoveryMode is `cfg.Discoverer != nil`, and a nil
+	// *fakeDiscoverer stored in a warden.IPeerDiscoverer is NOT nil — so this
+	// config, which looks static in every way a reader checks, adopts the
+	// persisted roster instead of the config peer list. Nothing fails loudly.
+	//
+	// The spec exists because main's wiring is what stands between a fleet and
+	// this: the discovery mode switch assigns concrete constructors into a
+	// `var discoverer warden.IPeerDiscoverer` and its static arm assigns
+	// nothing, because an unassigned variable is the one nil that cannot be
+	// typed. A factory returning the interface has no such arm available.
+	//
+	// It does not Run the manager: with a typed-nil discoverer the run loop
+	// would call Discover on a nil pointer, which is the second half of the
+	// same bug and not what this pins.
+	It("treats a typed-nil discoverer as discovery mode, not as static", func() {
+		tim := defaultTimings()
+		st := store.NewMemStore()
+		persisted := warden.Membership{Version: 5, Voters: ledgerNodes("a", "b", "c", "ghost")}
+		Expect(st.Save(warden.PersistentState{CurrentTerm: 3, VotedFor: "b", Membership: &persisted})).To(Succeed(), "seeding store")
+
+		var absent *fakeDiscoverer // nil pointer, non-nil interface
+		cfg := Config{
+			Self:               warden.Node{ID: "a", Addr: "a"},
+			Peers:              ledgerNodes("a", "b", "c"),
+			HeartbeatInterval:  tim.Heartbeat,
+			SuspectAfter:       tim.Suspect,
+			DeadAfter:          tim.Dead,
+			ElectionTimeoutMin: tim.ETMin,
+			ElectionTimeoutMax: tim.ETMax,
+			RPCTimeout:         tim.RPCTimeout,
+			Discoverer:         absent,
+			ClusterID:          "candacenet-test",
+		}
+		// Spelled as the language spells it, deliberately. Gomega's BeNil() is
+		// reflection-based and reports this value as nil, which is the opposite
+		// of what `cfg.Discoverer != nil` — the expression election.NewManager
+		// actually evaluates — answers. A spec written with BeNil() would have
+		// agreed with the wrong one.
+		Expect(cfg.Discoverer != nil).To(BeTrue(), "a nil concrete pointer in an interface is not a nil interface")
+
+		m, err := NewManager(cfg, stubTransport(), st, testclock.New(time.Unix(0, 0)))
+		Expect(err).NotTo(HaveOccurred(), "NewManager")
+		Expect(m.discoveryMode).To(BeTrue(), "a typed nil selects discovery mode, which is the whole hazard")
+		Expect(m.membership.Version).To(Equal(uint64(5)), "the persisted roster is adopted, not ignored")
+		Expect(m.membership.HasVoter("ghost")).To(BeTrue(), "a node absent from config is now a voter")
 	})
 
 	// TestRestartUsesFreshTimeoutSchedule pins the seed-entropy fix: the timeout

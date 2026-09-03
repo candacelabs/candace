@@ -42,11 +42,11 @@ var (
 	ErrUnassembled = errors.New("noteboard: the board is not assembled")
 )
 
-// Steering is the part of a steering service this board reads. It is declared
+// ISteering is the part of a steering service this board reads. It is declared
 // here rather than imported so the ledger's rules can be exercised without a
 // component graph, and so the service that satisfies it can be replaced without
 // this package knowing.
-type Steering interface {
+type ISteering interface {
 	// Observed returns every steering input recorded so far, oldest first.
 	Observed() []string
 }
@@ -64,7 +64,7 @@ type Note struct {
 // goroutine and the engine serves its page on others.
 type Board struct {
 	mutex    sync.Mutex
-	steering Steering
+	steering ISteering
 	brand    webui.Brand
 	capacity int
 	// considered counts the steering inputs already folded in, so re-reading
@@ -80,7 +80,7 @@ type Board struct {
 // The brand is the same value the composition root hands Core, resolved once
 // here so the page cannot render a different identity than the shell beside it.
 // An invalid brand fails here rather than at the first request.
-func New(source Steering, brand webui.Brand) (*Board, error) {
+func New(source ISteering, brand webui.Brand) (*Board, error) {
 	if source == nil {
 		return nil, ErrNoSteering
 	}
@@ -103,7 +103,7 @@ func (board *Board) Component(steeringComponent *component.Definition) (*compone
 	return component.New(
 		ComponentName,
 		component.WithRequires(steeringComponent),
-		component.WithAssemble(func(ctx context.Context, capabilities component.Capabilities) error {
+		component.WithAssemble(func(ctx context.Context, capabilities component.ICapabilities) error {
 			board.mutex.Lock()
 			board.capacity = Capacity
 			board.notes = make([]Note, 0, Capacity)
@@ -124,7 +124,7 @@ func (board *Board) Component(steeringComponent *component.Definition) (*compone
 			board.running = true
 			return ctx.Err()
 		}),
-		component.WithStop(func(context.Context) error {
+		component.WithStop(func(ctx context.Context) error {
 			board.mutex.Lock()
 			defer board.mutex.Unlock()
 			board.running = false

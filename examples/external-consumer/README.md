@@ -23,7 +23,7 @@ exercised here, and every candace package behind them arrives through an
 | Seam | What this repository supplies |
 |---|---|
 | `WithComponent` | three components of its own, in a graph Core orders |
-| `WithHarnessFactory` | a full `harness.Factory` and `harness.Runtime` |
+| `WithHarnessFactory` | a full `harness.IFactory` and `harness.IRuntime` |
 | `WithBrand` | an invented product's name, agent, wordmark, and palette |
 | `WithUIOverlay` | one shipped template block, redefined |
 | `WithNavItem` | one sidebar entry, after Core's own four |
@@ -56,7 +56,7 @@ by something other than candace's own name.
   a palette delivered as a served same-origin stylesheet, and an overlay
   carrying exactly one file, a redefinition of the shipped `"statusPill"` block.
   Everything the overlay does not name keeps shipping from candace.
-- `customharness/` — a full `harness.Factory` and `harness.Runtime`
+- `customharness/` — a full `harness.IFactory` and `harness.IRuntime`
   implementation compiled outside the CandaceOS tree, publishing typed events
   through the host boundary and holding the steering service the composition
   root handed it.

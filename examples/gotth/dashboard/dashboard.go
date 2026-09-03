@@ -222,7 +222,7 @@ func (s State) StatusLabel() string {
 // learns the result the same way every other session does — through an event
 // the feed pushed. That is what makes two tabs unable to disagree about what
 // the server measured.
-func Reduce(state State, ev live.Event) (State, []live.Effect) {
+func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventPause:
 		state.Paused = true
@@ -237,10 +237,10 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 		// on the emitted event's contributing list. Without it the patch that
 		// finally shows the reading names only "effect:dashboard.subscribe",
 		// and an operator holding that frame cannot reach the click.
-		return state, []live.Effect{ProbeEffect{Cause: ev.ID}}
+		return state, []live.IEffect{ProbeEffect{Cause: ev.ID}}
 
 	case EventClear:
-		return state, []live.Effect{ClearEffect{Cause: ev.ID}}
+		return state, []live.IEffect{ClearEffect{Cause: ev.ID}}
 
 	case EventSample:
 		return applySample(state, ev), nil
@@ -379,13 +379,13 @@ func applyCleared(state State, ev live.Event) State {
 // without one keeps rendering the last reading it saw and stops learning
 // anything — a dashboard that looks right while being wrong, which is the worst
 // failure a dashboard has.
-func applyFailure(state State, ev live.Event) (State, []live.Effect) {
+func applyFailure(state State, ev live.Event) (State, []live.IEffect) {
 	source := ev.Fields.Get(live.EffectFailedSourceField)
 	state.Notice = "the server could not complete an operation: " + source
 
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && source == SourceSubscribe {
-		return state, []live.Effect{SubscribeEffect{}}
+		return state, []live.IEffect{SubscribeEffect{}}
 	}
 	return state, nil
 }
@@ -412,13 +412,13 @@ func Config(feed *Feed, origins []string) live.Config[State] {
 		// under one lock — split in two, a sample landing between them is
 		// either shown twice or missed entirely, and the window is exactly as
 		// wide as a page load.
-		Init: func(_ context.Context, s live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
 			reading, alerts := feed.Join(s.ID())
 			state := State{Self: s.ID(), Meters: reading, Alerts: alerts}
 			if len(reading.Values) > 0 {
 				state.Window = (&History{}).with(reading.Values[0])
 			}
-			return state, []live.Effect{SubscribeEffect{}}, nil
+			return state, []live.IEffect{SubscribeEffect{}}, nil
 		},
 
 		Reduce: Reduce,

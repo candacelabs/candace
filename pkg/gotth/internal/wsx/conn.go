@@ -74,7 +74,7 @@ func (h *Handler) newConn(ws *websocket.Conn, peer session.Peer) *conn {
 // The count in RFC-0001 §3.4 is unchanged — this goroutine IS the read pump,
 // and net/http's has gone home — but net/http's recover went home with it, so
 // the teardown below carries a guard of its own.
-func (h *Handler) serve(ctx context.Context, c *conn, app session.App) {
+func (h *Handler) serve(ctx context.Context, c *conn, app session.IApp) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

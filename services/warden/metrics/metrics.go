@@ -65,7 +65,7 @@ type Metrics struct {
 
 // New builds a Metrics backed by a private registry containing the warden view
 // collector plus the standard Go runtime and process collectors.
-func New(view warden.ViewSource) *Metrics {
+func New(view warden.IViewSource) *Metrics {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
 		collectors.NewGoCollector(),
@@ -91,7 +91,7 @@ func (m *Metrics) Register(r gin.IRouter) {
 // scrapes; the only mutable state read is the snapshot returned by view.View(),
 // which is itself an immutable copy.
 type viewCollector struct {
-	view warden.ViewSource
+	view warden.IViewSource
 
 	isLeader          *prometheus.Desc
 	term              *prometheus.Desc
@@ -107,7 +107,7 @@ type viewCollector struct {
 	peerMember        *prometheus.Desc
 }
 
-func newViewCollector(view warden.ViewSource) *viewCollector {
+func newViewCollector(view warden.IViewSource) *viewCollector {
 	return &viewCollector{
 		view: view,
 		isLeader: prometheus.NewDesc(

@@ -34,14 +34,14 @@ func TestHTTPAPI(t *testing.T) {
 
 var _ = Describe("API", func() {
 	var (
-		backend   *MockBackend
+		backend   *MockIBackend
 		handler   http.Handler
 		router    *gin.Engine
 		transport *httpapi.API
 	)
 
 	BeforeEach(func() {
-		backend = NewMockBackend(gomock.NewController(GinkgoT()))
+		backend = NewMockIBackend(gomock.NewController(GinkgoT()))
 		router = httpserver.NewEngine()
 		ui, err := webui.New(backend)
 		Expect(err).NotTo(HaveOccurred())

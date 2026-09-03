@@ -20,7 +20,7 @@ const (
 // JobFunc executes one scheduled invocation. It should stop promptly when ctx
 // is cancelled. Returning an error records a failed occurrence; it does not
 // stop the scheduler.
-type JobFunc func(context.Context, Invocation) error
+type JobFunc func(ctx context.Context, invocation Invocation) error
 
 // Invocation identifies the logical occurrence passed to a job handler.
 type Invocation struct {
@@ -34,7 +34,7 @@ type Invocation struct {
 // Service reconciles static jobs, schedules deterministic occurrences, and
 // executes handlers under durable leases.
 type Service struct {
-	store         Store
+	store         IStore
 	jobs          map[string]registeredJob
 	jobNames      []string
 	leaseDuration time.Duration
@@ -59,7 +59,7 @@ type dueOccurrence struct {
 	nextRunAt   time.Time
 }
 
-// New constructs a stopped Service. Store and at least one WithJob are
+// New constructs a stopped Service. An IStore and at least one WithJob are
 // required; construction performs no persistence and starts no goroutines.
 func New(options ...Option) (*Service, error) {
 	config := serviceConfig{
@@ -112,7 +112,7 @@ func New(options ...Option) (*Service, error) {
 // Run blocks until ctx is cancelled or durable scheduler state cannot be read
 // or written safely. Job failures and panics are recorded as failed
 // occurrences and do not stop Run. On return, all cooperative handlers have
-// exited and their terminal state has been offered to Store.
+// exited and their terminal state has been offered to IStore.
 func (service *Service) Run(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil run context", ErrInvalidConfiguration)

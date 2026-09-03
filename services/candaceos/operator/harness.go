@@ -9,9 +9,9 @@ import (
 	opencodeharness "github.com/candacelabs/candace/services/candaceos/harness/opencode"
 )
 
-// harnessImplementation is the narrow turn lifecycle owned by an agent runtime.
+// iHarnessImplementation is the narrow turn lifecycle owned by an agent runtime.
 // Controller retains policy, approvals, durable run state, and UI projection.
-type harnessImplementation interface {
+type iHarnessImplementation interface {
 	Start(ctx context.Context) (harnessStart, error)
 	Send(ctx context.Context, prompt *candaceosv1.HarnessPrompt) error
 	Abort(ctx context.Context) error
@@ -21,7 +21,7 @@ type harnessImplementation interface {
 // harnessBinding is the selected implementation and its immutable
 // operator-facing identity.
 type harnessBinding struct {
-	runtime  harnessImplementation
+	runtime  iHarnessImplementation
 	identity *candaceosv1.HarnessRuntimeIdentity
 }
 
@@ -35,7 +35,7 @@ type harnessStart struct {
 func configureHarness(
 	cfg *candaceosv1.CoreConfig,
 	controller *Controller,
-	factory harnesssdk.Factory,
+	factory harnesssdk.IFactory,
 ) (harnessBinding, error) {
 	if factory != nil {
 		implementation, identity, err := newHarnessAdapter(

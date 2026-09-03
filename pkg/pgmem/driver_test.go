@@ -85,7 +85,7 @@ var _ = Describe("database/sql adapter", func() {
 		Expect(database.Close()).To(Succeed())
 
 		controller := gomock.NewController(GinkgoT())
-		translator := NewMockTranslator(controller)
+		translator := NewMockITranslator(controller)
 		translator.EXPECT().
 			Translate(gomock.Any(), "public", "make table").
 			Return(`CREATE TABLE translated (value TEXT NOT NULL)`, nil)

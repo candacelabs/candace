@@ -80,7 +80,7 @@ import (
 //
 // It answers any method, as a page handler mounted on a catch-all must, and
 // writes no body for HEAD.
-func (a *App[S]) PageHandler(page func(S) templ.Component) http.Handler {
+func (a *App[S]) PageHandler(page func(state S) templ.Component) http.Handler {
 	if page == nil {
 		panic("gotth-live: (*live.App).PageHandler was given a nil page: pass the function that " +
 			"renders the whole document from state, such as Page")

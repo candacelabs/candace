@@ -64,8 +64,8 @@ type Config struct {
 	HTTP http.Handler
 	// RPC and Views back the gRPC WardenService (unary handlers and the
 	// WatchCluster stream, respectively).
-	RPC   warden.RPCHandler
-	Views warden.ViewSource
+	RPC   warden.IRPCHandler
+	Views warden.IViewSource
 }
 
 // Server owns the cmux, the gRPC server, and the HTTP server sharing one port.

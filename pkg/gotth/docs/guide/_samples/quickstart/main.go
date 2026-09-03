@@ -48,7 +48,7 @@ type State struct{ N int }
 // in this file, so any failure is a startup mistake in it and there is nothing
 // to do with the error but print it and stop.
 var app = live.MustNew(live.Config[State]{
-	Reduce: func(s State, ev live.Event) (State, []live.Effect) {
+	Reduce: func(s State, ev live.Event) (State, []live.IEffect) {
 		if ev.Name == EventInc {
 			s.N++
 		}

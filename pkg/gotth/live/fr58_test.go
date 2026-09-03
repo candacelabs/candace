@@ -114,7 +114,7 @@ var _ = Describe("FR-58: the errors an application holds", func() {
 		// with no next step is the exact defect FR-58 names — the reader is
 		// holding a file they have to change one line of.
 		DescribeTable("name the field at fault and what to set it to",
-			func(mutate func(*live.Config[counter]), field, nextStep string) {
+			func(mutate func(cfg *live.Config[counter]), field, nextStep string) {
 				cfg := validConfig()
 				mutate(&cfg)
 

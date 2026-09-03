@@ -1,6 +1,6 @@
 package notify_test
 
-// Contract tests for the warden.Notifier implementations, asserted through the
+// Contract tests for the warden.INotifier implementations, asserted through the
 // exported surface only. The security-critical property is SMTP fail-closed:
 // when the server does not advertise STARTTLS, the notifier must abort BEFORE
 // transmitting any credentials or mail — so a passive eavesdropper on a
@@ -219,8 +219,8 @@ var _ = Describe("SMTPNotifier pre-network validation", func() {
 })
 
 var _ = Describe("LogNotifier", func() {
-	It("implements warden.Notifier and always returns nil", func() {
-		var n warden.Notifier = notify.NewLogNotifier()
+	It("implements warden.INotifier and always returns nil", func() {
+		var n warden.INotifier = notify.NewLogNotifier()
 		Expect(n.Notify(context.Background(), sampleIncident("node-a"))).To(Succeed())
 	})
 

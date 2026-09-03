@@ -78,18 +78,18 @@ var _ = Describe("The coalescing flush trigger, with an application contributing
 			c.Limits.MaxEventsPerSecond = 1e6
 			c.Limits.EventBurst = 1 << 20
 
-			c.Reduce = func(state tally, ev live.Event) (tally, []live.Effect) {
+			c.Reduce = func(state tally, ev live.Event) (tally, []live.IEffect) {
 				switch ev.Name {
 				case "qa.increment":
 					// No state change here: the patch this spec is about is
 					// the one the effect's emission causes.
-					return state, []live.Effect{contributingEffect{}}
+					return state, []live.IEffect{contributingEffect{}}
 				case "qa.relabel":
 					state.Label = ev.Fields.Get("label")
 				}
 				return state, nil
 			}
-			c.Execute = func(_ context.Context, _ live.Session, _ live.Effect, emit live.Emitter) error {
+			c.Execute = func(_ context.Context, _ live.Session, _ live.IEffect, emit live.Emitter) error {
 				return emit(live.Event{
 					Name: "qa.relabel",
 					Fields: live.NewFields(map[string]string{

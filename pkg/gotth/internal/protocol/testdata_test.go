@@ -77,7 +77,7 @@ func validSnapshot() *pb.Snapshot {
 // member of the oneof. The conformance walk asserts this table names every
 // such member, so a new client frame kind cannot be added without a spec that
 // exercises it.
-var validClientPayloads = map[protoreflect.Name]func(*pb.Frame){
+var validClientPayloads = map[protoreflect.Name]func(frame *pb.Frame){
 	"event": func(f *pb.Frame) { f.Payload = &pb.Frame_Event{Event: validEvent()} },
 	"ack":   func(f *pb.Frame) { f.Payload = &pb.Frame_Ack{Ack: &pb.Ack{ServerSeq: 3}} },
 	"heartbeat": func(f *pb.Frame) {
@@ -97,7 +97,7 @@ var validClientPayloads = map[protoreflect.Name]func(*pb.Frame){
 
 // validServerPayloads is the same for the server-to-client members, and is
 // what the outbound validation specs are built on.
-var validServerPayloads = map[protoreflect.Name]func(*pb.Frame){
+var validServerPayloads = map[protoreflect.Name]func(frame *pb.Frame){
 	"patch":    func(f *pb.Frame) { f.Payload = &pb.Frame_Patch{Patch: validPatch()} },
 	"snapshot": func(f *pb.Frame) { f.Payload = &pb.Frame_Snapshot{Snapshot: validSnapshot()} },
 	"error": func(f *pb.Frame) {

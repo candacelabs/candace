@@ -13,6 +13,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 // ---------------------------------------------------------------------------
@@ -43,8 +45,20 @@ const (
 	selInc   = `[data-bench-id="inc"]`
 )
 
+// cspBootBudget is how long the boot is watched for a policy violation. It is
+// the wall clock the runtime gets to connect, subscribe and take its first
+// patch on a shared VM, and it is spent asserting rather than sleeping.
+var cspBootBudget = patience.Budget{Within: 2 * time.Second, Interval: 200 * time.Millisecond}
+
 // waitLive blocks until the live session has patched at least once, which is
 // the only honest signal that the socket is up and the runtime is driving.
+//
+// CS-9 verdict: this stays on Ginkgo's own Eventually. Both polls genuinely
+// produce a bool — "does the node exist", "did clicking move the number" —
+// so patience's typed shell would carry a bool and its failure would print
+// `false`, which is exactly what BeTrue already prints. The typed primitive
+// earns its place where the poll has a value worth seeing; here there is not
+// one, and the descriptions carry the meaning instead.
 func waitLive(c *chrome) {
 	GinkgoHelper()
 	Eventually(func() bool {
@@ -56,6 +70,10 @@ func waitLive(c *chrome) {
 	Eventually(func() bool {
 		before := c.evalString(`document.querySelector(` + jsStr(selValue) + `).textContent.trim()`)
 		c.evalJSON(`document.querySelector(`+jsStr(selInc)+`).click(), null`, nil)
+		// CS-9 keep: pacing inside a poll, not a wait. The poll's own retry is
+		// the wait; this is the click's round trip to the server and back, and
+		// reading the value in the same breath as the click would compare the
+		// number to itself.
 		time.Sleep(150 * time.Millisecond)
 		after := c.evalString(`document.querySelector(` + jsStr(selValue) + `).textContent.trim()`)
 		return after != before
@@ -353,12 +371,23 @@ var _ = Describe("The client runtime under a strict Content-Security-Policy", La
 		// If the policy blocks the runtime, the useful failure names the
 		// directive that blocked it; asserting liveness first would report
 		// only that clicking did nothing.
-		time.Sleep(2 * time.Second)
-		var booted []string
-		c.evalJSON(`window.__cspViolations`, &booted)
-		Expect(booted).To(BeEmpty(),
-			"the runtime raised Content-Security-Policy violations while booting under %q:\n  %v",
-			strictCSP, booted)
+		//
+		// This used to be a two-second sleep and one read, which samples the
+		// claim once and at the least informative moment: a violation raised
+		// at 200ms and a violation raised at 1.9s are the same failure, and
+		// only the second of them survived to be read. Consistently is that
+		// same two seconds spent asserting the absence throughout, and it
+		// fails at the directive that broke it rather than at whatever the
+		// list happened to hold when the sleep ended.
+		patience.Consistently(GinkgoTB(),
+			fmt.Sprintf("the runtime to boot under %q raising no Content-Security-Policy violation", strictCSP),
+			cspBootBudget,
+			func() []string {
+				var raised []string
+				c.evalJSON(`window.__cspViolations`, &raised)
+				return raised
+			},
+			func(raised []string) bool { return len(raised) == 0 })
 
 		waitLive(c)
 

@@ -134,7 +134,7 @@ var _ = Describe("Every repeated field in the schema", func() {
 	// H-4 is one of the two invariants a new field silently escapes, so the
 	// bound is a table and this is the meta-test that keeps the table complete.
 	It("has a declared cardinality bound", func() {
-		var walk func(protoreflect.MessageDescriptor, map[protoreflect.FullName]bool)
+		var walk func(message protoreflect.MessageDescriptor, seen map[protoreflect.FullName]bool)
 		walk = func(md protoreflect.MessageDescriptor, seen map[protoreflect.FullName]bool) {
 			if seen[md.FullName()] {
 				return

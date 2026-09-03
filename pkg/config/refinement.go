@@ -16,7 +16,7 @@ import (
 // field safely.
 func LabelRefinementError(
 	message proto.Message,
-	label func(protoreflect.FieldDescriptor) string,
+	label func(field protoreflect.FieldDescriptor) string,
 	err error,
 ) error {
 	var violation *liquidproto.Error

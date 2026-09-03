@@ -102,20 +102,20 @@ type State struct {
 // apply the operation, and this session learns the result the same way every
 // other tab does, through a sync event. That is what "server-authoritative"
 // means concretely, and it is why two tabs cannot disagree.
-func Reduce(state State, ev live.Event) (State, []live.Effect) {
+func Reduce(state State, ev live.Event) (State, []live.IEffect) {
 	// Every transition refreshes the relative timestamp, so the "changed 4s
 	// ago" line does not go stale between changes.
 	state.Age = ageAt(state.ChangedAtUnixMilli, ev.At)
 
 	switch ev.Name {
 	case EventIncrement:
-		return state, []live.Effect{ChangeEffect{Op: OpAdd, Delta: 1, By: state.Self, Cause: ev.ID}}
+		return state, []live.IEffect{ChangeEffect{Op: OpAdd, Delta: 1, By: state.Self, Cause: ev.ID}}
 	case EventDecrement:
-		return state, []live.Effect{ChangeEffect{Op: OpAdd, Delta: -1, By: state.Self, Cause: ev.ID}}
+		return state, []live.IEffect{ChangeEffect{Op: OpAdd, Delta: -1, By: state.Self, Cause: ev.ID}}
 	case EventIncrement10:
-		return state, []live.Effect{ChangeEffect{Op: OpAdd, Delta: 10, By: state.Self, Cause: ev.ID}}
+		return state, []live.IEffect{ChangeEffect{Op: OpAdd, Delta: 10, By: state.Self, Cause: ev.ID}}
 	case EventReset:
-		return state, []live.Effect{ChangeEffect{Op: OpReset, By: state.Self, Cause: ev.ID}}
+		return state, []live.IEffect{ChangeEffect{Op: OpReset, By: state.Self, Cause: ev.ID}}
 	case EventSync:
 		return applySync(state, ev), nil
 	case live.EffectFailedEvent:
@@ -141,10 +141,10 @@ func Reduce(state State, ev live.Event) (State, []live.Effect) {
 // Re-running a terminal failure re-runs whatever made it terminal, and the
 // classification is the executor's claim rather than this reducer's guess: an
 // unreadable or absent value parses as false and nothing is retried.
-func retryWatch(ev live.Event) []live.Effect {
+func retryWatch(ev live.Event) []live.IEffect {
 	retryable, _ := strconv.ParseBool(ev.Fields.Get(live.EffectFailedRetryableField))
 	if retryable && ev.Fields.Get(live.EffectFailedSourceField) == SourceWatch {
-		return []live.Effect{WatchEffect{}}
+		return []live.IEffect{WatchEffect{}}
 	}
 	return nil
 }
@@ -276,7 +276,7 @@ func Config(store *Store, origins []string) live.Config[State] {
 		// the store — which both reads the current value and registers this
 		// session for pushes, under one lock, so no change can slip through
 		// the gap between the two — and asks for the subscription pump.
-		Init: func(_ context.Context, s live.Session) (State, []live.Effect, error) {
+		Init: func(_ context.Context, s live.Session) (State, []live.IEffect, error) {
 			snap := store.Join(s.ID())
 			return State{
 				Self:               s.ID(),
@@ -286,7 +286,7 @@ func Config(store *Store, origins []string) live.Config[State] {
 				ChangedBy:          snap.ChangedBy,
 				ChangedAtUnixMilli: snap.ChangedAtUnixMilli,
 				Age:                ageAt(snap.ChangedAtUnixMilli, time.Now()),
-			}, []live.Effect{WatchEffect{}}, nil
+			}, []live.IEffect{WatchEffect{}}, nil
 		},
 
 		Reduce: Reduce,

@@ -10,10 +10,10 @@ import (
 	"github.com/candacelabs/candace/pkg/pgmem"
 )
 
-var _ = Describe("Translator boundary", func() {
+var _ = Describe("ITranslator boundary", func() {
 	It("uses a configured translator before execution", func(ctx SpecContext) {
 		controller := gomock.NewController(GinkgoT())
-		translator := NewMockTranslator(controller)
+		translator := NewMockITranslator(controller)
 		translator.EXPECT().
 			Translate(gomock.Any(), "public", "meaning").
 			Return("SELECT 42 AS answer", nil)
@@ -27,7 +27,7 @@ var _ = Describe("Translator boundary", func() {
 
 	It("accepts internal-dialect output when no functions need rewriting", func(ctx SpecContext) {
 		controller := gomock.NewController(GinkgoT())
-		translator := NewMockTranslator(controller)
+		translator := NewMockITranslator(controller)
 		translator.EXPECT().
 			Translate(gomock.Any(), "public", "set internal version").
 			Return("PRAGMA user_version = 7", nil)
@@ -47,7 +47,7 @@ var _ = Describe("Translator boundary", func() {
 
 	It("preserves translator failures", func() {
 		controller := gomock.NewController(GinkgoT())
-		translator := NewMockTranslator(controller)
+		translator := NewMockITranslator(controller)
 		failure := errors.New("unsupported syntax")
 		translator.EXPECT().Translate(gomock.Any(), "public", "BROKEN").Return("", failure)
 

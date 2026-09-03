@@ -55,7 +55,7 @@ type SMTPNotifier struct {
 	cfg SMTPConfig
 }
 
-var _ warden.Notifier = (*SMTPNotifier)(nil)
+var _ warden.INotifier = (*SMTPNotifier)(nil)
 
 // NewSMTPNotifier returns an SMTPNotifier for cfg.
 func NewSMTPNotifier(cfg SMTPConfig) *SMTPNotifier { return &SMTPNotifier{cfg: cfg} }

@@ -5,21 +5,21 @@ import (
 	"encoding/json"
 )
 
-// provider is the OpenCode server as the session runtime sees it: every
-// provider operation the lifecycle, steering, projection, and reconciliation
+// iProvider is the OpenCode server as the session runtime sees it: every
+// iProvider operation the lifecycle, steering, projection, and reconciliation
 // code depends on, and nothing else. It is the package's only seam between
 // session behavior and the wire.
 //
 // Keeping the seam here rather than at the HTTP boundary is deliberate. The
 // behavior this package owns - run fencing, bounded admission, abort-and-
-// resubmit steering, publication retry - is decided from provider *responses*,
+// resubmit steering, publication retry - is decided from iProvider *responses*,
 // not from HTTP. Specs that exercise that behavior script this interface
 // directly; only the sdkAdapter contract specs pay for a real server.
 //
 // Implementations must honor each call's context and are used concurrently:
 // streamEvents runs on its own goroutine for the whole session while the other
 // calls are issued from the runtime's command goroutine.
-type provider interface {
+type iProvider interface {
 	// health reports whether the server considers itself healthy and the
 	// version it advertises.
 	health(ctx context.Context) (bool, string, error)
@@ -52,7 +52,7 @@ type provider interface {
 	// stream breaks. Events are only invalidation hints: the runtime re-reads
 	// the transcript rather than trusting them, so a broken stream degrades to
 	// interval polling instead of losing work.
-	streamEvents(ctx context.Context, receive func(json.RawMessage)) error
+	streamEvents(ctx context.Context, receive func(event json.RawMessage)) error
 }
 
-var _ provider = (*sdkAdapter)(nil)
+var _ iProvider = (*sdkAdapter)(nil)

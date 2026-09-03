@@ -10,17 +10,17 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 
+	"github.com/candacelabs/candace/pkg/patience"
 	"github.com/candacelabs/candace/services/warden"
 )
 
-// waitUntil polls cond until it is true or the timeout elapses. The poll is a
-// goroutine-scheduling wait only; no time-based watchdog logic depends on it
-// (that logic is exercised deterministically via the fake clock).
-func waitUntil(timeout time.Duration, cond func() bool) {
-	GinkgoHelper()
-	Eventually(cond).WithTimeout(timeout).WithPolling(time.Millisecond).
-		Should(BeTrue(), "condition not met within %s", timeout)
-}
+// schedulerBudget is what these specifications are willing to wait for the
+// scheduler, and nothing else. No time-based watchdog logic depends on it —
+// that logic is exercised deterministically through the fake clock — so the
+// only thing this budget guards against is a goroutine that never runs at
+// all, and a generous number there costs a slow failure on a test that was
+// going to fail anyway.
+var schedulerBudget = patience.Budget{Within: 30 * time.Second, Interval: time.Millisecond}
 
 func runReturns(done <-chan error) error {
 	GinkgoHelper()
@@ -50,17 +50,20 @@ var _ = Describe("Watchdog.Run", func() {
 		go func() { done <- w.Run(ctx) }()
 
 		// The startup evaluation reads the follower view first.
-		waitUntil(2*time.Second, func() bool { return src.views() >= 1 })
+		patience.Await(GinkgoTB(), "the startup evaluation to read a view", schedulerBudget,
+			src.views, func(views int) bool { return views >= 1 })
 
 		seen := baseTime.Add(-time.Minute)
 		dead := leaderView(7, peer("node-a", peerAddr, warden.StatusDead, seen))
 		src.push(dead)
-		waitUntil(2*time.Second, func() bool { return len(rec.Sent()) == 1 })
+		patience.Await(GinkgoTB(), "the dead peer's one notification", schedulerBudget,
+			rec.Sent, func(sent []warden.Incident) bool { return len(sent) == 1 })
 
 		// Re-deliver the same view; the episode is open, so no new notification.
 		before := src.views()
 		src.push(dead)
-		waitUntil(2*time.Second, func() bool { return src.views() > before })
+		patience.Await(GinkgoTB(), "the re-delivered view to be evaluated", schedulerBudget,
+			src.views, func(views int) bool { return views > before })
 		Expect(rec.Sent()).To(HaveLen(1), "re-delivered view must not re-notify")
 		Expect(w.Incidents()).To(HaveLen(1), "incident recorded once")
 
@@ -85,13 +88,15 @@ var _ = Describe("Watchdog.Run", func() {
 		// Ensure the startup evaluation has read the follower view; after this the
 		// only thing that can trigger another evaluation is the tick (we never
 		// signal the subscription).
-		waitUntil(2*time.Second, func() bool { return src.views() >= 1 })
+		patience.Await(GinkgoTB(), "the startup evaluation to read a view", schedulerBudget,
+			src.views, func(views int) bool { return views >= 1 })
 
 		seen := baseTime.Add(-time.Minute)
 		src.set(leaderView(7, peer("node-a", peerAddr, warden.StatusDead, seen)))
 		clk.tick()
 
-		waitUntil(2*time.Second, func() bool { return len(rec.Sent()) == 1 })
+		patience.Await(GinkgoTB(), "the tick's one notification", schedulerBudget,
+			rec.Sent, func(sent []warden.Incident) bool { return len(sent) == 1 })
 
 		cancel()
 		Expect(errors.Is(runReturns(done), context.Canceled)).To(BeTrue(), "Run should return context.Canceled")
@@ -112,7 +117,8 @@ var _ = Describe("Watchdog.Run", func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- w.Run(ctx) }()
-		waitUntil(2*time.Second, func() bool { return src.views() >= 1 })
+		patience.Await(GinkgoTB(), "the startup evaluation to read a view", schedulerBudget,
+			src.views, func(views int) bool { return views >= 1 })
 
 		seen := baseTime.Add(-time.Minute)
 		// Two extra alive peers keep the cluster quorate (alive 5 of 8) despite
@@ -124,13 +130,15 @@ var _ = Describe("Watchdog.Run", func() {
 			peer("x", "10.0.0.8:8", warden.StatusAlive, baseTime),
 			peer("y", "10.0.0.9:9", warden.StatusAlive, baseTime),
 		))
-		waitUntil(2*time.Second, func() bool { return len(rec.Sent()) == 3 })
+		patience.Await(GinkgoTB(), "all three episodes to notify", schedulerBudget,
+			rec.Sent, func(sent []warden.Incident) bool { return len(sent) == 3 })
 
 		cancel()
 		Expect(errors.Is(runReturns(done), context.Canceled)).To(BeTrue(), "Run should return context.Canceled")
 		// Run joins every delivery goroutine before returning, so the count must
 		// settle back to the baseline (allow scheduler slop).
-		waitUntil(2*time.Second, func() bool { return runtime.NumGoroutine() <= base+1 })
+		patience.Await(GinkgoTB(), "the goroutine count to return to its baseline", schedulerBudget,
+			runtime.NumGoroutine, func(count int) bool { return count <= base+1 })
 	})
 
 	// TestIncidentsNeverHangs: Incidents() never hangs — before Run starts, while
@@ -151,12 +159,14 @@ var _ = Describe("Watchdog.Run", func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- w.Run(ctx) }()
-		waitUntil(2*time.Second, func() bool { return src.views() >= 1 })
+		patience.Await(GinkgoTB(), "the startup evaluation to read a view", schedulerBudget,
+			src.views, func(views int) bool { return views >= 1 })
 
 		seen := baseTime.Add(-time.Minute)
 		src.push(leaderView(7, peer("node-a", peerAddr, warden.StatusDead, seen)))
 		// While running: eventually reflects the incident, never hangs.
-		waitUntil(2*time.Second, func() bool { return len(w.Incidents()) == 1 })
+		patience.Await(GinkgoTB(), "the incident to reach Incidents()", schedulerBudget,
+			w.Incidents, func(incidents []warden.Incident) bool { return len(incidents) == 1 })
 
 		cancel()
 		Expect(errors.Is(runReturns(done), context.Canceled)).To(BeTrue(), "Run should return context.Canceled")

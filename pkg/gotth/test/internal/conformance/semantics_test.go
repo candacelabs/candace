@@ -86,7 +86,7 @@ var _ = Describe("The handshake, as a cross-origin attacker experiences it (FR-4
 
 	It("refuses a connection whose identity hook fails, before any session exists", func() {
 		cfg := qaConfig()
-		cfg.Authenticate = func(*http.Request) (live.Identity, error) {
+		cfg.Authenticate = func(request *http.Request) (live.IIdentity, error) {
 			return nil, errors.New("no session cookie")
 		}
 
@@ -98,7 +98,7 @@ var _ = Describe("The handshake, as a cross-origin attacker experiences it (FR-4
 
 	It("refuses a connection whose CSRF token does not check out", func() {
 		cfg := qaConfig()
-		cfg.CSRF = func(*http.Request) error { return errors.New("bad token") }
+		cfg.CSRF = func(request *http.Request) error { return errors.New("bad token") }
 
 		status, err := attempt(cfg, allowedOrigin, true)
 
@@ -134,7 +134,7 @@ var _ = Describe("The per-event authorization hook (FR-47)", func() {
 				mu.Unlock()
 				return &live.DenyError{Reason: "QA denies everything"}
 			}
-			c.Reduce = func(s tally, ev live.Event) (tally, []live.Effect) {
+			c.Reduce = func(s tally, ev live.Event) (tally, []live.IEffect) {
 				mu.Lock()
 				reduced = append(reduced, ev.Name)
 				mu.Unlock()
@@ -192,7 +192,7 @@ var _ = Describe("The per-event authorization hook (FR-47)", func() {
 
 	It("closes the connection on a fatal denial", func() {
 		d := dial(func(c *live.Config[tally]) {
-			c.Authorize = func(context.Context, live.Session, live.Event) error {
+			c.Authorize = func(ctx context.Context, session live.Session, event live.Event) error {
 				return &live.FatalDenyError{Reason: "revoked"}
 			}
 		})

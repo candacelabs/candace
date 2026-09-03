@@ -17,7 +17,7 @@ type Factory struct {
 	config *candaceosv1.OpenCodeConfig
 }
 
-var _ harness.Factory = (*Factory)(nil)
+var _ harness.IFactory = (*Factory)(nil)
 
 // NewFactory validates config and snapshots it, so a later mutation by the
 // caller cannot change how sessions are opened. It reports ErrConfigRequired
@@ -38,7 +38,7 @@ func NewFactory(config *candaceosv1.OpenCodeConfig) (*Factory, error) {
 	return &Factory{config: owned}, nil
 }
 
-// New implements harness.Factory. It validates harnessContext, then returns a
+// New implements harness.IFactory. It validates harnessContext, then returns a
 // runtime bound to that context's workspace and the supplied host. The returned
 // runtime has already started its command goroutine, so the caller owns it and
 // must Close it even if Start is never called or later fails. host must remain
@@ -48,7 +48,7 @@ func NewFactory(config *candaceosv1.OpenCodeConfig) (*Factory, error) {
 // active-turn steering capabilities, and reports the configured model.
 func (factory *Factory) New(
 	harnessContext *candaceosv1.HarnessContext,
-	host harness.Host,
+	host harness.IHost,
 ) (*harness.Instance, error) {
 	if err := candaceosv1.ValidateHarnessContext(harnessContext); err != nil {
 		return nil, fmt.Errorf("opencode: harness context: %w", err)

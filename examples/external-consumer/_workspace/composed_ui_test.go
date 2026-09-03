@@ -40,7 +40,7 @@ import (
 // this composition depends on that, so the stub only has to accept it.
 type recordingCapabilities struct{}
 
-func (recordingCapabilities) Log(context.Context, string, string) error { return nil }
+func (recordingCapabilities) Log(ctx context.Context, event string, message string) error { return nil }
 
 // runningProduct assembles and starts this repository's own bring-up graph, in
 // the order Core would resolve it, and stops it in reverse afterwards. Core
@@ -70,7 +70,7 @@ func runningProduct() *composition.Product {
 func newProductServer(product *composition.Product) *httptest.Server {
 	GinkgoHelper()
 	handler, err := webui.New(
-		webui.SnapshotFunc(func(context.Context) (*candaceosv1.WebUISnapshot, error) {
+		webui.SnapshotFunc(func(ctx context.Context) (*candaceosv1.WebUISnapshot, error) {
 			// The system carries no name: Core stamps the configured brand into
 			// every snapshot it produces, and these specs should see that
 			// happen rather than assert on a name they wrote themselves.

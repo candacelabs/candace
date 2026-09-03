@@ -14,8 +14,8 @@ reference.
 `services/warden/` is the **frozen contract**: the core types
 (`Node`, `ClusterView`, `Incident`, …), the HTTP wire protocol (`VoteRequest`,
 `HeartbeatRequest`, route path constants), and every interface the subsystems
-implement or consume (`Transport`, `RPCHandler`, `Store`, `ViewSource`,
-`IncidentLog`, `Notifier`, `Clock`).
+implement or consume (`ITransport`, `IRPCHandler`, `IStore`, `IViewSource`,
+`IIncidentLog`, `INotifier`, `IClock`).
 
 - **Do not edit `services/warden/`.** Every other package is written against
   its public API. If a contract change seems necessary, raise it — do not fork
@@ -75,16 +75,16 @@ already contains the schema; run against a pre-schema commit it reports "no
 | -------------------- | --------------------------------------------------------------------- |
 | `services/warden`    | Frozen contract: types, wire protocol, interfaces, real clock.        |
 | `services/warden/config`    | Load config from defaults → YAML → env; `Validate`; `Redacted`.       |
-| `services/warden/discovery` | `PeerDiscoverer` sources: `NewStatic`, `NewTailscale`, `NewFile`.     |
-| `services/warden/election`  | Election state machine + peer-liveness + membership; `ViewSource` + `RPCHandler`. |
+| `services/warden/discovery` | `IPeerDiscoverer` sources: `NewStatic`, `NewTailscale`, `NewFile`.     |
+| `services/warden/election`  | Election state machine + peer-liveness + membership; `IViewSource` + `IRPCHandler`. |
 | `services/warden/wireconv`  | Total, lossless conversions between the domain types and the `wardenv1` proto messages; the boundary the gRPC plane and protojson persistence cross. |
 | `services/warden/grpcserver`| `WardenService` server: unary Vote/Heartbeat/Identify + `WatchCluster` stream (cursor dedup, drop-to-latest); gRPC error-code table. |
 | `services/warden/grpcmux`   | Single-port cmux server: gRPC (h2c) + the gin HTTP engine on one listener; graceful drain of both. |
-| `services/warden/grpctransport` | gRPC client implementing `warden.Transport` (h2c, insecure creds, per-peer pooled conns, prompt reconnect). |
+| `services/warden/grpctransport` | gRPC client implementing `warden.ITransport` (h2c, insecure creds, per-peer pooled conns, prompt reconnect). |
 | `services/warden/store`     | Durable `PersistentState` (atomic write-then-rename file store; writes protojson, reads protojson AND legacy JSON). |
-| `services/warden/testclock` | Deterministic fake `Clock` for tests.                                 |
-| `services/warden/watchdog`  | Leader-only incident engine with dedup + cooldown; `IncidentLog`.     |
-| `services/warden/notify`    | `Notifier` implementations: SMTP, log, file.                          |
+| `services/warden/testclock` | Deterministic fake `IClock` for tests.                                 |
+| `services/warden/watchdog`  | Leader-only incident engine with dedup + cooldown; `IIncidentLog`.     |
+| `services/warden/notify`    | `INotifier` implementations: SMTP, log, file.                          |
 | `services/warden/dashboard` | SSR dashboard (HTMX, embedded offline assets) + `/api/status` JSON.   |
 | `services/warden/metrics`   | Prometheus collectors + `/metrics` handler.                           |
 | `cmd`                | `main.go`: config load, discoverer + component wiring, CSP supervisor. |
@@ -96,7 +96,7 @@ already contains the schema; run against a pre-schema commit it reports "no
 Discovery is **advisory**. `services/warden/discovery` only *reports* candidate nodes
 as `warden.Roster` snapshots on a channel; it never touches membership. The
 election manager consumes rosters, verifies candidates via
-`Transport.Identify`, and **only the leader** turns stable, verified candidates
+`ITransport.Identify`, and **only the leader** turns stable, verified candidates
 into one-at-a-time voting-membership changes. **Quorum is always computed over
 the persisted voter set (`Membership.Voters`)** — never over a roster or over
 "reachable peers" — so a quiet/broken discovery source can never shrink quorum.
@@ -124,7 +124,7 @@ warden is channel-first / single-owner, **not** mutex-guarded shared state:
 - The **election manager** and the **watchdog** are each one event-loop
   goroutine that solely owns its mutable state. External callers reach them by
   **request/reply over channels** and receive **immutable `ClusterView`
-  snapshots** (`ViewSource.View()` returns a copy the caller may keep).
+  snapshots** (`IViewSource.View()` returns a copy the caller may keep).
 - `cmd/main.go` supervises with channels + `context`, never
   `sync.WaitGroup`-plus-shared-error-slice: cancellation flows in via the
   `signal.NotifyContext` context; each long-running goroutine (election,
@@ -143,9 +143,9 @@ mutex-as-backbone will be rejected.
 Two different kinds of test double live in this tree, and the boundary between
 them is deliberate. **Do not convert one kind into the other.**
 
-**Generated mocks (gomock).** The eight contract interfaces — `Transport`,
-`Notifier`, `Store`, `Clock`, `PeerDiscoverer`, `ViewSource`, `IncidentLog`,
-`RPCHandler` — have expectation-based mocks generated by
+**Generated mocks (gomock).** The eight contract interfaces — `ITransport`,
+`INotifier`, `IStore`, `IClock`, `IPeerDiscoverer`, `IViewSource`, `IIncidentLog`,
+`IRPCHandler` — have expectation-based mocks generated by
 [go.uber.org/mock](https://github.com/uber-go/mock) (the maintained fork of the
 archived `golang/mock`; **not** the archived one) into `services/warden/internal/mocks/`
 (package `mocks`, one `Mock<Interface>` type each). The generated code is
@@ -163,7 +163,7 @@ Never point a `mockgen` directive at anything under `services/warden/proto/`: th
 generated by `buf` (see the schema section above), not gomock, and stay
 untouched.
 
-**Behavioral simulators.** `services/warden/testclock` (a deterministic fake `Clock`
+**Behavioral simulators.** `services/warden/testclock` (a deterministic fake `IClock`
 that models time as a state machine) and the election test harness
 (`services/warden/election/harness_test.go`, which models an entire network of nodes as
 a state machine) are **simulators, not mocks** — hand-written on purpose, not
@@ -174,9 +174,9 @@ destroy that determinism — call-order/count expectations cannot say "step the
 whole cluster forward N ticks and settle." **Do not convert them to gomock.**
 
 **Which to reach for.** Use a generated mock when a test wants to control or
-assert *calls* against a single collaborator: a `Store` primed to fail `Save`, a
-static `ViewSource`/`IncidentLog` returning a fixed fixture, a simple
-`Notifier`/`PeerDiscoverer` stub. Use (or extend) a simulator when a test needs
+assert *calls* against a single collaborator: an `IStore` primed to fail `Save`, a
+static `IViewSource`/`IIncidentLog` returning a fixed fixture, a simple
+`INotifier`/`IPeerDiscoverer` stub. Use (or extend) a simulator when a test needs
 a faithful *behavioral model* of time or the network. These two are not
 interchangeable, and future contributors must not convert in either direction.
 
@@ -265,6 +265,6 @@ go run ./app/warden/cmd -config /etc/warden/warden.yaml
   via `pkg/core`, and the contract package. Do not add modules or run
   `go get`/`go mod tidy` casually; `services/warden/config` in particular imports only
   stdlib, yaml.v3, and the contract package.
-- **Testing:** table-driven; the fake `Clock` in `services/warden/testclock` makes the
+- **Testing:** table-driven; the fake `IClock` in `services/warden/testclock` makes the
   timing-dependent state machines deterministic — do not sleep on the wall
   clock in tests.

@@ -73,7 +73,7 @@ type Config[S any] struct {
 	// loader: it must be safe to call for a read. The effects it returns are
 	// performed only for a real session; on a page render they are discarded.
 	// See that method.
-	Init func(context.Context, Session) (S, []Effect, error)
+	Init func(ctx context.Context, session Session) (S, []IEffect, error)
 
 	// Reduce is the pure state transition. Required.
 	Reduce Reducer[S]
@@ -91,7 +91,7 @@ type Config[S any] struct {
 	Events []string
 
 	// Execute performs one effect at the actor boundary, for the session whose
-	// transition returned it. Required if any code path returns an Effect.
+	// transition returned it. Required if any code path returns an IEffect.
 	//
 	// The session is a parameter rather than something to fish out of the
 	// context, and the difference is whether an executor can be written that
@@ -109,11 +109,11 @@ type Config[S any] struct {
 	// EffectFailedErrorField carries this error's message verbatim, in
 	// production and unredacted. Return what an operator needs; assume a
 	// reducer that renders it publishes it to the browser.
-	Execute func(context.Context, Session, Effect, Emitter) error
+	Execute func(ctx context.Context, session Session, effect IEffect, emit Emitter) error
 
 	// Teardown runs after the session actor exits, with the final state, for
 	// unsubscribing. Optional.
-	Teardown func(context.Context, Session, S)
+	Teardown func(ctx context.Context, session Session, state S)
 
 	// Origins is the allowlist of permitted Origin values, checked on the
 	// upgrade request before any per-session memory is allocated. Required
@@ -124,7 +124,7 @@ type Config[S any] struct {
 
 	// Authenticate derives the session identity from the upgrade request.
 	// Required; use Anonymous to opt out.
-	Authenticate func(*http.Request) (Identity, error)
+	Authenticate func(request *http.Request) (IIdentity, error)
 
 	// Authorize runs before the reducer for every event, at the single
 	// mailbox ingress, so a new event kind cannot skip it. Required; use
@@ -133,11 +133,11 @@ type Config[S any] struct {
 	// Returning nil allows the event. Returning a *DenyError rejects it
 	// without closing the connection. Returning a *FatalDenyError rejects it
 	// and closes the connection.
-	Authorize func(context.Context, Session, Event) error
+	Authorize func(ctx context.Context, session Session, event Event) error
 
 	// CSRF validates a token bound to the authenticated application session.
 	// Required; use NoCSRFCheck to opt out.
-	CSRF func(*http.Request) error
+	CSRF func(request *http.Request) error
 
 	// Limits are the resource bounds. Any zero field takes its documented
 	// default.
@@ -647,7 +647,7 @@ type snapshotParam struct {
 	rng protocol.SessionParamRange
 	// unit renders a wire value in the field's units, so the range an operator
 	// is told about is in the units they set the field in.
-	unit func(int64) string
+	unit func(wire int64) string
 	// def is the documented default's wire value.
 	def int64
 }
@@ -720,7 +720,7 @@ const AnyOrigin = "*"
 // Anonymous is a Config.Authenticate implementation binding every session to a
 // single anonymous identity. It is the explicit opt-out from authentication,
 // named rather than implied by a nil hook.
-func Anonymous(*http.Request) (Identity, error) { return anonymous{}, nil }
+func Anonymous(request *http.Request) (IIdentity, error) { return anonymous{}, nil }
 
 type anonymous struct{}
 
@@ -728,9 +728,9 @@ func (anonymous) Subject() string { return "anonymous" }
 
 // AllowAll is a Config.Authorize implementation permitting every event. It is
 // the explicit opt-out from per-event authorization.
-func AllowAll(context.Context, Session, Event) error { return nil }
+func AllowAll(ctx context.Context, session Session, event Event) error { return nil }
 
 // NoCSRFCheck is a Config.CSRF implementation performing no check. It is the
 // explicit opt-out, and it is only safe when Config.Origins is a real
 // allowlist, since the origin check is then the whole of the CSRF posture.
-func NoCSRFCheck(*http.Request) error { return nil }
+func NoCSRFCheck(request *http.Request) error { return nil }

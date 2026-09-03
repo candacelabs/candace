@@ -99,7 +99,7 @@ func richSnapshot() *candaceosv1.WebUISnapshot {
 	}
 }
 
-func newServer(provider webui.SnapshotProvider) *httptest.Server {
+func newServer(provider webui.ISnapshotProvider) *httptest.Server {
 	GinkgoHelper()
 	handler, err := webui.New(provider)
 	Expect(err).NotTo(HaveOccurred())

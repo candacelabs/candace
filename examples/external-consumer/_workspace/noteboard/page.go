@@ -33,7 +33,7 @@ func NavItem() webui.NavItem {
 // mounted page inherits that posture and does not get to loosen it, which is
 // why the page links its styles rather than inlining them.
 //
-// Register makes Board the bootstrap.HTTPService this repository registers.
+// Register makes Board the bootstrap.IHTTPService this repository registers.
 // Core hands a registered service nothing, so the handler reads the board it is
 // a method on and no Core state at all.
 func (board *Board) Register(router gin.IRouter) {

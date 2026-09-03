@@ -41,8 +41,8 @@ type State struct{ N int }
 // hand the result to live.New.
 func Config(origins []string) live.Config[State] {
 	return live.Config[State]{
-		Init:   func(context.Context, live.Session) (State, []live.Effect, error) { return State{}, nil, nil },
-		Reduce: func(s State, ev live.Event) (State, []live.Effect) { s.N++; return s, nil },
+		Init:   func(context.Context, live.Session) (State, []live.IEffect, error) { return State{}, nil, nil },
+		Reduce: func(s State, ev live.Event) (State, []live.IEffect) { s.N++; return s, nil },
 		Fragments: []live.Fragment[State]{{
 			ID: FragmentValue,
 			Render: func(s State) templ.Component {

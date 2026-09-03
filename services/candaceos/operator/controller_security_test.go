@@ -89,7 +89,7 @@ var _ = Describe("approval expiry boundary", func() {
 		queue := NewApprovalQueue(time.Minute)
 		queue.now = func() time.Time { return now }
 		persistenceErr := errors.New("recording expiration: database unavailable")
-		queue.OnResolved = func(ApprovalResolution) error { return persistenceErr }
+		queue.OnResolved = func(resolution ApprovalResolution) error { return persistenceErr }
 
 		requested := make(chan Approval, 1)
 		queue.OnRequested = func(approval Approval) error {

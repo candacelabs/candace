@@ -95,7 +95,7 @@ func New[S any](cfg Config[S]) (*App[S], error) {
 		Origins:                cfg.Origins,
 		Authenticate:           authenticateAdapter(cfg.Authenticate),
 		CSRF:                   cfg.CSRF,
-		NewApp:                 func(*http.Request) session.App { return behaviour },
+		NewApp:                 func(request *http.Request) session.IApp { return behaviour },
 		Limits:                 cfg.Limits.internal(),
 		Metrics:                metrics,
 		Tracer:                 obs.NewTracer(cfg.Tracer),
@@ -143,7 +143,7 @@ func MustNew[S any](cfg Config[S]) *App[S] {
 // zeroInit is the default Config.Init: the zero value of S, no startup effects
 // and no error. See Config.Init for why the field is optional and this is what
 // it defaults to.
-func zeroInit[S any](context.Context, Session) (S, []Effect, error) {
+func zeroInit[S any](ctx context.Context, session Session) (S, []IEffect, error) {
 	var zero S
 	return zero, nil, nil
 }
@@ -358,7 +358,7 @@ type appAdapter[S any] struct {
 	comparable bool
 }
 
-func (a *appAdapter[S]) Init(ctx context.Context, p session.Peer) (any, []session.Effect, error) {
+func (a *appAdapter[S]) Init(ctx context.Context, p session.Peer) (any, []session.IEffect, error) {
 	state, effects, err := a.cfg.Init(ctx, sessionOf(p))
 	if err != nil {
 		return nil, nil, err
@@ -388,12 +388,12 @@ func (a *appAdapter[S]) Authorize(ctx context.Context, p session.Peer, ev sessio
 	return &session.DenyError{Reason: err.Error()}
 }
 
-func (a *appAdapter[S]) Reduce(state any, ev session.Event) (any, []session.Effect) {
+func (a *appAdapter[S]) Reduce(state any, ev session.Event) (any, []session.IEffect) {
 	next, effects := a.cfg.Reduce(state.(S), eventOf(ev))
 	return next, toInternalEffects(effects)
 }
 
-func (a *appAdapter[S]) Execute(ctx context.Context, p session.Peer, e session.Effect, scheduledBy uint64, emit session.Emit) error {
+func (a *appAdapter[S]) Execute(ctx context.Context, p session.Peer, e session.IEffect, scheduledBy uint64, emit session.Emit) error {
 	if a.cfg.Execute == nil {
 		return errors.New("gotth-live: a reducer returned an effect but Config.Execute is nil: set it, or return no effects")
 	}
@@ -403,7 +403,7 @@ func (a *appAdapter[S]) Execute(ctx context.Context, p session.Peer, e session.E
 	// effect, because the event being emitted has none of its own yet — that
 	// is the whole subject of the first refusal.
 	where := emissionContext(p, scheduledBy)
-	return a.cfg.Execute(ctx, sessionOf(p), e.(Effect), func(ev Event) error {
+	return a.cfg.Execute(ctx, sessionOf(p), e.(IEffect), func(ev Event) error {
 		// Both of these are server-minted, and both used to be accepted and
 		// then silently discarded — which is the shape of field that becomes
 		// somebody's wrong fix later. Rejecting is louder and cheaper: the
@@ -550,11 +550,11 @@ func eventOf(ev session.Event) Event {
 	}
 }
 
-func toInternalEffects(effects []Effect) []session.Effect {
+func toInternalEffects(effects []IEffect) []session.IEffect {
 	if len(effects) == 0 {
 		return nil
 	}
-	out := make([]session.Effect, 0, len(effects))
+	out := make([]session.IEffect, 0, len(effects))
 	for _, e := range effects {
 		if e == nil {
 			continue
@@ -564,8 +564,8 @@ func toInternalEffects(effects []Effect) []session.Effect {
 	return out
 }
 
-func authenticateAdapter(fn func(*http.Request) (Identity, error)) func(*http.Request) (session.Identity, error) {
-	return func(r *http.Request) (session.Identity, error) {
+func authenticateAdapter(fn func(request *http.Request) (IIdentity, error)) func(request *http.Request) (session.IIdentity, error) {
+	return func(r *http.Request) (session.IIdentity, error) {
 		identity, err := fn(r)
 		if err != nil {
 			return nil, err
@@ -588,7 +588,7 @@ func authenticateAdapter(fn func(*http.Request) (Identity, error)) func(*http.Re
 // can be wrapped by an application before either of those sees it, and
 // "a fragment rendered no component" is not a sentence anybody can act on when
 // a page declares nine of them (FR-58).
-func renderAdapter[S any](id string, fn func(S) templ.Component) render.RenderFunc {
+func renderAdapter[S any](id string, fn func(state S) templ.Component) render.RenderFunc {
 	return func(ctx context.Context, state any, w io.Writer) error {
 		component := fn(state.(S))
 		if component == nil {

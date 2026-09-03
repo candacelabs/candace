@@ -21,7 +21,7 @@ import (
 // The assertion every case shares is the one that matters: the parse boundary
 // returns an error the caller can act on, and it never panics.
 
-func parse(b []byte) (protocol.Inbound, error) {
+func parse(b []byte) (protocol.IInbound, error) {
 	return protocol.ParseInbound(b, protocol.DefaultLimits())
 }
 

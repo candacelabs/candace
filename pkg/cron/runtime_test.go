@@ -20,7 +20,7 @@ var _ = Describe("Durable cron runtime", func() {
 	Describe("construction", func() {
 		It("requires an explicit store and at least one static job", func() {
 			schedule := cron.Spec(cron.Every(time.Hour))
-			handler := func(context.Context, cron.Invocation) error { return nil }
+			handler := func(ctx context.Context, invocation cron.Invocation) error { return nil }
 
 			_, err := cron.New(cron.WithJob("hourly", schedule, handler))
 			Expect(err).To(MatchError(cron.ErrStoreRequired))
@@ -31,7 +31,7 @@ var _ = Describe("Durable cron runtime", func() {
 
 		It("rejects names outside the portable store contract and duplicates", func() {
 			schedule := cron.Spec(cron.Every(time.Hour))
-			handler := func(context.Context, cron.Invocation) error { return nil }
+			handler := func(ctx context.Context, invocation cron.Invocation) error { return nil }
 
 			for _, name := range []string{"Hourly", "hourly:rollup", "with space", ""} {
 				_, err := cron.New(
@@ -50,7 +50,7 @@ var _ = Describe("Durable cron runtime", func() {
 		})
 
 		It("rejects options that cannot be represented by the durable store contract", func() {
-			handler := func(context.Context, cron.Invocation) error { return nil }
+			handler := func(ctx context.Context, invocation cron.Invocation) error { return nil }
 			base := []cron.Option{
 				cron.WithStore(cron.NewMemoryStore()),
 				cron.WithJob("hourly", cron.Spec(cron.Every(time.Hour)), handler),
@@ -525,7 +525,7 @@ var _ = Describe("Durable cron runtime", func() {
 			_, err := memory.Reconcile(context.Background(), []cron.JobDefinition{definition}, anchor)
 			Expect(err).NotTo(HaveOccurred())
 
-			store := &cancelingRenewStore{Store: memory, started: make(chan struct{})}
+			store := &cancelingRenewStore{IStore: memory, started: make(chan struct{})}
 			invoked := make(chan cron.Invocation, 1)
 			service, err := cron.New(
 				cron.WithStore(store),
@@ -613,7 +613,7 @@ var _ = Describe("Durable cron runtime", func() {
 				var invoked atomic.Int32
 				service, err := cron.New(
 					cron.WithStore(store),
-					cron.WithJob("catchup", schedule, func(context.Context, cron.Invocation) error {
+					cron.WithJob("catchup", schedule, func(ctx context.Context, invocation cron.Invocation) error {
 						invoked.Add(1)
 						return nil
 					}, cron.WithCatchUp(testCase.policy), cron.WithOverlap(testCase.overlap)),
@@ -643,7 +643,7 @@ var _ = Describe("Durable cron runtime", func() {
 			var invoked atomic.Int32
 			service, err := cron.New(
 				cron.WithStore(store),
-				cron.WithJob("large_backlog", schedule, func(context.Context, cron.Invocation) error {
+				cron.WithJob("large_backlog", schedule, func(ctx context.Context, invocation cron.Invocation) error {
 					invoked.Add(1)
 					return nil
 				}, cron.WithCatchUp(cron.CatchUpNone)),
@@ -673,7 +673,7 @@ var _ = Describe("Durable cron runtime", func() {
 		store := cron.NewMemoryStore()
 		service, err := cron.New(
 			cron.WithStore(store),
-			cron.WithJob("status", cron.Spec(cron.Every(time.Hour)), func(context.Context, cron.Invocation) error { return nil }),
+			cron.WithJob("status", cron.Spec(cron.Every(time.Hour)), func(ctx context.Context, invocation cron.Invocation) error { return nil }),
 		)
 		Expect(err).NotTo(HaveOccurred())
 		router := gin.New()
@@ -747,7 +747,7 @@ func occurrenceError(store *cron.MemoryStore, occurrenceID string) string {
 }
 
 type cancelingRenewStore struct {
-	cron.Store
+	cron.IStore
 	started chan struct{}
 	once    sync.Once
 }

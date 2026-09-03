@@ -122,7 +122,7 @@ var _ = Describe("A mailbox at its bound", func() {
 			c.Limits.MailboxDepth = 1
 			c.Limits.MaxEventsPerSecond = 100000
 			c.Limits.EventBurst = 100000
-			c.Reduce = func(s tally, ev live.Event) (tally, []live.Effect) {
+			c.Reduce = func(s tally, ev live.Event) (tally, []live.IEffect) {
 				if ev.Name == "qa.increment" {
 					<-release
 				}

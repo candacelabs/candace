@@ -28,7 +28,7 @@ func TestCustomUIPage(t *testing.T) {
 func mount() *httptest.Server {
 	GinkgoHelper()
 	ui, err := webui.New(
-		webui.SnapshotFunc(func(context.Context) (*candaceosv1.WebUISnapshot, error) {
+		webui.SnapshotFunc(func(ctx context.Context) (*candaceosv1.WebUISnapshot, error) {
 			return &candaceosv1.WebUISnapshot{}, nil
 		}),
 		webui.WithNavItem(entry),

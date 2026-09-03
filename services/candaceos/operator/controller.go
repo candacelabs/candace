@@ -7,7 +7,7 @@
 // gate in front of every reconciliation, and the operator-visible timeline. An
 // agent runtime supplies only the turn lifecycle, behind a deliberately
 // unexported interface; applying desired state belongs to the exported
-// Reconciler interface. Controller passes owned values across both boundaries
+// IReconciler interface. Controller passes owned values across both boundaries
 // and retains nothing a caller handed it.
 //
 // Callers may rely on ErrSessionConflict, ErrRunConflict, and ErrRunNotActive
@@ -104,10 +104,10 @@ type reconcileToolInput struct {
 	Stateful      bool              `json:"stateful,omitempty" jsonschema:"whether the app retains node-local state"`
 }
 
-// Reconciler resolves and applies canonical desired state. Implementations may
+// IReconciler resolves and applies canonical desired state. Implementations may
 // retain neither input: Controller passes owned snapshots and snapshots both
 // returned messages before exposing or storing them.
-type Reconciler interface {
+type IReconciler interface {
 	Prepare(
 		ctx context.Context,
 		intent *candaceosv1.ReconcileIntent,
@@ -223,10 +223,10 @@ type Controller struct {
 	identity   *candaceosv1.HarnessRuntimeIdentity
 	fleet      *fleet.Client
 	queue      *ApprovalQueue
-	reconciler Reconciler
+	reconciler IReconciler
 
 	mu          sync.RWMutex
-	harness     harnessImplementation
+	harness     iHarnessImplementation
 	sessionID   string
 	status      controllerPhase
 	runPhase    runPhase
@@ -249,7 +249,7 @@ type Controller struct {
 }
 
 // NewController constructs the operator lifecycle for one configured harness and optional reconciler.
-func NewController(cfg *candaceosv1.CoreConfig, fleetClient *fleet.Client, reconciler Reconciler) (*Controller, error) {
+func NewController(cfg *candaceosv1.CoreConfig, fleetClient *fleet.Client, reconciler IReconciler) (*Controller, error) {
 	return NewControllerWithHarness(cfg, fleetClient, reconciler, nil)
 }
 
@@ -258,8 +258,8 @@ func NewController(cfg *candaceosv1.CoreConfig, fleetClient *fleet.Client, recon
 func NewControllerWithHarness(
 	cfg *candaceosv1.CoreConfig,
 	fleetClient *fleet.Client,
-	reconciler Reconciler,
-	factory harnesssdk.Factory,
+	reconciler IReconciler,
+	factory harnesssdk.IFactory,
 ) (*Controller, error) {
 	controller := &Controller{
 		config:      cfg,

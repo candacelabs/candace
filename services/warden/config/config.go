@@ -208,9 +208,9 @@ func defaultConfig() Config {
 // error), then environment overrides read via getenv (injectable for tests;
 // nil getenv is treated as "no env set"). It returns a fully-defaulted Config
 // but does NOT validate it — call Validate separately.
-func Load(path string, getenv func(string) string) (Config, error) {
+func Load(path string, getenv func(name string) string) (Config, error) {
 	if getenv == nil {
-		getenv = func(string) string { return "" }
+		getenv = func(name string) string { return "" }
 	}
 
 	cfg := defaultConfig()
@@ -620,7 +620,7 @@ func (t *TailscaleDiscoveryConfig) UnmarshalYAML(value *yaml.Node) error {
 // that is set (non-empty after trimming) replaces the corresponding value.
 // Malformed values (bad duration, non-integer port, non-bool flag, malformed
 // peer list) are returned as errors rather than silently ignored.
-func applyEnv(cfg *Config, getenv func(string) string) error {
+func applyEnv(cfg *Config, getenv func(name string) string) error {
 	envString(getenv, envNodeID, &cfg.NodeID)
 	envString(getenv, envBind, &cfg.Bind)
 	envString(getenv, envDataDir, &cfg.DataDir)
@@ -705,14 +705,14 @@ func applyEnv(cfg *Config, getenv func(string) string) error {
 }
 
 // envString overwrites *dst with the trimmed env value if it is non-empty.
-func envString(getenv func(string) string, key string, dst *string) {
+func envString(getenv func(name string) string, key string, dst *string) {
 	if v := strings.TrimSpace(getenv(key)); v != "" {
 		*dst = v
 	}
 }
 
 // envDuration parses a Go duration string; empty is a no-op, malformed errors.
-func envDuration(getenv func(string) string, key string, dst *time.Duration) error {
+func envDuration(getenv func(name string) string, key string, dst *time.Duration) error {
 	v := strings.TrimSpace(getenv(key))
 	if v == "" {
 		return nil
@@ -726,7 +726,7 @@ func envDuration(getenv func(string) string, key string, dst *time.Duration) err
 }
 
 // envInt parses a base-10 integer; empty is a no-op, malformed errors.
-func envInt(getenv func(string) string, key string, dst *int) error {
+func envInt(getenv func(name string) string, key string, dst *int) error {
 	v := strings.TrimSpace(getenv(key))
 	if v == "" {
 		return nil

@@ -265,4 +265,4 @@ var _ = Describe("SMTPNotifier fail-closed", func() {
 
 // Ensure the SMTPNotifier satisfies the Notifier contract at compile time via a
 // value we can pass around.
-var _ warden.Notifier = NewSMTPNotifier(SMTPConfig{})
+var _ warden.INotifier = NewSMTPNotifier(SMTPConfig{})

@@ -147,10 +147,10 @@ func reflectPanelHTML(s reflectState) string {
 
 func reflectConfig() live.Config[reflectState] {
 	return live.Config[reflectState]{
-		Init: func(context.Context, live.Session) (reflectState, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (reflectState, []live.IEffect, error) {
 			return reflectState{}, nil, nil
 		},
-		Reduce: func(s reflectState, ev live.Event) (reflectState, []live.Effect) {
+		Reduce: func(s reflectState, ev live.Event) (reflectState, []live.IEffect) {
 			if ev.Name == eventReflectTick {
 				s.Tick++
 			}

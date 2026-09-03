@@ -60,7 +60,7 @@ func (FailedEffect) EffectSource() string { return "report.fetch" }
 // sequence of records on every run, and determinism is the property the
 // reducer is written for. Reporter.Execute below is where this application's
 // record of the failure is written.
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	if ev.Name != live.EffectFailedEvent {
 		return s, nil
 	}
@@ -89,7 +89,7 @@ func Reduce(s State, ev live.Event) (State, []live.Effect) {
 	// line or a metric call from inside here would not.
 	if retryable && source == (FailedEffect{}).EffectSource() && s.Attempts < 3 {
 		s.Attempts++
-		return s, []live.Effect{FailedEffect{}}
+		return s, []live.IEffect{FailedEffect{}}
 	}
 	return s, nil
 }
@@ -118,7 +118,7 @@ type Reporter struct {
 // gotthlive_effects_total{result="error"} when Config.Metrics is set. This log
 // line is the only one there will be, which is why it belongs here and not in
 // the reducer that reads the event afterwards.
-func (r *Reporter) Execute(ctx context.Context, sess live.Session, effect live.Effect, _ live.Emitter) error {
+func (r *Reporter) Execute(ctx context.Context, sess live.Session, effect live.IEffect, _ live.Emitter) error {
 	if _, ok := effect.(FailedEffect); !ok {
 		return fmt.Errorf("errorhandling: no executor for %T", effect)
 	}

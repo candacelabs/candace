@@ -137,7 +137,7 @@ var _ = Describe("Core configuration", func() {
 	)
 
 	DescribeTable("keeps operating-system and cross-field validation at the adapter",
-		func(mutate func(*candaceosv1.CoreConfig), environmentName string) {
+		func(mutate func(config *candaceosv1.CoreConfig), environmentName string) {
 			resolved := validConfig()
 			mutate(resolved)
 			Expect(config.Validate(resolved)).To(MatchError(ContainSubstring(environmentName)))

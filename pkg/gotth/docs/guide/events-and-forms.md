@@ -352,7 +352,7 @@ debounce into a 150 ms throttle.
 
 <!-- sample: events/events.go -->
 ```go
-func Reduce(s State, ev live.Event) (State, []live.Effect) {
+func Reduce(s State, ev live.Event) (State, []live.IEffect) {
 	switch ev.Name {
 	case EventDraft:
 		s.Draft = ev.Fields.Get(FieldBody)

@@ -60,11 +60,11 @@ type State struct {
 // Values a mount needs from the upgrade request arrive through the context —
 // that is the whole reason there is no Session.Request(), which would keep an
 // *http.Request alive for the connection's life.
-func Init(topic *Topic) func(context.Context, live.Session) (State, []live.Effect, error) {
-	return func(_ context.Context, sess live.Session) (State, []live.Effect, error) {
+func Init(topic *Topic) func(context.Context, live.Session) (State, []live.IEffect, error) {
+	return func(_ context.Context, sess live.Session) (State, []live.IEffect, error) {
 		subject := sess.Identity().Subject()
 		topic.Join(sess.ID(), subject)
-		return State{Me: sess.ID(), Subject: subject}, []live.Effect{WatchEffect{}}, nil
+		return State{Me: sess.ID(), Subject: subject}, []live.IEffect{WatchEffect{}}, nil
 	}
 }
 

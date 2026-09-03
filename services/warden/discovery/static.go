@@ -13,7 +13,7 @@ type Static struct {
 	nodes []warden.Node
 }
 
-var _ warden.PeerDiscoverer = (*Static)(nil)
+var _ warden.IPeerDiscoverer = (*Static)(nil)
 
 // NewStatic returns a Static discoverer over a copy of nodes.
 func NewStatic(nodes []warden.Node) *Static {

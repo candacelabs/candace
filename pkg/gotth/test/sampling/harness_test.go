@@ -52,10 +52,10 @@ func newApp(tp *sdktrace.TracerProvider) *live.App[state] {
 	GinkgoHelper()
 
 	app, err := live.New(live.Config[state]{
-		Init: func(context.Context, live.Session) (state, []live.Effect, error) {
+		Init: func(ctx context.Context, session live.Session) (state, []live.IEffect, error) {
 			return state{}, nil, nil
 		},
-		Reduce: func(s state, ev live.Event) (state, []live.Effect) {
+		Reduce: func(s state, ev live.Event) (state, []live.IEffect) {
 			if ev.Name == eventIncr {
 				s.N++
 			}
@@ -73,7 +73,7 @@ func newApp(tp *sdktrace.TracerProvider) *live.App[state] {
 		}},
 		Events:       []string{eventIncr},
 		Origins:      []string{testOrigin},
-		Authenticate: func(*http.Request) (live.Identity, error) { return user("sampler"), nil },
+		Authenticate: func(request *http.Request) (live.IIdentity, error) { return user("sampler"), nil },
 		Authorize:    live.AllowAll,
 		CSRF:         live.NoCSRFCheck,
 		Tracer:       tp,

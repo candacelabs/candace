@@ -24,7 +24,7 @@ type solo struct {
 	runDone chan struct{}
 }
 
-func newSolo(t harnessT, st warden.Store) *solo {
+func newSolo(t iHarnessT, st warden.IStore) *solo {
 	t.Helper()
 	clk := testclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	peers := []warden.Node{{ID: "a", Addr: "a"}, {ID: "b", Addr: "b"}, {ID: "c", Addr: "c"}}

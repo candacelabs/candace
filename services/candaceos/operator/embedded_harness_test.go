@@ -21,7 +21,7 @@ import (
 )
 
 type recordingHarness struct {
-	host      harnesssdk.Host
+	host      harnesssdk.IHost
 	prompt    *candaceosv1.HarnessPrompt
 	prompts   []*candaceosv1.HarnessPrompt
 	hold      bool
@@ -94,7 +94,7 @@ var _ = Describe("compiled-in harness", func() {
 			HarnessBackend:  candaceosv1.HarnessBackend_HARNESS_BACKEND_EMBEDDED,
 			ApprovalTimeout: int64(time.Minute), Workspace: GinkgoT().TempDir(),
 		}
-		factory := harnesssdk.FactoryFunc(func(_ *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(_ *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			runtime.host = host
 			return &harnesssdk.Instance{
 				Runtime: runtime,
@@ -114,7 +114,7 @@ var _ = Describe("compiled-in harness", func() {
 		runtime := &recordingHarness{hold: true}
 		controller := newRecordingController(runtime)
 		started := 0
-		controller.OnRunStarted = func(operator.RunStarted) error { started++; return nil }
+		controller.OnRunStarted = func(event operator.RunStarted) error { started++; return nil }
 
 		runID, err := controller.Send(context.Background(), "start", candaceosv1.HarnessDelivery_HARNESS_DELIVERY_IMMEDIATE)
 		Expect(err).NotTo(HaveOccurred())
@@ -146,7 +146,7 @@ var _ = Describe("compiled-in harness", func() {
 		runtime := &recordingHarness{}
 		controller := newRecordingController(runtime)
 		started := 0
-		controller.OnRunStarted = func(operator.RunStarted) error { started++; return nil }
+		controller.OnRunStarted = func(event operator.RunStarted) error { started++; return nil }
 
 		firstRunID, err := controller.Send(context.Background(), "first turn", candaceosv1.HarnessDelivery_HARNESS_DELIVERY_IMMEDIATE)
 		Expect(err).NotTo(HaveOccurred())
@@ -187,7 +187,7 @@ var _ = Describe("compiled-in harness", func() {
 			HarnessBackend:  candaceosv1.HarnessBackend_HARNESS_BACKEND_EMBEDDED,
 			ApprovalTimeout: int64(time.Minute), Workspace: GinkgoT().TempDir(),
 		}
-		factory := harnesssdk.FactoryFunc(func(received *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(received *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(received.GetWorkspace()).To(Equal(cfg.GetWorkspace()))
 			runtime.host = host
 			return &harnesssdk.Instance{
@@ -399,9 +399,9 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("rejects a factory that lies about the embedded backend identity", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
+		runtime := NewMockIRuntime(mockController)
 		runtime.EXPECT().Close().Return(nil)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			Expect(host).NotTo(BeNil())
 			return &harnesssdk.Instance{
@@ -422,11 +422,11 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("closes a runtime returned alongside a factory error", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
+		runtime := NewMockIRuntime(mockController)
 		factoryErr := errors.New("factory rejected the configuration")
 		closeErr := errors.New("provider cleanup failed")
 		runtime.EXPECT().Close().Return(closeErr)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			Expect(host).NotTo(BeNil())
 			return &harnesssdk.Instance{Runtime: runtime}, factoryErr
@@ -447,14 +447,14 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("closes a runtime whose start fails and preserves both errors", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
+		runtime := NewMockIRuntime(mockController)
 		startErr := errors.New("provider start failed")
 		closeErr := errors.New("provider cleanup failed")
 		gomock.InOrder(
 			runtime.EXPECT().Start(gomock.Any()).Return(nil, startErr),
 			runtime.EXPECT().Close().Return(closeErr),
 		)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			Expect(host).NotTo(BeNil())
 			return &harnesssdk.Instance{Runtime: runtime, Identity: embeddedHarnessIdentity()}, nil
@@ -474,12 +474,12 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("closes a started runtime that returns an invalid session", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
+		runtime := NewMockIRuntime(mockController)
 		gomock.InOrder(
 			runtime.EXPECT().Start(gomock.Any()).Return(&candaceosv1.HarnessSession{}, nil),
 			runtime.EXPECT().Close().Return(nil),
 		)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			Expect(host).NotTo(BeNil())
 			return &harnesssdk.Instance{Runtime: runtime, Identity: embeddedHarnessIdentity()}, nil
@@ -498,7 +498,7 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("closes a runtime whose activation fails and preserves both errors", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
+		runtime := NewMockIRuntime(mockController)
 		activateErr := errors.New("provider activation failed")
 		closeErr := errors.New("provider cleanup failed")
 		gomock.InOrder(
@@ -506,7 +506,7 @@ var _ = Describe("compiled-in harness", func() {
 			runtime.EXPECT().Activate(gomock.Any()).Return(activateErr),
 			runtime.EXPECT().Close().Return(closeErr),
 		)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			Expect(host).NotTo(BeNil())
 			return &harnesssdk.Instance{Runtime: runtime, Identity: embeddedHarnessIdentity()}, nil
@@ -526,15 +526,15 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("binds approval and dispatch to an owned reconcile request snapshot", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
-		reconciler := NewMockReconciler(mockController)
-		var providerHost harnesssdk.Host
+		runtime := NewMockIRuntime(mockController)
+		reconciler := NewMockIReconciler(mockController)
+		var providerHost harnesssdk.IHost
 		gomock.InOrder(
 			runtime.EXPECT().Start(gomock.Any()).Return(&candaceosv1.HarnessSession{Id: "embedded-session"}, nil),
 			runtime.EXPECT().Activate(gomock.Any()).Return(nil),
 		)
 		runtime.EXPECT().Close().Return(nil)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			providerHost = host
 			return &harnesssdk.Instance{Runtime: runtime, Identity: embeddedHarnessIdentity()}, nil
@@ -603,15 +603,15 @@ var _ = Describe("compiled-in harness", func() {
 
 	It("enforces the handwritten event-ingress contract", func() {
 		mockController := gomock.NewController(GinkgoT())
-		runtime := NewMockRuntime(mockController)
-		var providerHost harnesssdk.Host
+		runtime := NewMockIRuntime(mockController)
+		var providerHost harnesssdk.IHost
 		gomock.InOrder(
 			runtime.EXPECT().Start(gomock.Any()).Return(&candaceosv1.HarnessSession{Id: "embedded-session"}, nil),
 			runtime.EXPECT().Activate(gomock.Any()).Return(nil),
 			runtime.EXPECT().Send(gomock.Any(), gomock.Any()).Return(nil),
 		)
 		runtime.EXPECT().Close().Return(nil)
-		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.Host) (*harnesssdk.Instance, error) {
+		factory := harnesssdk.FactoryFunc(func(harnessContext *candaceosv1.HarnessContext, host harnesssdk.IHost) (*harnesssdk.Instance, error) {
 			Expect(harnessContext.GetWorkspace()).NotTo(BeEmpty())
 			providerHost = host
 			return &harnesssdk.Instance{Runtime: runtime, Identity: embeddedHarnessIdentity()}, nil
@@ -707,4 +707,4 @@ func embeddedHarnessIdentity() *candaceosv1.HarnessRuntimeIdentity {
 	}
 }
 
-var _ harnesssdk.Runtime = (*recordingHarness)(nil)
+var _ harnesssdk.IRuntime = (*recordingHarness)(nil)

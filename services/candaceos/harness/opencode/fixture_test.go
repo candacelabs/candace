@@ -44,7 +44,7 @@ func (recorder *eventRecorder) all() []*candaceosv1.HarnessEvent {
 }
 
 // count reports how many accepted events satisfy matches.
-func (recorder *eventRecorder) count(matches func(*candaceosv1.HarnessEvent) bool) int {
+func (recorder *eventRecorder) count(matches func(event *candaceosv1.HarnessEvent) bool) int {
 	total := 0
 	for _, event := range recorder.all() {
 		if matches(event) {
@@ -55,7 +55,7 @@ func (recorder *eventRecorder) count(matches func(*candaceosv1.HarnessEvent) boo
 }
 
 // counting adapts count for Eventually and Consistently.
-func (recorder *eventRecorder) counting(matches func(*candaceosv1.HarnessEvent) bool) func() int {
+func (recorder *eventRecorder) counting(matches func(event *candaceosv1.HarnessEvent) bool) func() int {
 	return func() int { return recorder.count(matches) }
 }
 
@@ -89,18 +89,18 @@ func failureMessage(event *candaceosv1.HarnessEvent) string {
 type publishGate struct {
 	mu sync.Mutex
 
-	matches           func(*candaceosv1.HarnessEvent) bool
+	matches           func(event *candaceosv1.HarnessEvent) bool
 	remainingFailures int
 	attempts          int
 }
 
 // rejectUntilAllowed refuses every matching publication until allow is called.
-func rejectUntilAllowed(matches func(*candaceosv1.HarnessEvent) bool) *publishGate {
+func rejectUntilAllowed(matches func(event *candaceosv1.HarnessEvent) bool) *publishGate {
 	return &publishGate{matches: matches, remainingFailures: -1}
 }
 
 // rejectOnce refuses only the first matching publication.
-func rejectOnce(matches func(*candaceosv1.HarnessEvent) bool) *publishGate {
+func rejectOnce(matches func(event *candaceosv1.HarnessEvent) bool) *publishGate {
 	return &publishGate{matches: matches, remainingFailures: 1}
 }
 
@@ -148,10 +148,10 @@ type fixtureSpec struct {
 	script        *providerScript
 	sessionID     string
 	queueCapacity int32
-	intercept     func(context.Context, *candaceosv1.HarnessEvent) error
+	intercept     func(ctx context.Context, event *candaceosv1.HarnessEvent) error
 }
 
-type fixtureOption func(*fixtureSpec)
+type fixtureOption func(spec *fixtureSpec)
 
 // withScript supplies a pre-scripted provider instead of a default one.
 func withScript(script *providerScript) fixtureOption {
@@ -172,7 +172,7 @@ func withQueueCapacity(capacity int32) fixtureOption {
 // withPublishInterceptor scripts the host's response to each publication. A
 // non-nil error rejects it, and the event is then not recorded.
 func withPublishInterceptor(
-	intercept func(context.Context, *candaceosv1.HarnessEvent) error,
+	intercept func(ctx context.Context, event *candaceosv1.HarnessEvent) error,
 ) fixtureOption {
 	return func(spec *fixtureSpec) { spec.intercept = intercept }
 }
@@ -242,9 +242,9 @@ func (fixture *runtimeFixture) enqueue(ctx context.Context, runID, content strin
 // optionally consults intercept first. The callback runs on the runtime's own
 // goroutines, so it only records and never asserts.
 func newRecordingHost(
-	intercept func(context.Context, *candaceosv1.HarnessEvent) error,
-) (*MockHost, *eventRecorder) {
-	host := NewMockHost(gomock.NewController(GinkgoT()))
+	intercept func(ctx context.Context, event *candaceosv1.HarnessEvent) error,
+) (*MockIHost, *eventRecorder) {
+	host := NewMockIHost(gomock.NewController(GinkgoT()))
 	recorder := &eventRecorder{}
 	host.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
 		func(publishCtx context.Context, event *candaceosv1.HarnessEvent) error {
@@ -344,21 +344,21 @@ func (fence *runFence) rejectionCount() int {
 }
 
 // deltaFor matches the streaming deltas of one assistant message.
-func deltaFor(messageID string) func(*candaceosv1.HarnessEvent) bool {
+func deltaFor(messageID string) func(event *candaceosv1.HarnessEvent) bool {
 	return func(event *candaceosv1.HarnessEvent) bool {
 		return event.GetAssistantDelta().GetMessageId() == messageID
 	}
 }
 
 // finalAssistantSaying matches a final assistant message with exact content.
-func finalAssistantSaying(content string) func(*candaceosv1.HarnessEvent) bool {
+func finalAssistantSaying(content string) func(event *candaceosv1.HarnessEvent) bool {
 	return func(event *candaceosv1.HarnessEvent) bool {
 		return assistantContent(event) == content
 	}
 }
 
 // toolCompletionFor matches the completion of one tool call.
-func toolCompletionFor(callID string) func(*candaceosv1.HarnessEvent) bool {
+func toolCompletionFor(callID string) func(event *candaceosv1.HarnessEvent) bool {
 	return func(event *candaceosv1.HarnessEvent) bool {
 		return event.GetToolCompleted().GetToolCallId() == callID
 	}

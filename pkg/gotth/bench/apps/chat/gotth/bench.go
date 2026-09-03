@@ -94,7 +94,7 @@ func NormalizeName(raw string) string {
 // check runs on the upgrade REQUEST, before any per-session memory is
 // allocated, so a rejection is an HTTP status on the handshake rather than a
 // close code.
-func DirectoryAuthenticate(r *http.Request) (live.Identity, error) {
+func DirectoryAuthenticate(r *http.Request) (live.IIdentity, error) {
 	name := DefaultName
 	if c, err := r.Cookie(WhoCookie); err == nil {
 		name = NormalizeName(c.Value)

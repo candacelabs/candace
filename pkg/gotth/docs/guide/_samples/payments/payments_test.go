@@ -38,7 +38,7 @@ func payEvent(id uint64) live.Event {
 }
 
 // drain runs every effect a transition produced through the executor.
-func drain(g *payments.Gateway, effects []live.Effect, emit live.Emitter) []error {
+func drain(g *payments.Gateway, effects []live.IEffect, emit live.Emitter) []error {
 	var errs []error
 	for _, effect := range effects {
 		if err := g.Execute(context.Background(), live.Session{}, effect, emit); err != nil {
@@ -174,7 +174,7 @@ var _ = Describe("keying on the event instead of the order", func() {
 		provider := payments.NewKeyedProvider()
 		gateway := &payments.Gateway{Provider: provider}
 
-		var effects []live.Effect
+		var effects []live.IEffect
 		for _, id := range []uint64{1, 2} {
 			effects = append(effects, payments.ChargeEffect{
 				OrderID:     orderID,

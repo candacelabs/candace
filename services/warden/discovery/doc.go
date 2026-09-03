@@ -1,4 +1,4 @@
-// Package discovery implements warden.PeerDiscoverer: the sources that report
+// Package discovery implements warden.IPeerDiscoverer: the sources that report
 // which nodes are candidate members of the cluster. Discovery is advisory. A
 // Discover channel delivers roster snapshots; the election manager verifies
 // each candidate with an identify handshake and only the leader turns stable,

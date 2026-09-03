@@ -44,7 +44,7 @@ var _ = Describe("Query interception", func() {
 
 	It("passes through and preserves explicit statement results", func(ctx SpecContext) {
 		public := database.Public()
-		public.InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		public.InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			return pgmem.Result{}, false, nil
 		})
 		Expect(public.OneContext(ctx, `SELECT 7 AS value`)).To(Equal(pgmem.Row{"value": int64(7)}))
@@ -61,15 +61,15 @@ var _ = Describe("Query interception", func() {
 	It("runs interceptors in order and deregisters idempotently", func(ctx SpecContext) {
 		public := database.Public()
 		var calls []string
-		first := public.InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		first := public.InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			calls = append(calls, "first")
 			return pgmem.Result{}, false, nil
 		})
-		second := public.InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		second := public.InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			calls = append(calls, "second")
 			return pgmem.Result{Rows: []pgmem.Row{{"source": "second"}}}, true, nil
 		})
-		public.InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		public.InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			calls = append(calls, "third")
 			return pgmem.Result{Rows: []pgmem.Row{{"source": "third"}}}, true, nil
 		})
@@ -107,7 +107,7 @@ var _ = Describe("Query interception", func() {
 
 	It("wraps interceptor errors and preserves their identity", func(ctx SpecContext) {
 		failure := errors.New("fixture unavailable")
-		database.Public().InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		database.Public().InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			return pgmem.Result{}, false, failure
 		})
 
@@ -118,7 +118,7 @@ var _ = Describe("Query interception", func() {
 
 	It("honors cancellation before invoking an interceptor", func() {
 		invoked := false
-		database.Public().InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		database.Public().InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			invoked = true
 			return pgmem.Result{Rows: []pgmem.Row{{"unexpected": true}}}, true, nil
 		})
@@ -132,7 +132,7 @@ var _ = Describe("Query interception", func() {
 
 	It("supports concurrent query and subscription churn", func(ctx SpecContext) {
 		public := database.Public()
-		public.InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+		public.InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 			return pgmem.Result{Rows: []pgmem.Row{{"ok": true}}}, true, nil
 		})
 
@@ -145,7 +145,7 @@ var _ = Describe("Query interception", func() {
 			go func() {
 				defer wait.Done()
 				for iteration := 0; iteration < iterations; iteration++ {
-					subscription := public.InterceptQueries(func(context.Context, string, []any) (pgmem.Result, bool, error) {
+					subscription := public.InterceptQueries(func(ctx context.Context, statement string, arguments []any) (pgmem.Result, bool, error) {
 						return pgmem.Result{}, false, nil
 					})
 					if _, err := public.QueryContext(ctx, "synthetic"); err != nil {

@@ -567,7 +567,7 @@ func broadcast(subs []*subscriber, u update) {
 // The effect values arrive exactly as the reducer declared them; nothing here
 // runs inside a reducer, and nothing here can reach a session's state except by
 // emitting an event the reducer folds in.
-func (f *Feed) Execute(ctx context.Context, sess live.Session, effect live.Effect, emit live.Emitter) error {
+func (f *Feed) Execute(ctx context.Context, sess live.Session, effect live.IEffect, emit live.Emitter) error {
 	switch e := effect.(type) {
 	case SubscribeEffect:
 		return f.pump(ctx, sess.ID(), emit)

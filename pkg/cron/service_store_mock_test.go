@@ -15,7 +15,7 @@ import (
 var _ = Describe("Service store interactions", func() {
 	It("projects the static job definition and propagates reconciliation failures", func() {
 		controller := gomock.NewController(GinkgoT())
-		store := NewMockStore(controller)
+		store := NewMockIStore(controller)
 		schedule := cron.Spec(cron.Daily(cron.At(3).PM()))
 		definition := jobDefinition("daily-rollup", schedule, cron.CatchUpAll, cron.OverlapAllow)
 		storeError := errors.New("reconciliation unavailable")
@@ -34,7 +34,7 @@ var _ = Describe("Service store interactions", func() {
 			cron.WithJob(
 				definition.Name,
 				schedule,
-				func(context.Context, cron.Invocation) error { return nil },
+				func(ctx context.Context, invocation cron.Invocation) error { return nil },
 				cron.WithCatchUp(definition.CatchUp),
 				cron.WithOverlap(definition.Overlap),
 			),
@@ -48,7 +48,7 @@ var _ = Describe("Service store interactions", func() {
 
 	It("claims a due occurrence and records the handler failure without failing the scheduler", func() {
 		controller := gomock.NewController(GinkgoT())
-		store := NewMockStore(controller)
+		store := NewMockIStore(controller)
 		anchor := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour - time.Minute)
 		scheduledAt := anchor.Add(time.Hour)
 		nextRunAt := scheduledAt.Add(time.Hour)
@@ -128,7 +128,7 @@ var _ = Describe("Service store interactions", func() {
 
 	It("cancels the handler, records cancellation, and surfaces a lease renewal failure", func() {
 		controller := gomock.NewController(GinkgoT())
-		store := NewMockStore(controller)
+		store := NewMockIStore(controller)
 		anchor := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour - time.Minute)
 		scheduledAt := anchor.Add(time.Hour)
 		nextRunAt := scheduledAt.Add(time.Hour)

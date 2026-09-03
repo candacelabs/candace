@@ -1,4 +1,4 @@
-// Package notify implements the warden.Notifier delivery backends used by the
+// Package notify implements the warden.INotifier delivery backends used by the
 // watchdog:
 //
 //   - SMTPNotifier sends incident emails over STARTTLS (production).
@@ -8,7 +8,7 @@
 //     by the e2e harness).
 //
 // (A test that wants to assert on calls rather than deliver anywhere uses the
-// generated warden.Notifier mock instead; see services/warden/internal/mocks.)
+// generated warden.INotifier mock instead; see services/warden/internal/mocks.)
 //
 // All notifiers are safe for concurrent use, which is the contract the watchdog
 // relies on when it delivers from short-lived goroutines. The SMTP notifier

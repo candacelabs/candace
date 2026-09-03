@@ -1,5 +1,5 @@
 // Package grpctransport is the gRPC client side of the warden cluster wire
-// protocol: it implements warden.Transport (RequestVote/SendHeartbeat/Identify)
+// protocol: it implements warden.ITransport (RequestVote/SendHeartbeat/Identify)
 // over the candacenet.warden.v1 WardenService, replacing the retired HTTP/JSON
 // HTTPTransport. It dials each peer with h2c prior-knowledge and insecure
 // credentials — the tailnet is the transport-security boundary (see
@@ -55,7 +55,7 @@ const (
 	reconnectMinConnectTimeout = 1 * time.Second
 )
 
-var _ warden.Transport = (*Transport)(nil)
+var _ warden.ITransport = (*Transport)(nil)
 
 // connReq asks the owner goroutine for the ClientConn to addr.
 type connReq struct {
@@ -68,7 +68,7 @@ type connResult struct {
 	err  error
 }
 
-// Transport is the gRPC implementation of warden.Transport. Construct with New;
+// Transport is the gRPC implementation of warden.ITransport. Construct with New;
 // release with Close. It is safe for concurrent use.
 type Transport struct {
 	timeout   time.Duration

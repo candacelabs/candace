@@ -202,7 +202,7 @@ var _ = Describe("The reducer", func() {
 
 		next, effects := Reduce(state, submit("hello everyone", 7, baseTime))
 
-		Expect(effects).To(Equal([]live.Effect{PostEffect{Body: "hello everyone", Cause: 7}}))
+		Expect(effects).To(Equal([]live.IEffect{PostEffect{Body: "hello everyone", Cause: 7}}))
 		Expect(next.Messages()).To(BeEmpty(), "a reducer must not append the message itself")
 		Expect(next.Draft).To(BeEmpty(), "an accepted message leaves the box empty")
 		Expect(next.DraftError).To(BeEmpty())
@@ -222,7 +222,7 @@ var _ = Describe("The reducer", func() {
 
 	It("trims the body it accepts but keeps what was typed when it refuses", func() {
 		_, effects := Reduce(state, submit("   spaced   ", 1, baseTime))
-		Expect(effects).To(Equal([]live.Effect{PostEffect{Body: "spaced", Cause: 1}}))
+		Expect(effects).To(Equal([]live.IEffect{PostEffect{Body: "spaced", Cause: 1}}))
 
 		next, effects := Reduce(state, submit("   ", 2, baseTime))
 		Expect(effects).To(BeEmpty())
@@ -372,7 +372,7 @@ var _ = Describe("The reducer", func() {
 	It("asks the room to clear itself, naming no actor", func() {
 		next, effects := Reduce(state, live.Event{Name: EventPurge, ID: 5, At: baseTime})
 
-		Expect(effects).To(Equal([]live.Effect{PurgeEffect{Cause: 5}}))
+		Expect(effects).To(Equal([]live.IEffect{PurgeEffect{Cause: 5}}))
 		Expect(next.Messages()).To(BeEmpty())
 	})
 
@@ -460,14 +460,14 @@ var _ = Describe("The failed-effect path", func() {
 	}
 
 	DescribeTable("re-subscribes only when the library says a retry is safe",
-		func(source, retryable string, want []live.Effect) {
+		func(source, retryable string, want []live.IEffect) {
 			next, effects := Reduce(newState(tabA, alice), failure(source, "boom", retryable))
 
 			Expect(effects).To(Equal(want))
 			Expect(next.Messages()).To(BeEmpty(), "a failed effect is not something somebody said")
 		},
 		Entry("a transient subscription failure is re-subscribed",
-			SourceSubscribe, "true", []live.Effect{SubscribeEffect{}}),
+			SourceSubscribe, "true", []live.IEffect{SubscribeEffect{}}),
 		Entry("a terminal subscription failure is not",
 			SourceSubscribe, "false", nil),
 		Entry("an unreadable classification is terminal",

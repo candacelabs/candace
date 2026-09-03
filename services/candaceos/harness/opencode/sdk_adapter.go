@@ -271,7 +271,7 @@ func (c *sdkAdapter) abort(ctx context.Context, sessionID string) error {
 // predates 1.18.21 variants such as session.status and message.part.delta, and
 // an unmodeled variant must not tear down streaming. The stream carries no
 // per-request timeout, since it is expected to stay open.
-func (c *sdkAdapter) streamEvents(ctx context.Context, receive func(json.RawMessage)) error {
+func (c *sdkAdapter) streamEvents(ctx context.Context, receive func(event json.RawMessage)) error {
 	var response *http.Response
 	err := c.sdk.Get(
 		ctx,
