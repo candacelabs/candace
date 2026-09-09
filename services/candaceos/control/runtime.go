@@ -53,6 +53,11 @@ const (
 	faultApprovalResolution  = "approval_resolution:"
 )
 
+type fleetTransaction func(
+	transactionContext context.Context,
+	apply func(queries *storedb.Queries) error,
+) error
+
 // Runtime is the user-facing control-plane composition root below main.
 type Runtime struct {
 	store       *store.Store
@@ -236,6 +241,14 @@ func (r *Runtime) Health(ctx context.Context) error {
 // owning fleet worker's lifecycle so shutdown cannot leave a database callback
 // running after the store closes.
 func (r *Runtime) RecordFleetContext(parent context.Context, snapshot fleet.Snapshot) {
+	r.recordFleetContext(parent, snapshot, r.store.WithTx)
+}
+
+func (r *Runtime) recordFleetContext(
+	parent context.Context,
+	snapshot fleet.Snapshot,
+	withTransaction fleetTransaction,
+) {
 	if snapshot.Term > math.MaxInt64 {
 		r.rememberError(faultFleet, fmt.Errorf("Warden term %d exceeds the database fence range", snapshot.Term))
 		return
@@ -254,15 +267,15 @@ func (r *Runtime) RecordFleetContext(parent context.Context, snapshot fleet.Snap
 		return
 	}
 
+	observed := postgresTimestamp(snapshot.UpdatedAt)
+	if !observed.Valid {
+		observed = postgresTimestamp(time.Now())
+	}
 	ctx, cancel := context.WithTimeout(parent, r.persistenceWindow())
 	defer cancel()
-	err := r.store.WithTx(ctx, func(queries *storedb.Queries) error {
-		observed := pgtype.Timestamptz{Time: snapshot.UpdatedAt, Valid: !snapshot.UpdatedAt.IsZero()}
-		if !observed.Valid {
-			observed = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-		}
+	err := withTransaction(ctx, func(queries *storedb.Queries) error {
 		for _, node := range configured.Nodes {
-			lastSeen := pgtype.Timestamptz{Time: node.LastSeen, Valid: !node.LastSeen.IsZero()}
+			lastSeen := postgresTimestamp(node.LastSeen)
 			if err := queries.UpsertNode(ctx, storedb.UpsertNodeParams{
 				NodeID: node.ID, Address: node.Address, Role: node.Role, Status: node.Status,
 				WardenTerm: int64(snapshot.Term), LastSeenAt: lastSeen, ObservedAt: observed,
@@ -282,6 +295,9 @@ func (r *Runtime) RecordFleetContext(parent context.Context, snapshot fleet.Snap
 		}
 		return nil
 	})
+	err = r.reconcileCommitError(err, func(readContext context.Context) (bool, error) {
+		return r.fleetObservationPersisted(readContext, configured, observed)
+	})
 	if err == nil {
 		r.lastFleetKey = key
 		r.lastFleetWriteAt = time.Now().UTC()
@@ -290,6 +306,65 @@ func (r *Runtime) RecordFleetContext(parent context.Context, snapshot fleet.Snap
 		r.lastFleetFailure = time.Now().UTC()
 	}
 	r.rememberError(faultFleet, err)
+}
+
+// fleetObservationPersisted runs while fleetWriteMu is held, so this runtime
+// cannot interleave another node or label write between these reads.
+func (r *Runtime) fleetObservationPersisted(
+	ctx context.Context,
+	snapshot fleet.ConfiguredSnapshot,
+	observed pgtype.Timestamptz,
+) (bool, error) {
+	if len(snapshot.Nodes) == 0 {
+		return false, nil
+	}
+	rows, err := r.store.Queries.ListNodes(ctx)
+	if err != nil {
+		return false, fmt.Errorf("listing fleet nodes after an ambiguous commit: %w", err)
+	}
+	rowsByID := make(map[string]storedb.CandaceosNode, len(rows))
+	for _, row := range rows {
+		rowsByID[row.NodeID] = row
+	}
+	for _, node := range snapshot.Nodes {
+		row, ok := rowsByID[node.ID]
+		if !ok || row.Address != node.Address || row.Role != node.Role ||
+			row.Status != node.Status || row.WardenTerm != int64(snapshot.Term) ||
+			!postgresTimestampsEqual(row.LastSeenAt, postgresTimestamp(node.LastSeen)) ||
+			!postgresTimestampsEqual(row.ObservedAt, observed) {
+			return false, nil
+		}
+		labels, err := r.store.Queries.ListNodeLabels(ctx, node.ID)
+		if err != nil {
+			return false, fmt.Errorf("listing labels for fleet node %q after an ambiguous commit: %w", node.ID, err)
+		}
+		if len(labels) != len(node.Labels) {
+			return false, nil
+		}
+		for _, label := range labels {
+			expected, exists := node.Labels[label.LabelKey]
+			if !exists || label.LabelValue != expected {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+func postgresTimestamp(value time.Time) pgtype.Timestamptz {
+	if value.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{
+		Time: value.UTC().Truncate(time.Microsecond), Valid: true,
+	}
+}
+
+func postgresTimestampsEqual(actual, expected pgtype.Timestamptz) bool {
+	if actual.Valid != expected.Valid || actual.InfinityModifier != expected.InfinityModifier {
+		return false
+	}
+	return !actual.Valid || actual.Time.Equal(expected.Time)
 }
 
 // fleetPersistenceKey excludes observation timestamps, which change on every

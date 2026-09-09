@@ -93,7 +93,7 @@ templ ControlsRegion(s State) {
 // The head content this page does need — the viewport meta and the
 // stylesheet — is the variadic fourth argument, in headExtras below, and a
 // page with none of its own pays nothing for it.
-templ Page(app *live.App[State], s State) {
+templ Page(app *live.App[State, live.AnonymousIdentity], s State) {
 	@app.Document(MountPath, "gotth-live counter", templ.Attributes{"lang": "en"}, headExtras()) {
 		<main>
 			<h1>gotth-live counter</h1>

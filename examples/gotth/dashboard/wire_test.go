@@ -25,6 +25,7 @@ import (
 
 	"github.com/candacelabs/candace/pkg/gotth/live"
 	"github.com/candacelabs/candace/pkg/gotth/live/livetest"
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 // FR-62's five properties, measured on the frames.
@@ -51,6 +52,8 @@ const (
 	// cancelling a read, which would close the session being measured.
 	settleIdle = 250 * time.Millisecond
 )
+
+var actorAppliedBudget = patience.Budget{Within: 5 * time.Second}
 
 // ---------------------------------------------------------------------------
 // The harness
@@ -240,6 +243,22 @@ func (m *mounted) open(name string) *browser {
 		}),
 		name: name,
 	}
+}
+
+// ackAndAwait applies one acknowledgement before the spec drives a frame whose
+// meaning depends on the server's acknowledged high-water mark. Ack and Event
+// frames use different actor channels, so the socket write alone establishes
+// their wire order, not the order in which the actor selects them.
+func (m *mounted) ackAndAwait(b *browser, serverSeq uint64) {
+	GinkgoHelper()
+
+	before := m.meters.Histogram(MetricWindowDepth).Count
+	b.Ack(serverSeq)
+	patience.Await(GinkgoTB(), "the actor to apply the acknowledgement", actorAppliedBudget,
+		func() Distribution { return m.meters.Histogram(MetricWindowDepth) },
+		func(observed Distribution) bool {
+			return observed.Count > before && observed.Last == 0
+		})
 }
 
 // send writes one event frame and returns the client reference it used, which
@@ -952,7 +971,9 @@ var _ = Describe("The FR-34 backpressure metrics", func() {
 
 		Expect(m.meters.Histogram(MetricWindowDepth).Count).To(BeNumerically(">", 0))
 		Expect(m.meters.CounterWith(MetricWireBytes, "direction", "out")).To(BeNumerically(">", 0))
-		Expect(m.meters.CounterWith(MetricFramesSent, "kind", "patch")).To(BeNumerically(">=", 5))
+		patience.Await(GinkgoTB(), "all five patch writes to reach the sent-frame counter", actorAppliedBudget,
+			func() float64 { return m.meters.CounterWith(MetricFramesSent, "kind", "patch") },
+			func(observed float64) bool { return observed >= 5 })
 	})
 
 	It("serves the report over HTTP with the drop paragraph the numbers need", func() {
@@ -1039,7 +1060,7 @@ var _ = Describe("The resync measurement", func() {
 		for i := 0; i < 3; i++ {
 			m.feed.Sample(live.ID{}, 0)
 			f := b.Await("a meters patch", 5*time.Second, carries(FragmentMeters))
-			b.Ack(f.Patch.ServerSeq)
+			m.ackAndAwait(b, f.Patch.ServerSeq)
 			applied = f.Patch.ServerSeq
 		}
 
@@ -1090,7 +1111,7 @@ var _ = Describe("The resync measurement", func() {
 		for i := 0; i < 3; i++ {
 			m.feed.Sample(live.ID{}, 0)
 			f := b.Await("a meters patch", 5*time.Second, carries(FragmentMeters))
-			b.Ack(f.Patch.ServerSeq)
+			m.ackAndAwait(b, f.Patch.ServerSeq)
 			applied = f.Patch.ServerSeq
 		}
 		Expect(applied).To(BeNumerically(">", 1))

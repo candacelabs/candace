@@ -19,6 +19,7 @@ var _ = Describe("Buffer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(written).To(Equal(5))
 		Expect(buffer.Bytes()).To(Equal([]byte("hello")))
+		Expect(buffer.Truncated()).To(BeFalse())
 		Expect(buffer.String()).To(Equal("hello"))
 	})
 
@@ -33,6 +34,7 @@ var _ = Describe("Buffer", func() {
 		Expect(first).To(Equal(5))
 		Expect(second).To(Equal(6))
 		Expect(buffer.Bytes()).To(Equal([]byte("hello")))
+		Expect(buffer.Truncated()).To(BeTrue())
 		Expect(buffer.String()).To(Equal("hello (truncated)"))
 	})
 })

@@ -19,8 +19,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/candacelabs/candace/pkg/gotth/internal/obstest"
 	pb "github.com/candacelabs/candace/pkg/gotth/internal/protocol/gotthlivepb"
 	"github.com/candacelabs/candace/pkg/gotth/live"
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 func TestSampling(t *testing.T) {
@@ -31,9 +33,12 @@ func TestSampling(t *testing.T) {
 const (
 	fragmentCount = "sampling.count"
 	eventIncr     = "sampling.increment"
+	metricWindow  = "gotthlive_outbound_window_depth"
 	testOrigin    = "https://sampling.example"
 	subprotocol   = "gotth-live.v1"
 )
+
+var ackAppliedBudget = patience.Budget{Within: 5 * time.Second, Interval: time.Millisecond}
 
 type state struct{ N int }
 
@@ -48,7 +53,7 @@ func (u user) Subject() string { return string(u) }
 // graph would legitimately lack the encode and send spans, and a spec that
 // called that "partial" would be failing on the application rather than on the
 // tracer.
-func newApp(tp *sdktrace.TracerProvider) *live.App[state, user] {
+func newApp(tp *sdktrace.TracerProvider, metrics *obstest.Metrics) *live.App[state, user] {
 	GinkgoHelper()
 
 	app, err := live.New(live.Config[state, user]{
@@ -77,6 +82,7 @@ func newApp(tp *sdktrace.TracerProvider) *live.App[state, user] {
 		Authorize:    live.AllowAll[user],
 		CSRF:         live.NoCSRFCheck,
 		Tracer:       tp,
+		Metrics:      metrics,
 		// The inbound event bucket is raised, and only it.
 		//
 		// Its default is a real production bound and this suite drives
@@ -109,10 +115,11 @@ func recorder(rate float64) (*sdktrace.TracerProvider, *tracetest.SpanRecorder) 
 
 // driven is one connected session.
 type driven struct {
-	app    *live.App[state, user]
-	server *httptest.Server
-	conn   *websocket.Conn
-	ctx    context.Context
+	app     *live.App[state, user]
+	server  *httptest.Server
+	conn    *websocket.Conn
+	ctx     context.Context
+	metrics *obstest.Metrics
 
 	sessionID   []byte
 	ref         uint64
@@ -130,7 +137,8 @@ type driven struct {
 func dial(tp *sdktrace.TracerProvider) *driven {
 	GinkgoHelper()
 
-	app := newApp(tp)
+	metrics := obstest.NewMetrics()
+	app := newApp(tp, metrics)
 	ts := httptest.NewServer(app.Handler())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -145,7 +153,7 @@ func dial(tp *sdktrace.TracerProvider) *driven {
 	Expect(err).NotTo(HaveOccurred())
 
 	d := &driven{
-		app: app, server: ts, conn: conn, ctx: ctx,
+		app: app, server: ts, conn: conn, ctx: ctx, metrics: metrics,
 		incoming: make(chan *pb.Frame, 8192),
 	}
 	go d.pump()
@@ -257,17 +265,34 @@ func (d *driven) interact() {
 				d.reportTelemetry()
 				ackTo--
 			}
-			Expect(d.write(&pb.Frame{
-				ProtocolVersion: 1,
-				SessionId:       d.sessionID,
-				Payload:         &pb.Frame_Ack{Ack: &pb.Ack{ServerSeq: ackTo}},
-			})).To(Succeed())
+			d.ackAndAwait(ackTo, p.GetServerSeq())
 			return
 		}
 		if e := f.GetError(); e != nil {
 			Fail(fmt.Sprintf("the server refused an interaction: %s (%s)", e.GetMessage(), e.GetCode()))
 		}
 	}
+}
+
+// ackAndAwait keeps the sampling test about tracing rather than incidental
+// backpressure. An Ack reaches the actor on a different channel from the next
+// Event, so writing it is not proof the window slot has been retired yet.
+func (d *driven) ackAndAwait(ackTo, emitted uint64) {
+	GinkgoHelper()
+
+	before := len(d.metrics.Observations(metricWindow))
+	Expect(d.write(&pb.Frame{
+		ProtocolVersion: 1,
+		SessionId:       d.sessionID,
+		Payload:         &pb.Frame_Ack{Ack: &pb.Ack{ServerSeq: ackTo}},
+	})).To(Succeed())
+
+	want := float64(emitted - ackTo)
+	patience.Await(GinkgoTB(), "the actor to apply the sampling acknowledgement", ackAppliedBudget,
+		func() []obstest.Measurement { return d.metrics.Observations(metricWindow) },
+		func(observed []obstest.Measurement) bool {
+			return len(observed) > before && observed[len(observed)-1].Value == want
+		})
 }
 
 // reportTelemetry sends one client timing report for the last patch, which is

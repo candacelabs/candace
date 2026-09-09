@@ -43,6 +43,9 @@ func (b *Buffer) Write(data []byte) (int, error) {
 // Bytes returns the retained prefix. The returned slice aliases the Buffer.
 func (b *Buffer) Bytes() []byte { return b.data.Bytes() }
 
+// Truncated reports whether bytes were discarded after the retention bound.
+func (b *Buffer) Truncated() bool { return b.truncated }
+
 // String returns the retained prefix and marks it when bytes were discarded.
 func (b *Buffer) String() string {
 	if !b.truncated {

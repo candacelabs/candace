@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/candacelabs/candace/pkg/gotth/internal/protocol/gotthlivepb"
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 // PRD Phase 3, case 3:
@@ -50,6 +51,8 @@ import (
 // and the two are reported separately, because a slow restart and a slow
 // backoff are different defects with different owners. The spec asserts a total
 // and prints the split.
+var reconnectBudget = patience.Budget{Within: 90 * time.Second, Interval: 50 * time.Millisecond}
+
 var _ = Describe("A server restarted under load (PRD case 3)", func() {
 
 	It("brings every client back to a fresh Snapshot carrying pre-restart truth, within a stated bound", Label("soak"), func() {
@@ -80,7 +83,7 @@ var _ = Describe("A server restarted under load (PRD case 3)", func() {
 				"no load reached the server before the restart")
 
 		truthBefore := ledgerDistinct(ledgerPath)
-		generationBefore := generations(fleet)
+		generationsBefore := generations(fleet)
 
 		// The restart. SIGKILL, not a graceful stop: a graceful stop writes a
 		// 4001 close frame to every session and is the path the drain test in
@@ -94,10 +97,10 @@ var _ = Describe("A server restarted under load (PRD case 3)", func() {
 
 		// Every client back on a NEW session — server_seq 1, a mount Snapshot —
 		// carrying the truth the dead process had committed.
-		Eventually(func() int { return generationsAtLeast(fleet, generationBefore+1) },
-			90*time.Second, 50*time.Millisecond).Should(Equal(clients),
-			"only %d of %d clients reconnected after the restart",
-			generationsAtLeast(fleet, generationBefore+1), clients)
+		patience.Await(GinkgoTB(), "every client to receive a fresh Snapshot after the restart",
+			reconnectBudget,
+			func() int { return generationsAfter(fleet, generationsBefore) },
+			func(recovered int) bool { return recovered == clients })
 
 		var worst time.Duration
 		var worstAttempts int
@@ -551,23 +554,21 @@ func liveCount(fleet []*reconnecting) int {
 	return n
 }
 
-// generations returns the minimum generation across the fleet, which is the
-// number every client has reached.
-func generations(fleet []*reconnecting) int {
-	minGen := -1
-	for _, c := range fleet {
-		g := c.gen()
-		if minGen == -1 || g < minGen {
-			minGen = g
-		}
+// generations snapshots each client's successful mount count. One scalar
+// minimum loses client identity and can let a client that never recovered pass
+// merely because it had already cycled more often before the restart.
+func generations(fleet []*reconnecting) []int {
+	out := make([]int, len(fleet))
+	for i, c := range fleet {
+		out[i] = c.gen()
 	}
-	return minGen
+	return out
 }
 
-func generationsAtLeast(fleet []*reconnecting, n int) int {
+func generationsAfter(fleet []*reconnecting, before []int) int {
 	count := 0
-	for _, c := range fleet {
-		if c.gen() >= n && c.isLive() {
+	for i, c := range fleet {
+		if c.gen() > before[i] && c.isLive() {
 			count++
 		}
 	}

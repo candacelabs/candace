@@ -156,7 +156,7 @@ templ RosterRegion(s State) {
 // and let them drift, and the drift is silent: the page loads, the script
 // 404s, and nothing is live. This example mounts at /chat/live rather than
 // /live precisely so that a wrong default would be visible.
-templ Page(app *live.App[State], s State) {
+templ Page(app *live.App[State, Member], s State) {
 	@app.Document(MountPath, "gotth-live chat", templ.Attributes{"lang": "en"}, chatHead()) {
 		<main>
 			<h1>gotth-live chat</h1>
@@ -234,7 +234,7 @@ templ chatHead() {
 // omitted argument for the reason every other opt-out in this library is a
 // named value: an absence would be indistinguishable from forgetting, and
 // forgetting would render a page that loads perfectly and does nothing.
-templ LoginPage(app *live.App[State], names []string) {
+templ LoginPage(app *live.App[State, Member], names []string) {
 	@app.Document(live.NoRuntime, "gotth-live chat — sign in", templ.Attributes{"lang": "en"}, chatHead()) {
 		<main>
 			<h1>gotth-live chat</h1>

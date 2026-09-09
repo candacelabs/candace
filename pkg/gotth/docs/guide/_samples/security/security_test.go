@@ -140,12 +140,6 @@ var _ = Describe("the allowlist that allows nobody", func() {
 	})
 })
 
-// stranger is an identity this application knows nothing about. It exists to
-// prove that Authorize does not fail open on a shape it did not anticipate.
-type stranger struct{}
-
-func (stranger) Subject() string { return "stranger" }
-
 // session builds the live.Session[security.Member] a Config hook is called with. Session's
 // fields are unexported — identity is bound at the handshake and nothing
 // downstream may mint one — so livetest.NewSession is the way a spec calls a

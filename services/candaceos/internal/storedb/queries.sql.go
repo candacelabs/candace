@@ -601,6 +601,32 @@ func (q *Queries) ListDeploymentRolloutRows(ctx context.Context) ([]ListDeployme
 	return items, nil
 }
 
+const listNodeLabels = `-- name: ListNodeLabels :many
+SELECT node_id, label_key, label_value FROM candaceos_node_labels
+WHERE node_id = $1
+ORDER BY label_key
+`
+
+func (q *Queries) ListNodeLabels(ctx context.Context, nodeID string) ([]CandaceosNodeLabel, error) {
+	rows, err := q.db.Query(ctx, listNodeLabels, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CandaceosNodeLabel{}
+	for rows.Next() {
+		var i CandaceosNodeLabel
+		if err := rows.Scan(&i.NodeID, &i.LabelKey, &i.LabelValue); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNodes = `-- name: ListNodes :many
 SELECT node_id, address, role, status, warden_term, last_seen_at, observed_at FROM candaceos_nodes ORDER BY node_id
 `

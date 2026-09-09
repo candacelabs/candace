@@ -116,6 +116,11 @@ INSERT INTO candaceos_node_labels (node_id, label_key, label_value)
 VALUES (sqlc.arg(node_id), sqlc.arg(label_key), sqlc.arg(label_value))
 ON CONFLICT (node_id, label_key) DO UPDATE SET label_value = EXCLUDED.label_value;
 
+-- name: ListNodeLabels :many
+SELECT * FROM candaceos_node_labels
+WHERE node_id = sqlc.arg(node_id)
+ORDER BY label_key;
+
 -- name: UpsertAppRevision :exec
 INSERT INTO candaceos_app_revisions (
     app_revision_id, app_name, source_repository, source_revision, source_sha256,

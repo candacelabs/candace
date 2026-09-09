@@ -63,7 +63,11 @@ func (l *fileLedger) commit(ref uint64) error {
 	if _, err := fmt.Fprintf(f, "%d\n", ref); err != nil {
 		return err
 	}
-	return f.Sync()
+	// This case restarts a process, not the host: Write has handed the bytes to
+	// the kernel, whose page cache survives SIGKILL. Syncing every event would
+	// turn the reconnect test into a storage-latency test and can starve mounts
+	// behind the ledger mutex before they can send their first Snapshot.
+	return nil
 }
 
 func (l *fileLedger) total() int {

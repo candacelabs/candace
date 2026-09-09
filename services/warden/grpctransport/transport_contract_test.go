@@ -30,21 +30,20 @@ func TestGRPCTransport(t *testing.T) {
 	RunSpecs(t, "grpctransport client contract suite")
 }
 
-// stubRPC answers unary RPCs with canned responses; Vote can be made to block
-// (respecting ctx) so the deadline specs have a slow server to race.
+// stubRPC answers unary RPCs with canned responses; Vote can be held until the
+// test releases it. The hold deliberately outlives request cancellation:
+// returning a canned success on ctx.Done would race the client's deadline and
+// test scheduler timing instead of the transport's timeout contract.
 type stubRPC struct {
-	voteDelay time.Duration
-	voteResp  warden.VoteResponse
-	hbResp    warden.HeartbeatResponse
-	ident     warden.IdentifyResponse
+	voteRelease <-chan struct{}
+	voteResp    warden.VoteResponse
+	hbResp      warden.HeartbeatResponse
+	ident       warden.IdentifyResponse
 }
 
-func (s *stubRPC) HandleVote(ctx context.Context, _ warden.VoteRequest) warden.VoteResponse {
-	if s.voteDelay > 0 {
-		select {
-		case <-time.After(s.voteDelay):
-		case <-ctx.Done():
-		}
+func (s *stubRPC) HandleVote(_ context.Context, _ warden.VoteRequest) warden.VoteResponse {
+	if s.voteRelease != nil {
+		<-s.voteRelease
 	}
 	return s.voteResp
 }
@@ -75,6 +74,15 @@ func startServer(rpc warden.IRPCHandler) (addr string, stop func()) {
 		Eventually(done, 5*time.Second).Should(Receive(BeNil()))
 	}
 	return srv.Addr().String(), stop
+}
+
+func startBlockedVoteServer() (addr string, stop func()) {
+	release := make(chan struct{})
+	addr, stopServer := startServer(&stubRPC{voteRelease: release})
+	return addr, func() {
+		close(release)
+		stopServer()
+	}
 }
 
 var _ = Describe("gRPC warden.ITransport client", func() {
@@ -129,7 +137,7 @@ var _ = Describe("gRPC warden.ITransport client", func() {
 
 	Describe("deadline propagation (identical to the retired HTTPTransport)", func() {
 		It("honours a caller context deadline over the client default timeout", func() {
-			addr, stop := startServer(&stubRPC{voteDelay: 3 * time.Second})
+			addr, stop := startBlockedVoteServer()
 			defer stop()
 			tr := grpctransport.New(10 * time.Second) // large default
 			defer tr.Close()
@@ -144,7 +152,7 @@ var _ = Describe("gRPC warden.ITransport client", func() {
 		})
 
 		It("applies the default timeout when the caller passes no deadline", func() {
-			addr, stop := startServer(&stubRPC{voteDelay: 5 * time.Second})
+			addr, stop := startBlockedVoteServer()
 			defer stop()
 			tr := grpctransport.New(150 * time.Millisecond) // small default
 			defer tr.Close()

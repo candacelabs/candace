@@ -400,15 +400,20 @@ func (r *sqlRows) Next(destination []driver.Value) error {
 		}
 		return io.EOF
 	}
+	// Scan into *any, not *driver.Value: database/sql's convertAssign
+	// handles a NULL source for *any but has no arm for the named
+	// driver.Value interface type, so a NULL timestamptz or uuid column
+	// used to fail with "unsupported Scan ... into type *driver.Value".
+	scanned := make([]any, len(destination))
 	values := make([]any, len(destination))
 	for index := range destination {
-		values[index] = &destination[index]
+		values[index] = &scanned[index]
 	}
 	if err := r.rows.Scan(values...); err != nil {
 		return r.database.executionError(r.statement, err)
 	}
 	for index := range destination {
-		destination[index] = cloneDriverValue(destination[index])
+		destination[index] = cloneDriverValue(scanned[index])
 	}
 	return nil
 }

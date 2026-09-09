@@ -220,7 +220,7 @@ templ Deploys(deploys []string, at string) {
 // so there is one copy of HTMX in this repository and one recorded digest; when
 // that file is not reachable the page says so in the markup rather than
 // rendering a script tag that 404s. FRICTION.md item F-3.
-templ Page(app *live.App[State], s State, htmxSrc string) {
+templ Page(app *live.App[State, live.AnonymousIdentity], s State, htmxSrc string) {
 	@app.Document(MountPath, "gotth-live dashboard", templ.Attributes{"lang": "en"}, dashboardHead(htmxSrc)) {
 		<main>
 			<h1>gotth-live dashboard</h1>

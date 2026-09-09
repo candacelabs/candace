@@ -36,6 +36,7 @@ go_test(
         "intercept_test.go",
         "mock_translator_generate_test.go",
         "mock_translator_test.go",
+        "null_scan_test.go",
         "pgmem_suite_test.go",
         "table_test.go",
         "translator_test.go",

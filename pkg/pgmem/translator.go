@@ -75,6 +75,17 @@ func rewritePostgreSQLTree(message protoreflect.Message, defaultSchema string) {
 		}
 	case *pgquery.CreateStmt:
 		createdTable = node
+	case *pgquery.Node:
+		// A cast on a parameter (`$2::text`, the form sqlc emits for a typed
+		// nullable argument) deparses to text the execution engine's
+		// parameter parser reads as the named argument "2::text". The engine
+		// is dynamically typed, so the cast carries nothing: keep the bare
+		// parameter.
+		if cast := node.GetTypeCast(); cast != nil {
+			if parameter := cast.GetArg().GetParamRef(); parameter != nil {
+				node.Node = &pgquery.Node_ParamRef{ParamRef: parameter}
+			}
+		}
 	}
 
 	message.Range(func(field protoreflect.FieldDescriptor, value protoreflect.Value) bool {

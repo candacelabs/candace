@@ -98,12 +98,12 @@ func atoi(text string) int {
 // same sample and asks whether the validator reported the class. valid and
 // invalid are the samples the two must agree on.
 type agreementCase struct {
-	name         string
-	class        diag.Class
+	name          string
+	class         diag.Class
 	refineRejects func(sample string) bool
-	docRejects   func(sample string) bool
-	valid        []string
-	invalid      []string
+	docRejects    func(sample string) bool
+	valid         []string
+	invalid       []string
 }
 
 // mutatedHasClass is the common docRejects shape: replace one span of
