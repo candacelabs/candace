@@ -281,7 +281,7 @@ func (w *devWatched) identity() string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { Expect(resp.Body.Close()).To(Succeed()) }()
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
@@ -649,7 +649,12 @@ var _ = Describe("The dev-reload loop against examples/counter (FR-57)", Label("
 					w.transcript()
 			})
 
-		Expect(w.identity()).To(Equal(baseline),
+		// The watcher reports restarted after spawning, before the new process
+		// necessarily listens. An empty response is unready, not a build change.
+		restartReadyBudget := patience.Budget{Within: 180 * time.Second, Interval: 200 * time.Millisecond}
+		identity := patience.Await(GinkgoTB(), "restarted counter serves its build identity", restartReadyBudget,
+			w.identity, func(value string) bool { return value != "" })
+		Expect(identity).To(Equal(baseline),
 			"a rebuild that changed no source bytes produced a different executable, so the build "+
 				"identity is not a function of the build")
 

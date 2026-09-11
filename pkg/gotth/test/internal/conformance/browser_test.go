@@ -359,7 +359,7 @@ var _ = Describe("The client runtime under a strict Content-Security-Policy", La
 		// served and cannot be confused with what the page then did.
 		resp, err := http.Get(front.url() + "/")
 		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { Expect(resp.Body.Close()).To(Succeed()) }()
 		served := resp.Header.Get("Content-Security-Policy")
 		Expect(served).To(Equal(strictCSP))
 		Expect(served).NotTo(ContainSubstring("unsafe-inline"))

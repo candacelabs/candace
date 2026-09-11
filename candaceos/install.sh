@@ -9,6 +9,8 @@ environment_projection="$script_dir/environment.generated.sh"
 }
 # shellcheck source=environment.generated.sh
 source "$environment_projection"
+# shellcheck source=compose-files.sh
+source "$script_dir/compose-files.sh"
 
 die() {
   printf 'candaceos install: %s\n' "$*" >&2
@@ -199,14 +201,16 @@ if $opencode; then
   environment_profile=$candaceos_profile_opencode
 fi
 candaceos_environment_apply_profile "$environment_profile"
+candaceos_compose_files "$script_dir" "$state_root" || die "invalid deployment override"
 
 compose=(
   docker compose
   --project-directory "$script_dir"
   --env-file "$env_file"
-  -f "$script_dir/compose.yaml"
-  -f "$script_dir/compose.environment.generated.yaml"
+  "${candaceos_compose_file_args[@]}"
 )
+
+"${compose[@]}" "${profiles[@]}" config --quiet || die "invalid resolved deployment"
 
 # Switching back to the default installer always demotes a prior live agent.
 if $live; then

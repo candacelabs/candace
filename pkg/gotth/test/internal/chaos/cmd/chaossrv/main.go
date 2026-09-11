@@ -59,15 +59,16 @@ func (l *fileLedger) commit(ref uint64) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	if _, err := fmt.Fprintf(f, "%d\n", ref); err != nil {
+		// Preserve the primary write failure while releasing the descriptor.
+		_ = f.Close()
 		return err
 	}
 	// This case restarts a process, not the host: Write has handed the bytes to
 	// the kernel, whose page cache survives SIGKILL. Syncing every event would
 	// turn the reconnect test into a storage-latency test and can starve mounts
 	// behind the ledger mutex before they can send their first Snapshot.
-	return nil
+	return f.Close()
 }
 
 func (l *fileLedger) total() int {
@@ -77,7 +78,8 @@ func (l *fileLedger) total() int {
 	if err != nil {
 		return 0
 	}
-	defer f.Close()
+	// Read-only descriptor: there is no buffered write to acknowledge on close.
+	defer func() { _ = f.Close() }()
 
 	distinct := map[string]struct{}{}
 	sc := bufio.NewScanner(f)
@@ -189,7 +191,7 @@ func main() {
 	// The parent waits for this line before dialling, so a restart is timed
 	// from "the port is accepting" rather than from "the process was spawned".
 	fmt.Printf("READY %s\n", ln.Addr().String())
-	os.Stdout.Sync()
+	// os.Stdout is an unbuffered file/pipe; Sync on the parent's pipe is invalid.
 
 	srv := &http.Server{Handler: app.Handler()}
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {

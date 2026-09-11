@@ -231,7 +231,7 @@ func ledgerLines(path string) int {
 	if err != nil {
 		return 0
 	}
-	defer f.Close()
+	defer func() { Expect(f.Close()).To(Succeed()) }()
 	n := 0
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -247,7 +247,7 @@ func ledgerDistinct(path string) int {
 	if err != nil {
 		return 0
 	}
-	defer f.Close()
+	defer func() { Expect(f.Close()).To(Succeed()) }()
 	seen := map[string]struct{}{}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

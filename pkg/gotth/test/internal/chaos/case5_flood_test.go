@@ -15,6 +15,7 @@ import (
 
 	"github.com/candacelabs/candace/pkg/gotth/internal/obstest"
 	"github.com/candacelabs/candace/pkg/gotth/live"
+	"github.com/candacelabs/candace/pkg/patience"
 )
 
 // PRD Phase 3, case 5:
@@ -98,8 +99,8 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 
 		// PACED, and the pacing is the whole claim rather than a convenience.
 		// The close needs 3 x EventBurst CONSECUTIVE denials and one allowed
-		// event resets the run, so at the defaults it needs 15,000 frames inside
-		// one 20 ms refill interval. This sends at a stated 3,000 frames/s —
+		// event resets the run, so at the defaults it needs 300 denials inside
+		// one 20 ms refill interval. This caps sending at 3,000 frames/s —
 		// sixty times the configured 50/s limit and a fifth of the close
 		// threshold — which is the rate a hostile client would pick if it wanted
 		// the session to survive. Unpaced, the same loop measured 10,124
@@ -108,6 +109,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 		const rate = 3000
 		const duration = 4 * time.Second
 		const batch = 30
+		batchDrainBudget := patience.Budget{Within: 10 * time.Second, Interval: time.Millisecond}
 		start := time.Now()
 		sent := 0
 		bytesOut := 0
@@ -122,6 +124,15 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 			if w.isClosed() {
 				break
 			}
+			// Sender pacing alone does not bound server ingress: scheduling can
+			// bunch several writes in the socket buffer. Drain each small batch
+			// through the real reducer/error stream before pacing the next one.
+			// This also proves every sent frame was committed or explicitly refused.
+			patience.Await(GinkgoTB(), "flood batch committed or refused", batchDrainBudget,
+				func() int {
+					_, _, errorsReceived, _ := w.counters()
+					return s.ledger.callCount() + int(errorsReceived)
+				}, func(accounted int) bool { return accounted == sent })
 			// CS-9 keep: this sleep IS the flood's rate. It is the load
 			// generator's throttle, which is the independent variable of the
 			// whole case; replacing it with a wait would delete the experiment.
@@ -129,8 +140,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 		}
 		elapsed := time.Since(start)
 
-		// Give the server time to finish answering, then read the tallies.
-		time.Sleep(2 * time.Second)
+		// Every batch has drained, so no arbitrary post-send sleep is needed.
 		_, bytesIn, errs, limited := w.counters()
 
 		Expect(limited).To(BeNumerically(">", 0),
@@ -156,7 +166,7 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 
 		AddReportEntry("case 5 — D-24", fmt.Sprintf(
 			"defaults (50/s, burst 100; close threshold 3x100x50 = 15,000 frames/s): %d frames in %s "+
-				"(%.0f frames/s, 60x the limit), %d error frames back (%d RATE_LIMITED), connection STILL OPEN, "+
+				"(%.0f frames/s, feedback-paced ceiling 3000/s), %d error frames back (%d RATE_LIMITED), connection STILL OPEN, "+
 				"%d B sent / %d B received back, live heap retained %d B of a %d B budget",
 			sent, elapsed.Round(time.Millisecond), float64(sent)/elapsed.Seconds(),
 			errs, limited, bytesOut, bytesIn, retained, budget))

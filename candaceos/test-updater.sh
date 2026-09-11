@@ -18,6 +18,7 @@ for script in \
   "$script_dir/record-bootstrap-revision.sh" \
   "$script_dir/updater-git-askpass.sh" \
   "$script_dir/updater-status.sh" \
+  "$script_dir/compose-files.sh" \
   "$script_dir/updater.sh"; do
   bash -n "$script"
 done
@@ -69,6 +70,7 @@ export CANDACEOS_REPOSITORY=example-org/example-repo
 source "$script_dir/updater.sh"
 
 mock_agent_health=absent
+mock_local_postgres=true
 mock_exec_status=0
 mock_exec_failures=2
 legacy_probe_count=0
@@ -81,8 +83,14 @@ sleep() {
 }
 docker() {
   local args=" $* "
+  if [[ "$1" == compose && "$args" == *" config --services "* ]]; then
+    $mock_local_postgres && printf '%s\n' postgres
+    printf '%s\n' warden agent-dry-run copilot core
+    return 0
+  fi
   if [[ "$1" == compose && "$args" == *" ps --services "* ]]; then
-    printf '%s\n' postgres warden agent-dry-run copilot core
+    $mock_local_postgres && printf '%s\n' postgres
+    printf '%s\n' warden agent-dry-run copilot core
     return 0
   fi
   if [[ "$1" == compose && "$args" == *" ps -q agent-dry-run "* ]]; then
@@ -107,6 +115,25 @@ docker() {
 verify_deployment "$script_dir"
 [[ "$legacy_probe_count" -eq 3 ]]
 [[ "$legacy_sleep_count" -eq 2 ]]
+
+# The same persistent file participates in verification after every source
+# revision, and an external database does not require the disabled local one.
+mkdir -p "$state_root"
+printf 'services: {}\n' >"$state_root/compose.override.yaml"
+chmod 0600 "$state_root/compose.override.yaml"
+mock_local_postgres=false
+mock_agent_health=healthy
+verify_deployment "$script_dir"
+[[ "${candaceos_compose_file_args[-1]}" == "$state_root/compose.override.yaml" ]]
+chmod 0644 "$state_root/compose.override.yaml"
+if verify_deployment "$script_dir" >"$test_root/override-mode.out" 2>&1; then
+  printf 'updater accepted a public runtime override\n' >&2
+  exit 1
+fi
+chmod 0600 "$state_root/compose.override.yaml"
+rm "$state_root/compose.override.yaml"
+mock_local_postgres=true
+mock_agent_health=absent
 
 mock_exec_failures=30
 legacy_probe_count=0
@@ -149,6 +176,17 @@ checkout_revision "$checkout_revision_a"
 [[ ! -e "$repo_dir/candidate-junk" ]]
 [[ "$(cat "$repo_dir/version")" == rollback ]]
 [[ -z "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]]
+
+# Refuse an old installer before checkout when private topology is active;
+# an automatic source rollback must never silently select another database.
+printf 'services: {}\n' >"$state_root/compose.override.yaml"
+chmod 0600 "$state_root/compose.override.yaml"
+if deploy_revision "$checkout_revision_a" >"$test_root/old-overlay.out" 2>&1; then
+  printf 'updater accepted a revision without override support\n' >&2
+  exit 1
+fi
+grep -Fq 'refusing revision without persistent Compose override support' "$test_root/old-overlay.out"
+rm "$state_root/compose.override.yaml"
 
 # Failed candidates retain durable, per-revision retry state. Retries wait for
 # an exponential delay capped at one hour; a new main revision starts fresh.

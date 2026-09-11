@@ -144,7 +144,7 @@ func launchChrome() *chrome {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { Expect(resp.Body.Close()).To(Succeed()) }()
 		return json.NewDecoder(resp.Body).Decode(&meta)
 	}, 30*time.Second, 100*time.Millisecond).Should(Succeed())
 	Expect(meta.WebSocketDebuggerURL).NotTo(BeEmpty())

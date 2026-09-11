@@ -21,12 +21,14 @@ var _ = Describe("Buffer", func() {
 		Expect(buffer.Bytes()).To(Equal([]byte("hello")))
 		Expect(buffer.Truncated()).To(BeFalse())
 		Expect(buffer.String()).To(Equal("hello"))
+		Expect(buffer.Truncated()).To(BeFalse())
 	})
 
 	It("drains every write while marking discarded bytes", func() {
 		buffer, err := boundedbuffer.New(&boundedbufferv1.Retention{MaxBytes: 5})
 		Expect(err).NotTo(HaveOccurred())
 		first, firstErr := io.WriteString(buffer, "hello")
+		Expect(buffer.Truncated()).To(BeFalse())
 		second, secondErr := io.WriteString(buffer, " world")
 
 		Expect(firstErr).NotTo(HaveOccurred())
@@ -36,5 +38,6 @@ var _ = Describe("Buffer", func() {
 		Expect(buffer.Bytes()).To(Equal([]byte("hello")))
 		Expect(buffer.Truncated()).To(BeTrue())
 		Expect(buffer.String()).To(Equal("hello (truncated)"))
+		Expect(buffer.Truncated()).To(BeTrue())
 	})
 })

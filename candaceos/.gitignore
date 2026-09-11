@@ -5,6 +5,9 @@
 .env.*
 !.env.example
 secrets/
+compose.override.yaml
+compose.override.yaml.foundation-disabled-*
+.foundation-override-*
 
 # Installed state that lands inside the checkout when it is also the state
 # root: the app Git repository, container runtime state, verified revision

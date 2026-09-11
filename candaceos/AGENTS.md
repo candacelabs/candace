@@ -129,6 +129,16 @@ directory. Core publishes `0.0.0.0:7780` with no built-in login; any client
 that can reach the listener can operate it, and only browser mutations are
 cross-origin-checked. Do not treat the one-box listener as authenticated.
 
+An optional `$CANDACEOS_STATE_ROOT/compose.override.yaml` is persistent operator
+topology. The installer, status, uninstall, and updater verification append it
+after the two source-owned Compose files through `compose-files.sh`. It must
+be an owned, non-symlinked mode-600 regular file; it may contain credentials
+and must never be committed or printed. Source updates preserve this file.
+While it exists, the updater refuses revisions whose installer predates this
+hook, including automatic rollback revisions. Establish a compatible verified
+rollback revision before enabling an override. Removing the override explicitly
+restores the standalone deployment topology on the next install.
+
 `./status.sh` runs `docker compose ps` across every profile and fails if
 CandaceOS is not installed. `./uninstall.sh` runs `down --remove-orphans`
 across every profile and deliberately preserves the PostgreSQL volume,

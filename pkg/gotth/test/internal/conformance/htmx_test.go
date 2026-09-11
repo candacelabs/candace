@@ -317,7 +317,7 @@ var _ = Describe("HTMX and gotth-live pages from one server (FR-30, G8)", Ordere
 		// SERVED and cannot be confused with what the page then did.
 		resp, err := http.Get(ts.URL + "/plain")
 		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { Expect(resp.Body.Close()).To(Succeed()) }()
 		body, err := io.ReadAll(resp.Body)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(body)).NotTo(ContainSubstring("gotth-live.min.js"),
@@ -330,7 +330,7 @@ var _ = Describe("HTMX and gotth-live pages from one server (FR-30, G8)", Ordere
 		// broken helper.
 		liveResp, err := http.Get(ts.URL + "/")
 		Expect(err).NotTo(HaveOccurred())
-		defer liveResp.Body.Close()
+		defer func() { Expect(liveResp.Body.Close()).To(Succeed()) }()
 		liveBody, err := io.ReadAll(liveResp.Body)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(liveBody)).To(ContainSubstring("gotth-live.min.js"))

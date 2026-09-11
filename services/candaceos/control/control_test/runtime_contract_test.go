@@ -29,7 +29,13 @@ import (
 	"github.com/candacelabs/candace/services/candaceos/webui"
 )
 
-const controlTestDatabaseURLEnv = "CANDACEOS_STORE_TEST_DATABASE_URL"
+const (
+	controlTestDatabaseURLEnv = "CANDACEOS_STORE_TEST_DATABASE_URL"
+	// The runtime permits 15 poll intervals per real PostgreSQL transaction.
+	// Leave enough transaction and heartbeat time under whole-module coverage.
+	contractFleetPollInterval = time.Second
+	contractHeartbeatBudget   = 45 * time.Second
+)
 
 type controlApprovalResult struct {
 	resolution operator.ApprovalResolution
@@ -168,14 +174,17 @@ var _ = Describe("Control runtime contract", func() {
 		Expect(suppressedObservedAt).To(Equal(persistedObservedAt),
 			"poll-only timestamp changes must not force another durable transaction")
 
-		Eventually(func() time.Time {
+		Eventually(func() (time.Time, error) {
 			runtime.RecordFleetContext(ctx, heartbeat)
+			if err := runtime.Health(ctx); err != nil {
+				return time.Time{}, err
+			}
 			var refreshedObservedAt time.Time
-			Expect(verificationPool.QueryRow(ctx,
+			err := verificationPool.QueryRow(ctx,
 				"SELECT observed_at FROM candaceos_nodes WHERE node_id = $1", "node-a",
-			).Scan(&refreshedObservedAt)).To(Succeed())
-			return refreshedObservedAt
-		}, 10*time.Second, 100*time.Millisecond).Should(BeTemporally("~", heartbeat.UpdatedAt, time.Microsecond),
+			).Scan(&refreshedObservedAt)
+			return refreshedObservedAt, err
+		}, contractHeartbeatBudget, 100*time.Millisecond).Should(BeTemporally("~", heartbeat.UpdatedAt, time.Microsecond),
 			"the periodic heartbeat must still refresh durable fleet observations")
 
 		healthy, err := runtime.Snapshot(ctx)
@@ -485,7 +494,7 @@ func openControlContractStore(ctx SpecContext) (*store.Store, *pgxpool.Pool, str
 
 func contractPersistenceTiming() *candaceosv1.PersistenceTiming {
 	return &candaceosv1.PersistenceTiming{
-		FleetPollIntervalNanoseconds: int64(200 * time.Millisecond),
+		FleetPollIntervalNanoseconds: int64(contractFleetPollInterval),
 	}
 }
 

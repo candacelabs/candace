@@ -24,6 +24,10 @@ printf '%s\n' \
   '    info) exit 0 ;;' \
   '  esac' \
   'fi' \
+  'if [[ "${CANDACEOS_DOCKER_STUB_MODE:-}" == complete ]]; then' \
+  '  [[ "$*" != "compose version --short" ]] || printf "2.24.4\\n"' \
+  '  exit 0' \
+  'fi' \
   'exit 97' >"$stub_dir/docker"
 chmod 0755 "$stub_dir/docker"
 
@@ -101,3 +105,25 @@ cmp -s "$state_root/.env.before" "$state_root/.env" || {
 }
 
 printf 'CandaceOS installer validation tests passed without Docker.\n'
+
+# Reinstalling the same external state keeps its private topology. Removing
+# that override explicitly restores the base topology; no secret is in argv.
+state_root="$test_root/install-override"
+mkdir -p "$state_root"
+printf 'services: {}\n' >"$state_root/compose.override.yaml"
+chmod 0600 "$state_root/compose.override.yaml"
+for phase in install update rollback; do
+  docker_log="$test_root/docker-override-$phase"
+  if [[ "$phase" == rollback ]]; then
+    mv "$state_root/compose.override.yaml" "$state_root/compose.override.yaml.disabled"
+  fi
+  env PATH="$stub_dir:$PATH" CANDACEOS_DOCKER_STUB_LOG="$docker_log" \
+    CANDACEOS_DOCKER_STUB_MODE=complete CANDACEOS_STATE_ROOT="$state_root" \
+    "$script_dir/install.sh" >"$test_root/override-install.out" 2>"$test_root/override-install.err"
+  if [[ "$phase" == rollback ]]; then
+    ! grep -Fq -- '-f '"$state_root/compose.override.yaml" "$docker_log"
+  else
+    grep -F -- ' up -d ' "$docker_log" | grep -Fq -- '-f '"$state_root/compose.override.yaml"
+  fi
+done
+printf 'CandaceOS persistent override install/update/rollback tests passed.\n'

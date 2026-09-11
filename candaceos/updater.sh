@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+source "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose-files.sh"
+
 deploy_root=${CANDACEOS_DEPLOY_ROOT:?CANDACEOS_DEPLOY_ROOT is required}
 token_file=${CANDACEOS_GITHUB_TOKEN_FILE:?CANDACEOS_GITHUB_TOKEN_FILE is required}
 repository=${CANDACEOS_REPOSITORY:?CANDACEOS_REPOSITORY is required as owner/name}
@@ -269,25 +271,26 @@ affects_candaceos() {
 }
 
 verify_deployment() {
-  local source_dir=$1 service running agent_id agent_health
+  local source_dir=$1 service running agent_id agent_health configured
+  candaceos_compose_files "$source_dir/candace/candaceos" "$state_root" || return 1
+  local compose=(docker compose --project-directory "$source_dir/candace/candaceos"
+    --env-file "$state_root/.env" "${candaceos_compose_file_args[@]}"
+    --profile dry-run --profile copilot)
+  configured=$(CANDACEOS_STATE_ROOT="$state_root" "${compose[@]}" config --services) || return 1
   curl --fail --silent --show-error --max-time 5 \
     http://127.0.0.1:7780/healthz >/dev/null || return 1
   running=$(CANDACEOS_STATE_ROOT="$state_root" \
-    docker compose --project-directory "$source_dir/candace/candaceos" \
-      --env-file "$state_root/.env" -f "$source_dir/candace/candaceos/compose.yaml" \
-      -f "$source_dir/candace/candaceos/compose.environment.generated.yaml" \
-      --profile dry-run --profile copilot ps --services --filter status=running) || return 1
-  for service in postgres warden agent-dry-run copilot core; do
+    "${compose[@]}" ps --services --filter status=running) || return 1
+  local required=(warden agent-dry-run copilot core)
+  if grep -qx postgres <<<"$configured"; then required+=(postgres); fi
+  for service in "${required[@]}"; do
     grep -qx "$service" <<<"$running" || {
       log "required service is not running: $service"
       return 1
     }
   done
   agent_id=$(CANDACEOS_STATE_ROOT="$state_root" \
-    docker compose --project-directory "$source_dir/candace/candaceos" \
-      --env-file "$state_root/.env" -f "$source_dir/candace/candaceos/compose.yaml" \
-      -f "$source_dir/candace/candaceos/compose.environment.generated.yaml" \
-      --profile dry-run --profile copilot ps -q agent-dry-run) || return 1
+    "${compose[@]}" ps -q agent-dry-run) || return 1
   [[ -n "$agent_id" ]] || return 1
   agent_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}absent{{end}}' "$agent_id") || return 1
   if [[ "$agent_health" != absent ]]; then
@@ -320,6 +323,13 @@ verify_deployment() {
 
 deploy_revision() {
   local revision=$1
+  if [[ -e "$state_root/compose.override.yaml" || -L "$state_root/compose.override.yaml" ]]; then
+    if ! git -C "$repo_dir" show "$revision:candace/candaceos/install.sh" | \
+      grep -F 'candaceos_compose_files "$script_dir" "$state_root"' >/dev/null; then
+      log "refusing revision without persistent Compose override support"
+      return 1
+    fi
+  fi
   checkout_revision "$revision" || return 1
   log "deploying exact revision $revision with real Copilot and dry-run execution"
   if ! COPILOT_GITHUB_TOKEN="$(cat "$token_file")" \

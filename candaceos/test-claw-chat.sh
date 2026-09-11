@@ -13,7 +13,9 @@ die() {
 for command in curl docker grep mktemp openssl sed; do
   command -v "$command" >/dev/null || die "$command is required"
 done
-docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable"
+# Keep the daemon's diagnostic: a missing socket, permission failure, and a
+# failed daemon startup need different repairs, not an undifferentiated retry.
+docker info >/dev/null || die "the Docker daemon is not reachable"
 [[ -r "$environment_projection" ]] || die "generated environment projection is missing"
 # shellcheck source=environment.generated.sh
 source "$environment_projection"
@@ -234,8 +236,9 @@ docker run --rm \
   --read-only \
   --user "${!candaceos_env_uid}:${!candaceos_env_gid}" \
   --network "${project_name}_opencode" \
-  --tmpfs /tmp:rw,exec,nosuid,size=1g \
+  --tmpfs /tmp:rw,exec,nosuid,size=4g \
   --env CGO_ENABLED=0 \
+  --env GOMAXPROCS=2 \
   --env GOCACHE=/tmp/go-build \
   --env GOMODCACHE=/tmp/go-mod \
   --env GOFLAGS=-mod=readonly \
@@ -246,7 +249,7 @@ docker run --rm \
   --workdir /src \
   --entrypoint /usr/local/go/bin/go \
   "$core_image" \
-  test \
+  test -p 1 \
     ./services/candaceos/harness/opencode \
     ./services/candaceos/httpapi \
     ./services/candaceos/webui \
