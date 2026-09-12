@@ -10,6 +10,7 @@
 # Bazel's output base lives outside the checkout so a build never leaves
 # anything in the worktree except the bazel-* convenience symlinks, which
 # .gitignore covers. Set CANDACE_BAZEL_CACHE to move it.
+# Set CANDACE_BAZEL_WORKSPACE to build another workspace with the same launcher.
 #
 # Usage: tools/bazel.sh <bazel arguments...>
 set -Eeuo pipefail
@@ -25,17 +26,31 @@ command -v docker >/dev/null 2>&1 || die 'docker is required to run the pinned B
 [[ $# -gt 0 ]] || die 'no Bazel arguments were given'
 
 module_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+workspace_root=$(cd -- "${CANDACE_BAZEL_WORKSPACE:-$module_root}" && pwd -P)
+[[ -f "$workspace_root/MODULE.bazel" ]] || die 'workspace requires MODULE.bazel'
+# Distinct container paths keep this module's output base separate from an
+# explicitly selected workspace while sharing the repository download cache.
+workspace_mount=/candace
+if [[ "$workspace_root" != "$module_root" ]]; then
+  workspace_mount=/workspace
+fi
 cache_root=${CANDACE_BAZEL_CACHE:-${TMPDIR:-/tmp}/candace-bazel-cache}
 mkdir -p -- "$cache_root/home" "$cache_root/output"
+output_root=/bazel-output
+if [[ "$workspace_root" != "$module_root" ]]; then
+  # Host-visible output paths make the selected workspace's bazel-bin links
+  # usable after the container exits, including by CI artifact uploads.
+  output_root=$(cd -- "$cache_root/output" && pwd -P)
+fi
 
 exec docker run --rm \
   --user "$(id -u):$(id -g)" \
   --env HOME=/bazel-home \
   --env USER="${USER:-bazel}" \
   --volume "$cache_root/home:/bazel-home" \
-  --volume "$cache_root/output:/bazel-output" \
-  --volume "$module_root:/candace" \
-  --workdir /candace \
+  --volume "$cache_root/output:$output_root" \
+  --volume "$workspace_root:$workspace_mount" \
+  --workdir "$workspace_mount" \
   --entrypoint /usr/local/bin/bazel \
   "$bazel_image" \
-  --output_user_root=/bazel-output "$@"
+  --output_user_root="$output_root" "$@"
