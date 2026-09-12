@@ -44,6 +44,7 @@ if [[ "$workspace_root" != "$module_root" ]]; then
 fi
 
 exec docker run --rm \
+  --network "${CANDACE_BAZEL_NETWORK:-default}" \
   --user "$(id -u):$(id -g)" \
   --env HOME=/bazel-home \
   --env USER="${USER:-bazel}" \
