@@ -9,10 +9,12 @@ is compiled into your binary and served by the same handler that serves the
 connection, so there is no CDN and no npm. The only generator on your path is
 templ, compiling your own views.
 
-**It is v0.1.** The API makes no compatibility commitment yet, it is not
-published — depend on it with a `replace` directive against a checkout — and
-several `livetest` helpers are ledgered but not implemented. The documentation
-says so where it matters rather than in a footnote.
+**It is v0.1.** The API makes no compatibility commitment yet. It ships inside
+the `github.com/candacelabs/candace` module; pin an `export-<sha12>` snapshot as
+described in the [consumer guide](../../docs/extending.md), or use a local
+`replace` directive while developing against a checkout. Several `livetest`
+helpers are ledgered but not implemented; their documentation identifies those
+limits.
 
 ---
 
