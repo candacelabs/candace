@@ -41,6 +41,12 @@ go_test(
         "table_test.go",
         "translator_test.go",
     ],
+    data = glob(["testdata/**"]),
+    embedsrcs = [
+        "testdata/indexes.sql",
+        "testdata/indexes_explicit.sql",
+        "testdata/indexes_unsupported.sql",
+    ],
     deps = [
         ":pgmem",
         "@com_github_onsi_ginkgo_v2//:ginkgo",

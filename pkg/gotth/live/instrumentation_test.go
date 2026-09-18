@@ -1,8 +1,15 @@
 package live_test
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"time"
 
+	"github.com/candacelabs/candace/pkg/patience"
+	"github.com/coder/websocket"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.opentelemetry.io/otel/trace"
@@ -12,6 +19,8 @@ import (
 	pb "github.com/candacelabs/candace/pkg/gotth/internal/protocol/gotthlivepb"
 	"github.com/candacelabs/candace/pkg/gotth/live"
 )
+
+var connectionCountBudget = patience.Budget{Within: 5 * time.Second}
 
 // The evidence for the two exit criteria that previously rested on no-op
 // providers: the metric set flowing, and one trace spanning the path.
@@ -39,6 +48,47 @@ var _ = Describe("Instrumentation", func() {
 	})
 
 	Describe("metrics", func() {
+		It("counts connections independently of identity and releases each registration", func() {
+			Expect(app.app.ActiveConnections()).To(Equal(1))
+			second := app.again()
+			DeferCleanup(func() { _ = second.conn.CloseNow() })
+			Expect(app.app.ActiveConnections()).To(Equal(2))
+			Expect(metrics.Total("gotthlive_sessions_active")).To(Equal(float64(2)))
+			Expect(second.conn.CloseNow()).To(Succeed())
+			patience.Await(GinkgoT(), "one remaining browser connection", connectionCountBudget,
+				app.app.ActiveConnections, func(count int) bool { return count == 1 })
+			Expect(metrics.Total("gotthlive_sessions_active")).To(Equal(float64(1)))
+			Expect(app.conn.CloseNow()).To(Succeed())
+			Expect(app.app.Close(app.ctx)).To(Succeed())
+			Expect(app.app.ActiveConnections()).To(BeZero())
+			Expect(metrics.Total("gotthlive_sessions_active")).To(BeZero())
+			Expect(metrics.Total("gotthlive_connections_total")).To(Equal(float64(2)))
+		})
+
+		It("releases the registration when initialization fails", func() {
+			cfg := validConfig()
+			failedMetrics := obstest.NewMetrics()
+			cfg.Metrics = failedMetrics
+			cfg.Init = func(ctx context.Context, peer live.Session[user]) (counter, []live.Effect[user], error) {
+				return counter{}, nil, errors.New("initialization failed")
+			}
+			failed, err := live.New(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			server := httptest.NewServer(failed.Handler())
+			DeferCleanup(server.Close)
+			connection, _, err := websocket.Dial(app.ctx, "ws"+strings.TrimPrefix(server.URL, "http"),
+				&websocket.DialOptions{HTTPHeader: http.Header{"Origin": {"https://app.example"}}, Subprotocols: []string{"gotth-live.v1"}})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = connection.CloseNow() })
+			_, _, err = connection.Read(app.ctx)
+			Expect(err).NotTo(HaveOccurred(), "initialization failure is reported before the close")
+			Expect(connection.CloseNow()).To(Succeed())
+			Expect(failed.Close(app.ctx)).To(Succeed())
+			Expect(failed.ActiveConnections()).To(BeZero())
+			Expect(failedMetrics.Total("gotthlive_sessions_active")).To(BeZero())
+			Expect(failedMetrics.Total("gotthlive_connections_total")).To(Equal(float64(1)))
+		})
+
 		It("registers the whole catalogue from one Config field", func() {
 			// An instrument that is never created cannot ever be emitted, and
 			// that failure is silent at runtime — so the registration is

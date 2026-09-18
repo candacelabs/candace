@@ -28,11 +28,12 @@ command -v docker >/dev/null 2>&1 || die 'docker is required to run the pinned B
 module_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 workspace_root=$(cd -- "${CANDACE_BAZEL_WORKSPACE:-$module_root}" && pwd -P)
 [[ -f "$workspace_root/MODULE.bazel" ]] || die 'workspace requires MODULE.bazel'
-# Distinct container paths keep this module's output base separate from an
-# explicitly selected workspace while sharing the repository download cache.
+# Bazel keys output bases by the container workspace path. Each selected host
+# workspace needs a distinct identity, or a second package replaces the first
+# package's bazel-bin outputs. Keep the shared download cache.
 workspace_mount=/candace
 if [[ "$workspace_root" != "$module_root" ]]; then
-  workspace_mount=/workspace
+  workspace_mount="/workspace/$(printf '%s' "$workspace_root" | sha256sum | cut -c1-16)"
 fi
 cache_root=${CANDACE_BAZEL_CACHE:-${TMPDIR:-/tmp}/candace-bazel-cache}
 mkdir -p -- "$cache_root/home" "$cache_root/output"

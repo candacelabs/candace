@@ -11,7 +11,8 @@ import (
 	liquidproto "github.com/candacelabs/candace/pkg/liquidproto"
 )
 
-// ValidateRetention validates Liquid Proto field predicates.
+// ValidateRetention checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateRetention(message *Retention) error {
 	if message == nil {
 		return fmt.Errorf("ValidateRetention: nil *Retention")

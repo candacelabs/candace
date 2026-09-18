@@ -30,7 +30,7 @@ measured surface.
 
 | | `live` (exact) | `live/livetest` (ceiling) |
 |---|---:|---:|
-| Exported identifiers (types, funcs, methods, consts, vars) | **59** | 37 |
+| Exported identifiers (types, funcs, methods, consts, vars) | **60** | 37 |
 | Exported struct fields | **54** | 33 |
 
 *The `live` split was corrected from 41/48 to 40/49 when `tools/apisurface`
@@ -97,6 +97,7 @@ and was wrong twice over (REV-DEL finding 8, ruled at
 | `New[S](Config[S]) (*App[S], error)` | func | Validates a `Config` and returns a mounted application. Errors on duplicate fragment IDs, missing security hooks, and unregistered effect handling. **`Config.Init` is the one field it fills in rather than refusing** — see §1.1. | stable | FR-33 |
 | `MustNew[S](Config[S]) *App[S]` | func | `New` for a caller with nowhere to put the error: returns the application, or **panics with the `*ConfigError` `New` would have returned**. For `main` and package-level initialisation, where a `Config` is a literal in the source and every failure is a startup mistake in it. `template.Must`'s shape and naming. | stable | **FR-53** |
 | `App[S]` | struct | A validated live application. Safe for concurrent use. | stable | FR-33 |
+| `(*App[S]).ActiveConnections() int` | method | Reads this application's registered WebSocket count, including cleanup, under the registry lock. Excludes refused handshakes and does not count users or tabs. CSF inspection consumes it without requiring a metrics exporter. | stable | FR-38 |
 | `(*App[S]).Handler() http.Handler` | method | Returns the `http.Handler` that serves the live connection and the client runtime. Mountable under any router. **The live route returns at the upgrade** — the session runs on a goroutine the library owns, so wrapping middleware completes at the handshake and the session runs under `context.WithoutCancel` of the request context (`5a2ca417`, C-38). | stable | FR-33 |
 | `(*App[S]).PageHandler(page func(state S) templ.Component) http.Handler` | method | Serves the first paint: on every request it loads state through `Config.Init` — with the identity `Config.Authenticate` derives from that request and the zero session `ID` — and renders the given component function from it. **It cannot be given a state value, only the function that renders one**, which is what makes QA-1's F-4 unwritable: `templ.Handler(Page(State{}))` freezes the zero state at registration and contradicts every `Init` that loads anything. `Init`'s effects are discarded on a page render. 401 when `Authenticate` refuses (the status that visitor's upgrade would get), 500 when the load or the render fails, buffered so a half-written document is never a 200. | experimental | **FR-53**, QA-1 F-4, FR-33 |
 | `(*App[S]).Mux(mountPath string, page http.Handler) http.Handler` | method | The three registrations of a single-application server in one call: the upgrade at exactly `mountPath`, the runtime and dev routes on the subtree under it, and `page` on the catch-all. Makes the two silent mounting failures `docs/quickstart.md` §2 measures — a missing subtree registration, and the `http.StripPrefix` repair that turns the upgrade into an unfollowable 307 — inexpressible. **Panics** on a nil page, on a `mountPath` `Script` would reject, and on `"/"`, on the precedent of `http.ServeMux.Handle`, which panics for the same class. | experimental | **FR-53**, FR-33 |
@@ -585,6 +586,14 @@ patches from its own code rather than from telemetry, the hook lands in Phase 2
 ---
 
 ## 10. Changelog
+
+### Connection inspection — 2026-09-17
+
+`App.ActiveConnections` exposes the existing connection registry to in-process
+dashboards and collectors. One WebSocket counts once regardless of widget or
+effect count. A refused handshake never enters the registry; a disconnect remains
+counted until its connection cleanup deregisters it. This adds one identifier
+and no configuration fields.
 
 ### The identity stops being erased — 2026-09-03: `Session` is generic, `Identity()` returns the application's own type
 

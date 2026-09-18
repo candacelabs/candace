@@ -55,8 +55,9 @@ type Result struct {
 	// in the same order. They are unexported because installing one is the
 	// renderer's business and the two methods below are the only way to ask
 	// for it.
-	updated []int
-	hashes  []uint64
+	updated     []int
+	hashes      []uint64
+	collections []collectionResult
 }
 
 // FragmentObserver is called around one fragment's render. It returns the
@@ -84,10 +85,14 @@ type FragmentObserver func(ctx context.Context, fragmentID string) (context.Cont
 // budget, to save bytes on a link the client is already diffing against its
 // own DOM.
 type Renderer struct {
-	reg    *Registry
-	hashes []uint64
-	dirty  bitset
-	buf    bytes.Buffer
+	reg         *Registry
+	hashes      []uint64
+	dirty       bitset
+	buf         bytes.Buffer
+	collections map[int]collectionCache
+	childDirty  map[int]map[string]bool
+	parentDirty bitset
+	known       map[string]struct{}
 
 	// w is the handle application render code receives, allocated once per
 	// session rather than once per fragment: it is a pointer, so passing it as
@@ -113,12 +118,16 @@ func (v *Renderer) Observe(fn FragmentObserver) { v.observe = fn }
 // against.
 func (r *Registry) NewRenderer() *Renderer {
 	v := &Renderer{
-		reg:    r,
-		hashes: make([]uint64, len(r.frags)),
-		dirty:  newBitset(len(r.frags)),
+		reg:         r,
+		hashes:      make([]uint64, len(r.frags)),
+		dirty:       newBitset(len(r.frags)),
+		parentDirty: newBitset(len(r.frags)),
+		collections: make(map[int]collectionCache),
+		childDirty:  make(map[int]map[string]bool),
 	}
 	v.w = &fragmentWriter{v: v}
-	v.dirty.setAll(len(r.frags))
+	v.MarkAll()
+	v.publishIDs()
 	return v
 }
 
@@ -157,15 +166,29 @@ func (w *fragmentWriter) Write(p []byte) (int, error) {
 }
 
 // MarkAll marks every fragment dirty.
-func (v *Renderer) MarkAll() { v.dirty.setAll(len(v.reg.frags)) }
+func (v *Renderer) MarkAll() {
+	v.dirty.setAll(len(v.reg.frags))
+	v.parentDirty.setAll(len(v.reg.frags))
+}
 
 // MarkID marks one fragment dirty and reports whether it is declared.
 func (v *Renderer) MarkID(id string) bool {
-	i, ok := v.reg.index[id]
-	if ok {
-		v.dirty.set(i)
+	if index, known := v.reg.index[id]; known {
+		v.dirty.set(index)
+		v.parentDirty.set(index)
+		return true
 	}
-	return ok
+	for index, collection := range v.collections {
+		if _, known := collection.hashes[id]; known {
+			if v.childDirty[index] == nil {
+				v.childDirty[index] = make(map[string]bool)
+			}
+			v.childDirty[index][id] = true
+			v.dirty.set(index)
+			return true
+		}
+	}
+	return false
 }
 
 // Mark consults each fragment's change declaration for a transition and marks
@@ -179,6 +202,10 @@ func (v *Renderer) MarkID(id string) bool {
 func (v *Renderer) Mark(prev, next any) []Failure {
 	var failed []Failure
 	for i, f := range v.reg.frags {
+		if f.Children != nil {
+			failed = append(failed, v.markCollection(i, f, prev, next)...)
+			continue
+		}
 		if f.Dirty == nil {
 			v.dirty.set(i)
 			continue
@@ -231,6 +258,12 @@ func (v *Renderer) Commit(res Result) {
 	for k, i := range res.updated {
 		v.hashes[i] = res.hashes[k]
 	}
+	for _, collection := range res.collections {
+		v.collections[collection.index] = collection.cache
+	}
+	if len(res.collections) != 0 {
+		v.publishIDs()
+	}
 }
 
 // Discard reverses a pass whose markup never reached the transport: the
@@ -245,6 +278,19 @@ func (v *Renderer) Commit(res Result) {
 func (v *Renderer) Discard(res Result) {
 	for _, i := range res.updated {
 		v.dirty.set(i)
+	}
+	for _, collection := range res.collections {
+		v.dirty.set(collection.index)
+		if collection.whole {
+			v.parentDirty.set(collection.index)
+		} else {
+			if v.childDirty[collection.index] == nil {
+				v.childDirty[collection.index] = make(map[string]bool)
+			}
+			for _, id := range collection.dirty {
+				v.childDirty[collection.index][id] = true
+			}
+		}
 	}
 }
 
@@ -273,6 +319,10 @@ func (v *Renderer) render(ctx context.Context, state any, all bool) Result {
 			continue
 		}
 		v.dirty.clear(i)
+		if f.Children != nil {
+			v.renderCollection(ctx, state, i, f, all, &res)
+			continue
+		}
 
 		// One observation per fragment considered, which is the unit FR-36's
 		// gotthlive.render.fragment names. Suppressed and failed fragments are

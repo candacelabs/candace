@@ -227,8 +227,8 @@ func (a *App[S, I]) Mux(mountPath string, page http.Handler) http.Handler {
 	// The exact pattern is the upgrade and the subtree is the assets. Both are
 	// this application's own handler, which routes by path suffix and is
 	// deliberately not told the prefix.
-	mux.Handle(mount, a.mux)
-	mux.Handle(mount+"/", a.mux)
+	mux.Handle(mount, a.routeHandler)
+	mux.Handle(mount+"/", a.routeHandler)
 	// The catch-all: the page, and every path the two patterns above do not
 	// claim — /favicon.ico included.
 	mux.Handle("/", page)

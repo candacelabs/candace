@@ -90,11 +90,21 @@ type ClusterHeartbeatsState struct {
 // look at an identity. It is a type parameter because the SDK's contract
 // carries one — live.Session stopped erasing the application's identity type
 // on 2026-09-03 — and a generated widget must fit whatever host registers it.
-type ClusterHeartbeats[I live.IIdentity] struct{}
+type ClusterHeartbeats[I live.IIdentity] struct {
+	region string
+}
 
 // NewClusterHeartbeats returns the widget a host registers, instantiated on that
 // host's own identity type.
-func NewClusterHeartbeats[I live.IIdentity]() *ClusterHeartbeats[I] { return &ClusterHeartbeats[I]{} }
+func NewClusterHeartbeats[I live.IIdentity]() *ClusterHeartbeats[I] {
+	return NewClusterHeartbeatsAt[I](ClusterHeartbeatsRegion)
+}
+
+// NewClusterHeartbeatsAt gives one instance its host-assigned region. The host validates
+// region syntax and uniqueness when assembling its live configuration.
+func NewClusterHeartbeatsAt[I live.IIdentity](region string) *ClusterHeartbeats[I] {
+	return &ClusterHeartbeats[I]{region: region}
+}
 
 // The contract, asserted at one instantiation. Anonymous is the identity a
 // host with no accounts uses, and any other I satisfies the same interfaces:
@@ -104,14 +114,14 @@ var (
 	_ widget.IDirtyDeclarer[ClusterHeartbeatsState]                  = (*ClusterHeartbeats[live.AnonymousIdentity])(nil)
 )
 
-// Register declares the widget, once per process and before any session.
+// Register declares this instance's definition and assigned region.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
 func (instance *ClusterHeartbeats[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     ClusterHeartbeatsName,
-		Region:   ClusterHeartbeatsRegion,
+		Region:   instance.region,
 		Events:   []string{ClusterHeartbeatsEventToggleMotion},
 		Internal: []string{ClusterHeartbeatsEventSnapshot},
 		Streams: []widget.StreamDeclaration{
@@ -186,7 +196,7 @@ func (instance *ClusterHeartbeats[I]) Reduce(
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
 func (instance *ClusterHeartbeats[I]) Render(state ClusterHeartbeatsState) templ.Component {
-	return ClusterHeartbeatsView(state)
+	return ClusterHeartbeatsViewAt(state, instance.region)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
@@ -436,7 +446,12 @@ func (state ClusterHeartbeatsState) MotionActiveText() string {
 // element: the scene carries this as its id, the tick advances, and the picture
 // moves exactly as often as the data does.
 func (state ClusterHeartbeatsState) MotionTickID() string {
-	return ClusterHeartbeatsRegion + "-tick-" + strconv.FormatUint(state.Sequence, 10)
+	return state.MotionTickIDAt(ClusterHeartbeatsRegion)
+}
+
+// MotionTickIDAt namespaces the scene's tick identity under its live instance.
+func (state ClusterHeartbeatsState) MotionTickIDAt(region string) string {
+	return region + "-tick-" + strconv.FormatUint(state.Sequence, 10)
 }
 
 // ConnectionTone is the "connection" indicator's tone: positive while its predicate holds, warning otherwise.

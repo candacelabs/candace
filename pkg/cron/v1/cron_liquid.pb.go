@@ -19,7 +19,8 @@ var (
 	_liquidInvocationJobNameRe0      = regexp.MustCompile("^[a-z][a-z0-9._/-]*$")
 )
 
-// ValidateTimeOfDay validates Liquid Proto field predicates.
+// ValidateTimeOfDay checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateTimeOfDay(message *TimeOfDay) error {
 	if message == nil {
 		return fmt.Errorf("ValidateTimeOfDay: nil *TimeOfDay")
@@ -43,7 +44,8 @@ func ValidateTimeOfDay(message *TimeOfDay) error {
 	return nil
 }
 
-// ValidateMonthlyDaySchedule validates Liquid Proto field predicates.
+// ValidateMonthlyDaySchedule checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateMonthlyDaySchedule(message *MonthlyDaySchedule) error {
 	if message == nil {
 		return fmt.Errorf("ValidateMonthlyDaySchedule: nil *MonthlyDaySchedule")
@@ -59,7 +61,8 @@ func ValidateMonthlyDaySchedule(message *MonthlyDaySchedule) error {
 	return nil
 }
 
-// ValidateIntervalSchedule validates Liquid Proto field predicates.
+// ValidateIntervalSchedule checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateIntervalSchedule(message *IntervalSchedule) error {
 	if message == nil {
 		return fmt.Errorf("ValidateIntervalSchedule: nil *IntervalSchedule")
@@ -75,7 +78,8 @@ func ValidateIntervalSchedule(message *IntervalSchedule) error {
 	return nil
 }
 
-// ValidateRawCronSchedule validates Liquid Proto field predicates.
+// ValidateRawCronSchedule checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateRawCronSchedule(message *RawCronSchedule) error {
 	if message == nil {
 		return fmt.Errorf("ValidateRawCronSchedule: nil *RawCronSchedule")
@@ -91,7 +95,8 @@ func ValidateRawCronSchedule(message *RawCronSchedule) error {
 	return nil
 }
 
-// ValidateScheduleSpec validates Liquid Proto field predicates.
+// ValidateScheduleSpec checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateScheduleSpec(message *ScheduleSpec) error {
 	if message == nil {
 		return fmt.Errorf("ValidateScheduleSpec: nil *ScheduleSpec")
@@ -107,7 +112,8 @@ func ValidateScheduleSpec(message *ScheduleSpec) error {
 	return nil
 }
 
-// ValidateJobDefinition validates Liquid Proto field predicates.
+// ValidateJobDefinition checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateJobDefinition(message *JobDefinition) error {
 	if message == nil {
 		return fmt.Errorf("ValidateJobDefinition: nil *JobDefinition")
@@ -123,7 +129,8 @@ func ValidateJobDefinition(message *JobDefinition) error {
 	return nil
 }
 
-// ValidateInvocation validates Liquid Proto field predicates.
+// ValidateInvocation checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateInvocation(message *Invocation) error {
 	if message == nil {
 		return fmt.Errorf("ValidateInvocation: nil *Invocation")
@@ -147,7 +154,8 @@ func ValidateInvocation(message *Invocation) error {
 	return nil
 }
 
-// ValidateRunSummary validates Liquid Proto field predicates.
+// ValidateRunSummary checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateRunSummary(message *RunSummary) error {
 	if message == nil {
 		return fmt.Errorf("ValidateRunSummary: nil *RunSummary")
@@ -179,7 +187,8 @@ func ValidateRunSummary(message *RunSummary) error {
 	return nil
 }
 
-// ValidateJobStatus validates Liquid Proto field predicates.
+// ValidateJobStatus checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateJobStatus(message *JobStatus) error {
 	if message == nil {
 		return fmt.Errorf("ValidateJobStatus: nil *JobStatus")

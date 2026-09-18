@@ -1,12 +1,18 @@
-// Package session owns live session state, one goroutine at a time.
+// Package session implements the service that maintains one WebSocket
+// connection's widget state.
 //
-// The actor is the lock. Each session is a single goroutine and the state it
-// holds is reachable from nowhere else, so there is no mutex guarding session
-// state anywhere in this library. That goroutine selects over three typed,
-// bounded inputs — a mailbox of events and effect results, a channel of
-// client acknowledgements, and a heartbeat ticker — and exactly one function
-// writes to the mailbox, which is what makes the per-event authorization hook
-// impossible to route around.
+// Actor, in actor.go, is the existing Go type for this service. Its parent in
+// internal/wsx starts the service and waits for its Run method during cleanup.
+// The service lives for one connection and processes events on one goroutine.
+// All widgets on that connection share its event loop and transport.
+// Asynchronous effects may add goroutines.
+//
+// The loop serializes reducer and renderer access to its state values. Pointers
+// inside those values may still alias objects elsewhere: shared mutable objects
+// require synchronization or exclusive ownership by agreement. The loop selects
+// over three typed, bounded inputs: events and effect results, client
+// acknowledgements, and heartbeat ticks. Browser events pass authorization before
+// entering the mailbox.
 //
 // # One step
 //
@@ -31,11 +37,10 @@
 //
 // # Panics
 //
-// Go has no supervision tree, so every goroutine this package starts is
-// started through one helper that installs a recover, a counter, and the
-// shutdown wait-group registration. A bare go statement in this library is a
-// defect. A recovered panic contains to one session; a site that panics
-// repeatedly closes that session and leaves every other session serving.
+// Effect goroutines start through one helper that installs recovery, a counter,
+// and shutdown wait-group registration. The transport owns the loop separately;
+// bounded effect draining also uses a waiter goroutine. Repeated panics at one
+// site close that connection while other connections continue serving.
 //
 // # Status
 //

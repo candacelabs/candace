@@ -1,5 +1,10 @@
 // Command widgetc validates widget documents and prints their findings.
 //
+// Go's internal import rule allows packages below pkg/widget to import
+// pkg/widget/internal/uigen. This command is inside that tree, so the import
+// is permitted even though widgetc and uigen are different packages. Packages
+// outside pkg/widget cannot import uigen, including others in the same module.
+//
 // It is contributor tooling for this repository, not a product surface: a
 // consumer of the widget package never runs it, and nothing outside this module
 // depends on its flags, its output or its exit status. The library entry point

@@ -1,6 +1,7 @@
 package pgmem_test
 
 import (
+	_ "embed"
 	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,7 +11,52 @@ import (
 	"github.com/candacelabs/candace/pkg/pgmem"
 )
 
+//go:embed testdata/indexes.sql
+var indexFixture string
+
+//go:embed testdata/indexes_explicit.sql
+var explicitIndexFixture string
+
+//go:embed testdata/indexes_unsupported.sql
+var unsupportedIndexFixture string
+
 var _ = Describe("ITranslator boundary", func() {
+	It("enforces composite foreign keys and partial unique indexes", func(ctx SpecContext) {
+		database := pgmem.MustNew()
+		DeferCleanup(database.Close)
+		public := database.Public()
+		Expect(public.NoneContext(ctx, indexFixture)).To(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO parents VALUES ('one', 1), ('two', 1)`)).To(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO parents VALUES ('one', 1)`)).NotTo(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO children VALUES (1, 'one', 1)`)).To(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO children VALUES (2, 'three', 1)`)).NotTo(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO deliveries VALUES (1, 'same', 'pending', NULL, 1), (2, 'same', 'accepted', NULL, 2)`)).To(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO deliveries VALUES (3, 'same', 'pending', NULL, 3)`)).NotTo(Succeed())
+		Expect(public.NoneContext(ctx, `UPDATE deliveries SET status = 'accepted' WHERE id = 1`)).To(Succeed())
+		Expect(public.NoneContext(ctx, `INSERT INTO deliveries VALUES (3, 'same', 'pending', NULL, 3)`)).To(Succeed())
+	})
+
+	It("keeps index names and explicitly qualified tables in their owning schema", func(ctx SpecContext) {
+		database := pgmem.MustNew()
+		DeferCleanup(database.Close)
+		audit, err := database.CreateSchema(ctx, "audit")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(database.Public().NoneContext(ctx, indexFixture)).To(Succeed())
+		Expect(audit.NoneContext(ctx, indexFixture)).To(Succeed())
+		Expect(database.Public().NoneContext(ctx, explicitIndexFixture)).To(Succeed())
+		Expect(database.Public().NoneContext(ctx, explicitIndexFixture)).To(Succeed())
+		Expect(audit.NoneContext(ctx, `INSERT INTO deliveries VALUES (1, 'same', 'accepted', NULL, 1)`)).To(Succeed())
+		Expect(audit.NoneContext(ctx, `INSERT INTO deliveries VALUES (2, 'same', 'accepted', NULL, 2)`)).NotTo(Succeed())
+		Expect(database.Public().NoneContext(ctx, `INSERT INTO deliveries VALUES (1, 'same', 'accepted', NULL, 1), (2, 'same', 'accepted', NULL, 2)`)).To(Succeed())
+	})
+
+	It("rejects unsupported index access methods without dropping their semantics", func(ctx SpecContext) {
+		database := pgmem.MustNew()
+		DeferCleanup(database.Close)
+		Expect(database.Public().NoneContext(ctx, indexFixture)).To(Succeed())
+		Expect(database.Public().NoneContext(ctx, unsupportedIndexFixture)).To(MatchError(ContainSubstring("ordinary btree indexes")))
+	})
+
 	It("uses a configured translator before execution", func(ctx SpecContext) {
 		controller := gomock.NewController(GinkgoT())
 		translator := NewMockITranslator(controller)

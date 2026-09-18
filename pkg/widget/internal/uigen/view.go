@@ -59,11 +59,15 @@ func emitView(document *ir.Document, identifiers *names, options Options) []byte
 	fmt.Fprintf(view, "%s\n\n", generatedBy(document))
 	fmt.Fprintf(view, "package %s\n\n", options.Package)
 	view.WriteString("import \"github.com/candacelabs/candace/pkg/gotth/live\"\n\n")
-	fmt.Fprintf(view, "// %s draws the %s widget's live region.\n", identifiers.viewFunc, document.Name)
+	fmt.Fprintf(view, "// %s draws the %s widget's default live region.\n", identifiers.viewFunc, document.Name)
+	fmt.Fprintf(view, "templ %s(state %s) {\n\t@%s(state, %s)\n}\n\n",
+		identifiers.viewFunc, identifiers.stateType, identifiers.viewAtFunc, identifiers.regionConst)
+	fmt.Fprintf(view, "// %s draws one instance in its host-assigned live region.\n", identifiers.viewAtFunc)
 	view.WriteString("//\n")
-	view.WriteString("// Every value in it is a pure read of state, because the same state must render\n")
+	view.WriteString("// Every value in it is a pure read of state and region: equal inputs render\n")
 	view.WriteString("// byte-identical markup: that comparison is what suppresses a patch nobody needs.\n")
-	fmt.Fprintf(view, "templ %s(state %s) {\n", identifiers.viewFunc, identifiers.stateType)
+	fmt.Fprintf(view, "templ %s(state %s, region string) {\n", identifiers.viewAtFunc, identifiers.stateType)
+	fmt.Fprintf(view, "\t{{ titleID := region + %s }}\n", strconv.Quote(titleIDSuffix))
 
 	// A landmark, not a bare container. The element is <aside> and it carries an
 	// accessible name from its own title, which is what makes it a complementary
@@ -73,9 +77,8 @@ func emitView(document *ir.Document, identifiers *names, options Options) []byte
 	// The redundant role="complementary" is deliberately not emitted; the
 	// element already carries it, and ARIA that restates HTML is one more thing
 	// that can disagree with it.
-	fmt.Fprintf(view, "\t<aside { live.Region(%s)... } class=\"widget\" aria-labelledby={ %s }"+
+	fmt.Fprintf(view, "\t<aside { live.Region(region)... } class=\"widget\" aria-labelledby={ titleID }"+
 		" data-widget=%s data-palette=%s",
-		identifiers.regionConst, identifiers.titleIDConst,
 		strconv.Quote(document.Name), strconv.Quote(document.Palette))
 	if document.Motion != nil {
 		// The widget's own half of the motion gate. The host's connection status
@@ -109,7 +112,7 @@ func emitView(document *ir.Document, identifiers *names, options Options) []byte
 // it in CSS and no host can forget to.
 //
 // The title carries the id the landmark above is labelled by, which is why it
-// is emitted as a constant rather than a literal: two spellings of one
+// is derived once from the region rather than repeated: two spellings of one
 // identifier is an aria-labelledby that points at nothing.
 func writeChrome(view *strings.Builder, document *ir.Document, identifiers *names) {
 	view.WriteString("\t\t<header class=\"widget-chrome\">\n")
@@ -118,8 +121,8 @@ func writeChrome(view *strings.Builder, document *ir.Document, identifiers *name
 			labelCall(origin.Label, identifiers))
 	}
 	if title, filled := document.Slot(ir.SlotTitle); filled {
-		fmt.Fprintf(view, "\t\t\t<h2 class=\"widget-title widget-token-ink\" id={ %s }>{ %s }</h2>\n",
-			identifiers.titleIDConst, labelCall(title.Label, identifiers))
+		fmt.Fprintf(view, "\t\t\t<h2 class=\"widget-title widget-token-ink\" id={ titleID }>{ %s }</h2>\n",
+			labelCall(title.Label, identifiers))
 	}
 	view.WriteString("\t\t</header>\n")
 }
@@ -135,7 +138,7 @@ func writeChrome(view *strings.Builder, document *ir.Document, identifiers *name
 func writeScene(view *strings.Builder, document *ir.Document, identifiers *names) {
 	view.WriteString("\t\t<svg class=\"widget-scene\"")
 	if tick(document) != nil {
-		fmt.Fprintf(view, " id={ %s }", stateCall(identifiers.motionTickFunc))
+		fmt.Fprintf(view, " id={ state.%s(region) }", identifiers.motionTickAtFunc)
 	}
 	fmt.Fprintf(view, " viewBox=\"0 0 %d %d\" preserveAspectRatio=\"xMidYMid meet\""+
 		" role=\"img\" aria-label={ %s }>\n",

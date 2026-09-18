@@ -484,15 +484,12 @@ func (m *Metrics) Panic(ctx context.Context, site string) {
 	add(ctx, m.panics, 1, m.siteAttr.of(site))
 }
 
-// ConnectionOpened counts one connection and one live session.
+// ConnectionOpened counts a connection admitted to the live registry.
 func (m *Metrics) ConnectionOpened(ctx context.Context) {
 	if m == nil {
 		return
 	}
 	add(ctx, m.connections, 1, noAttrs)
-	if m.sessionsActive != nil {
-		m.sessionsActive.Add(ctx, 1)
-	}
 }
 
 // ConnectionClosed counts one close by its code label.
@@ -501,9 +498,14 @@ func (m *Metrics) ConnectionClosed(ctx context.Context, codeLabel string) {
 		return
 	}
 	add(ctx, m.connectionsShut, 1, m.codeAttr.of(codeLabel))
-	if m.sessionsActive != nil {
-		m.sessionsActive.Add(ctx, -1)
+}
+
+// SessionsActive follows registry membership, independently of handshake refusals.
+func (m *Metrics) SessionsActive(ctx context.Context, delta int64) {
+	if m == nil || m.sessionsActive == nil {
+		return
 	}
+	m.sessionsActive.Add(ctx, delta)
 }
 
 // Goroutines adjusts the count of goroutines this library owns.

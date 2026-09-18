@@ -496,7 +496,17 @@ the spec in §5 holds.
 | `internal/session/window.go:115` | *"gotth-live: acknowledged sequence N was never emitted (highest is M): acknowledge only patches this session sent"* | ↑ via `onAck`'s `Error` record, which carries `session_id` and `server_seq` | ✓ — `server_seq` is the causal identifier of an acknowledgement; no event exists | ✓ | PASS |
 | `internal/session/window.go:120` | *"gotth-live: acknowledged sequence N is below the high-water mark M: an acknowledgement is cumulative and never goes backwards"* | ↑ via the same record | ✓ | ✓ | PASS |
 
-### 3.7 `internal/render` (8)
+### 3.7 `internal/render` (10; 8 at the original walk)
+
+Keyed collections add two authoring sites (2026-09-17). The startup namespace
+refusal names both overlapping region IDs and asks for disjoint identities; no
+session exists at construction. The child-projection refusal names parent and
+child and requires a unique colon-prefixed identity, a renderer and no nested
+collection. It becomes a render failure under the actor's existing session and
+causal record; production frames retain the generic error. Both provide an
+actionable correction without exposing application state. The error census moves
+`internal/render` from 8 to 10; the historical totals above remain dated.
+
 
 | Site | Message as it reads today | S | C | N | Verdict |
 |---|---|---|---|---|---|

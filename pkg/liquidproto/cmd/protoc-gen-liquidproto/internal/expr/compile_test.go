@@ -21,6 +21,8 @@ var _ = Describe("Compile", func() {
 			Expect(program.Expr).To(Equal(want))
 		},
 		Entry("bounded int", protoreflect.Int32Kind, "this >= 0 && this < 150", "v >= 0 && v < 150"),
+		Entry("signed bounds", protoreflect.Sint64Kind, "this >= -1000000000 && this <= 1000000000", "v >= -1000000000 && v <= 1000000000"),
+		Entry("minimum signed integer", protoreflect.Int64Kind, "this >= -9223372036854775808", "v >= -9223372036854775808"),
 		Entry("enum values", protoreflect.EnumKind, "this == 1 || this == 2", "v == 1 || v == 2"),
 		Entry("string length", protoreflect.StringKind, "len(this) >= 1", "len(v) >= 1"),
 		Entry("bytes length", protoreflect.BytesKind, "len(this) == 32", "len(v) == 32"),
@@ -55,6 +57,10 @@ var _ = Describe("Compile", func() {
 		Entry("division", protoreflect.Int32Kind, "100 / this > 1", "operator / is not part"),
 		Entry("float literal", protoreflect.Int32Kind, "this > 1.0", "float literals are not part"),
 		Entry("overflow", protoreflect.Uint32Kind, "this > 4294967296", "overflows uint32"),
+		Entry("negative unsigned", protoreflect.Uint64Kind, "this > -1", "overflows uint64"),
+		Entry("negative overflow", protoreflect.Int64Kind, "this > -9223372036854775809", "overflows int64"),
+		Entry("negated field", protoreflect.Int64Kind, "-this > 0", "requires an integer literal"),
+		Entry("negated boolean", protoreflect.BoolKind, "-this", "requires an integer literal"),
 		Entry("not boolean", protoreflect.Int64Kind, "this", "must evaluate to bool"),
 	)
 })

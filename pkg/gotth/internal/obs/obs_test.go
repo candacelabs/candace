@@ -89,6 +89,7 @@ var _ = Describe("A disabled configuration", func() {
 			m.Panic(ctx, "reduce")
 			m.ConnectionOpened(ctx)
 			m.ConnectionClosed(ctx, "normal")
+			m.SessionsActive(ctx, 1)
 			m.Goroutines(ctx, 1)
 			m.TrackedBytes(ctx, 1024)
 			m.MailboxDepth(ctx, 3)

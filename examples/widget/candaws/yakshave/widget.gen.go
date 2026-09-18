@@ -92,11 +92,17 @@ type YakshaveState struct {
 // look at an identity. It is a type parameter because the SDK's contract
 // carries one — live.Session stopped erasing the application's identity type
 // on 2026-09-03 — and a generated widget must fit whatever host registers it.
-type Yakshave[I live.IIdentity] struct{}
+type Yakshave[I live.IIdentity] struct {
+	region string
+}
 
 // NewYakshave returns the widget a host registers, instantiated on that
 // host's own identity type.
-func NewYakshave[I live.IIdentity]() *Yakshave[I] { return &Yakshave[I]{} }
+func NewYakshave[I live.IIdentity]() *Yakshave[I] { return NewYakshaveAt[I](YakshaveRegion) }
+
+// NewYakshaveAt gives one instance its host-assigned region. The host validates
+// region syntax and uniqueness when assembling its live configuration.
+func NewYakshaveAt[I live.IIdentity](region string) *Yakshave[I] { return &Yakshave[I]{region: region} }
 
 // The contract, asserted at one instantiation. Anonymous is the identity a
 // host with no accounts uses, and any other I satisfies the same interfaces:
@@ -106,14 +112,14 @@ var (
 	_ widget.IDirtyDeclarer[YakshaveState]                  = (*Yakshave[live.AnonymousIdentity])(nil)
 )
 
-// Register declares the widget, once per process and before any session.
+// Register declares this instance's definition and assigned region.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
 func (instance *Yakshave[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     YakshaveName,
-		Region:   YakshaveRegion,
+		Region:   instance.region,
 		Internal: []string{YakshaveEventRunAdvance, YakshaveEventQuotaUpdate},
 		Streams: []widget.StreamDeclaration{
 			{Name: "runWatch", Source: "widget.candaws.yakshave.runs", Delivers: YakshaveEventRunAdvance},
@@ -193,7 +199,7 @@ func (instance *Yakshave[I]) Reduce(
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
 func (instance *Yakshave[I]) Render(state YakshaveState) templ.Component {
-	return YakshaveView(state)
+	return YakshaveViewAt(state, instance.region)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
@@ -466,7 +472,12 @@ func (state YakshaveState) MotionActiveText() string {
 // element: the scene carries this as its id, the tick advances, and the picture
 // moves exactly as often as the data does.
 func (state YakshaveState) MotionTickID() string {
-	return YakshaveRegion + "-tick-" + strconv.FormatUint(state.RunSequence, 10)
+	return state.MotionTickIDAt(YakshaveRegion)
+}
+
+// MotionTickIDAt namespaces the scene's tick identity under its live instance.
+func (state YakshaveState) MotionTickIDAt(region string) string {
+	return region + "-tick-" + strconv.FormatUint(state.RunSequence, 10)
 }
 
 // PipelineIndicatorTone is the "pipelineIndicator" indicator's tone: positive while its predicate holds, warning otherwise.

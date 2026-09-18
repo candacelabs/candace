@@ -4,17 +4,23 @@ package clusterheartbeats
 
 import "github.com/candacelabs/candace/pkg/gotth/live"
 
-// ClusterHeartbeatsView draws the ClusterHeartbeats widget's live region.
-//
-// Every value in it is a pure read of state, because the same state must render
-// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+// ClusterHeartbeatsView draws the ClusterHeartbeats widget's default live region.
 templ ClusterHeartbeatsView(state ClusterHeartbeatsState) {
-	<aside { live.Region(ClusterHeartbeatsRegion)... } class="widget" aria-labelledby={ ClusterHeartbeatsTitleID } data-widget="ClusterHeartbeats" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
+	@ClusterHeartbeatsViewAt(state, ClusterHeartbeatsRegion)
+}
+
+// ClusterHeartbeatsViewAt draws one instance in its host-assigned live region.
+//
+// Every value in it is a pure read of state and region: equal inputs render
+// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+templ ClusterHeartbeatsViewAt(state ClusterHeartbeatsState, region string) {
+	{{ titleID := region + "-title" }}
+	<aside { live.Region(region)... } class="widget" aria-labelledby={ titleID } data-widget="ClusterHeartbeats" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
 		<header class="widget-chrome">
 			<p class="widget-source widget-token-muted">{ state.WidgetSourceLabel() }</p>
-			<h2 class="widget-title widget-token-ink" id={ ClusterHeartbeatsTitleID }>{ state.WidgetTitleLabel() }</h2>
+			<h2 class="widget-title widget-token-ink" id={ titleID }>{ state.WidgetTitleLabel() }</h2>
 		</header>
-		<svg class="widget-scene" id={ state.MotionTickID() } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
+		<svg class="widget-scene" id={ state.MotionTickIDAt(region) } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
 			<ellipse class="widget-orbit widget-token-rule" cx="50" cy="50" rx="41" ry="29" transform="rotate(-9 50 50)"></ellipse>
 			<ellipse class="widget-orbit widget-token-rule" cx="50" cy="50" rx="29" ry="41" transform="rotate(47 50 50)"></ellipse>
 			<g class="widget-edge" transform="translate(50,50) rotate(-131.31)" style="--widget-edge-length: 43.93px">

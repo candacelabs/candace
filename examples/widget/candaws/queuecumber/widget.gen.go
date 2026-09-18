@@ -83,11 +83,21 @@ type QueuecumberState struct {
 // look at an identity. It is a type parameter because the SDK's contract
 // carries one — live.Session stopped erasing the application's identity type
 // on 2026-09-03 — and a generated widget must fit whatever host registers it.
-type Queuecumber[I live.IIdentity] struct{}
+type Queuecumber[I live.IIdentity] struct {
+	region string
+}
 
 // NewQueuecumber returns the widget a host registers, instantiated on that
 // host's own identity type.
-func NewQueuecumber[I live.IIdentity]() *Queuecumber[I] { return &Queuecumber[I]{} }
+func NewQueuecumber[I live.IIdentity]() *Queuecumber[I] {
+	return NewQueuecumberAt[I](QueuecumberRegion)
+}
+
+// NewQueuecumberAt gives one instance its host-assigned region. The host validates
+// region syntax and uniqueness when assembling its live configuration.
+func NewQueuecumberAt[I live.IIdentity](region string) *Queuecumber[I] {
+	return &Queuecumber[I]{region: region}
+}
 
 // The contract, asserted at one instantiation. Anonymous is the identity a
 // host with no accounts uses, and any other I satisfies the same interfaces:
@@ -97,14 +107,14 @@ var (
 	_ widget.IDirtyDeclarer[QueuecumberState]                  = (*Queuecumber[live.AnonymousIdentity])(nil)
 )
 
-// Register declares the widget, once per process and before any session.
+// Register declares this instance's definition and assigned region.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
 func (instance *Queuecumber[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     QueuecumberName,
-		Region:   QueuecumberRegion,
+		Region:   instance.region,
 		Events:   []string{QueuecumberEventToggleIntake, QueuecumberEventRedriveDeadLetters},
 		Internal: []string{QueuecumberEventBrokerReport},
 		Streams: []widget.StreamDeclaration{
@@ -173,7 +183,7 @@ func (instance *Queuecumber[I]) Reduce(
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
 func (instance *Queuecumber[I]) Render(state QueuecumberState) templ.Component {
-	return QueuecumberView(state)
+	return QueuecumberViewAt(state, instance.region)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
@@ -463,7 +473,12 @@ func (state QueuecumberState) MotionActiveText() string {
 // element: the scene carries this as its id, the tick advances, and the picture
 // moves exactly as often as the data does.
 func (state QueuecumberState) MotionTickID() string {
-	return QueuecumberRegion + "-tick-" + strconv.FormatUint(state.Sequence, 10)
+	return state.MotionTickIDAt(QueuecumberRegion)
+}
+
+// MotionTickIDAt namespaces the scene's tick identity under its live instance.
+func (state QueuecumberState) MotionTickIDAt(region string) string {
+	return region + "-tick-" + strconv.FormatUint(state.Sequence, 10)
 }
 
 // IntakeIndicatorTone is the "intakeIndicator" indicator's tone: positive while its predicate holds, warning otherwise.

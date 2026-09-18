@@ -19,7 +19,8 @@ var (
 	_liquidIdentifierValueRe0         = regexp.MustCompile("^[a-z][A-Za-z0-9]*$")
 )
 
-// ValidateRegionIdentity validates Liquid Proto field predicates.
+// ValidateRegionIdentity checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateRegionIdentity(message *RegionIdentity) error {
 	if message == nil {
 		return fmt.Errorf("ValidateRegionIdentity: nil *RegionIdentity")
@@ -35,7 +36,8 @@ func ValidateRegionIdentity(message *RegionIdentity) error {
 	return nil
 }
 
-// ValidatePlacement validates Liquid Proto field predicates.
+// ValidatePlacement checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidatePlacement(message *Placement) error {
 	if message == nil {
 		return fmt.Errorf("ValidatePlacement: nil *Placement")
@@ -59,7 +61,8 @@ func ValidatePlacement(message *Placement) error {
 	return nil
 }
 
-// ValidatePulseTiming validates Liquid Proto field predicates.
+// ValidatePulseTiming checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidatePulseTiming(message *PulseTiming) error {
 	if message == nil {
 		return fmt.Errorf("ValidatePulseTiming: nil *PulseTiming")
@@ -83,7 +86,8 @@ func ValidatePulseTiming(message *PulseTiming) error {
 	return nil
 }
 
-// ValidateEmphasisTiming validates Liquid Proto field predicates.
+// ValidateEmphasisTiming checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateEmphasisTiming(message *EmphasisTiming) error {
 	if message == nil {
 		return fmt.Errorf("ValidateEmphasisTiming: nil *EmphasisTiming")
@@ -107,7 +111,8 @@ func ValidateEmphasisTiming(message *EmphasisTiming) error {
 	return nil
 }
 
-// ValidateWireName validates Liquid Proto field predicates.
+// ValidateWireName checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateWireName(message *WireName) error {
 	if message == nil {
 		return fmt.Errorf("ValidateWireName: nil *WireName")
@@ -123,7 +128,8 @@ func ValidateWireName(message *WireName) error {
 	return nil
 }
 
-// ValidateEventFieldWireName validates Liquid Proto field predicates.
+// ValidateEventFieldWireName checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateEventFieldWireName(message *EventFieldWireName) error {
 	if message == nil {
 		return fmt.Errorf("ValidateEventFieldWireName: nil *EventFieldWireName")
@@ -139,7 +145,8 @@ func ValidateEventFieldWireName(message *EventFieldWireName) error {
 	return nil
 }
 
-// ValidateIdentifier validates Liquid Proto field predicates.
+// ValidateIdentifier checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateIdentifier(message *Identifier) error {
 	if message == nil {
 		return fmt.Errorf("ValidateIdentifier: nil *Identifier")
@@ -155,7 +162,8 @@ func ValidateIdentifier(message *Identifier) error {
 	return nil
 }
 
-// ValidateTokenValue validates Liquid Proto field predicates.
+// ValidateTokenValue checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateTokenValue(message *TokenValue) error {
 	if message == nil {
 		return fmt.Errorf("ValidateTokenValue: nil *TokenValue")
@@ -171,7 +179,8 @@ func ValidateTokenValue(message *TokenValue) error {
 	return nil
 }
 
-// ValidateMarkerValue validates Liquid Proto field predicates.
+// ValidateMarkerValue checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateMarkerValue(message *MarkerValue) error {
 	if message == nil {
 		return fmt.Errorf("ValidateMarkerValue: nil *MarkerValue")
@@ -187,7 +196,8 @@ func ValidateMarkerValue(message *MarkerValue) error {
 	return nil
 }
 
-// ValidateDirectionValue validates Liquid Proto field predicates.
+// ValidateDirectionValue checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateDirectionValue(message *DirectionValue) error {
 	if message == nil {
 		return fmt.Errorf("ValidateDirectionValue: nil *DirectionValue")
@@ -203,7 +213,8 @@ func ValidateDirectionValue(message *DirectionValue) error {
 	return nil
 }
 
-// ValidateTriggerValue validates Liquid Proto field predicates.
+// ValidateTriggerValue checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateTriggerValue(message *TriggerValue) error {
 	if message == nil {
 		return fmt.Errorf("ValidateTriggerValue: nil *TriggerValue")
@@ -219,7 +230,8 @@ func ValidateTriggerValue(message *TriggerValue) error {
 	return nil
 }
 
-// ValidateFieldTypeValue validates Liquid Proto field predicates.
+// ValidateFieldTypeValue checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateFieldTypeValue(message *FieldTypeValue) error {
 	if message == nil {
 		return fmt.Errorf("ValidateFieldTypeValue: nil *FieldTypeValue")

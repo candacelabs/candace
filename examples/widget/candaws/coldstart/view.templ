@@ -4,17 +4,23 @@ package coldstart
 
 import "github.com/candacelabs/candace/pkg/gotth/live"
 
-// ColdstartView draws the Coldstart widget's live region.
-//
-// Every value in it is a pure read of state, because the same state must render
-// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+// ColdstartView draws the Coldstart widget's default live region.
 templ ColdstartView(state ColdstartState) {
-	<aside { live.Region(ColdstartRegion)... } class="widget" aria-labelledby={ ColdstartTitleID } data-widget="Coldstart" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
+	@ColdstartViewAt(state, ColdstartRegion)
+}
+
+// ColdstartViewAt draws one instance in its host-assigned live region.
+//
+// Every value in it is a pure read of state and region: equal inputs render
+// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+templ ColdstartViewAt(state ColdstartState, region string) {
+	{{ titleID := region + "-title" }}
+	<aside { live.Region(region)... } class="widget" aria-labelledby={ titleID } data-widget="Coldstart" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
 		<header class="widget-chrome">
 			<p class="widget-source widget-token-muted">{ state.SourceLabel() }</p>
-			<h2 class="widget-title widget-token-ink" id={ ColdstartTitleID }>{ state.TitleLabel() }</h2>
+			<h2 class="widget-title widget-token-ink" id={ titleID }>{ state.TitleLabel() }</h2>
 		</header>
-		<svg class="widget-scene" id={ state.MotionTickID() } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
+		<svg class="widget-scene" id={ state.MotionTickIDAt(region) } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
 			<ellipse class="widget-orbit widget-token-rule" cx="50" cy="50" rx="41" ry="29" transform="rotate(-9 50 50)"></ellipse>
 			<g class="widget-edge" transform="translate(8,50) rotate(0)" style="--widget-edge-length: 32px">
 				<line class="widget-edge-line widget-token-rule" x1="0" y1="0" x2="32" y2="0"></line>

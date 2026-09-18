@@ -23,9 +23,9 @@ import (
 // App is a validated live application. It is safe for concurrent use, and one
 // App serves any number of sessions.
 type App[S any, I IIdentity] struct {
-	cfg     Config[S, I]
-	handler *wsx.Handler[I]
-	mux     http.Handler
+	cfg          Config[S, I]
+	handler      *wsx.Handler[I]
+	routeHandler http.HandlerFunc
 
 	// logger is the same sink the session actor writes to, held here so that
 	// the request-scoped routes this type serves itself — PageHandler's
@@ -67,11 +67,7 @@ func New[S any, I IIdentity](cfg Config[S, I]) (*App[S, I], error) {
 
 	frags := make([]render.Fragment, len(cfg.Fragments))
 	for i, f := range cfg.Fragments {
-		frags[i] = render.Fragment{
-			ID:     f.ID,
-			Render: renderAdapter(f.ID, f.Render),
-			Dirty:  dirtyAdapter(f.Dirty),
-		}
+		frags[i] = fragmentAdapter(f)
 	}
 	reg, err := render.NewRegistry(frags)
 	if err != nil {
@@ -108,7 +104,7 @@ func New[S any, I IIdentity](cfg Config[S, I]) (*App[S, I], error) {
 		return nil, &ConfigError{Field: "Origins", Detail: err.Error()}
 	}
 
-	app.mux = app.routes()
+	app.routeHandler = app.routes()
 	return app, nil
 }
 
@@ -262,7 +258,12 @@ func validate[S any, I IIdentity](cfg Config[S, I]) error {
 // long as its handler has not returned, and a hijack means none of it goes back
 // to net/http's pools. Under a blocking handler that is per-session memory held
 // for hours. See docs/bench/g2-baseline.md.
-func (a *App[S, I]) Handler() http.Handler { return a.mux }
+func (a *App[S, I]) Handler() http.Handler { return a.routeHandler }
+
+// ActiveConnections reports this application's registered WebSocket connections,
+// including connections still cleaning up. It counts neither users nor tabs;
+// reconnects can briefly overlap. It is safe to call concurrently with Close.
+func (a *App[S, I]) ActiveConnections() int { return a.handler.Sessions() }
 
 // Close drains every session, closing each with the going-away code, and waits
 // for in-flight effects up to the context's deadline.
@@ -281,9 +282,10 @@ func (a *App[S, I]) Handler() http.Handler { return a.mux }
 // After Close, the handler refuses new upgrades. It is not reusable.
 func (a *App[S, I]) Close(ctx context.Context) error { return a.handler.Close(ctx) }
 
-func (a *App[S, I]) routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+// routes adds asset dispatch to the existing WebSocket handler. The host owns
+// routing and path canonicalization; this wrapper creates no router or listener.
+func (a *App[S, I]) routes() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		// FR-57's two routes are first, and the inspector's before the
 		// runtime's, because all four JavaScript names end in ".min.js" and
 		// only one ordering is safe to reason about. They do not actually
@@ -320,8 +322,7 @@ func (a *App[S, I]) routes() http.Handler {
 			return
 		}
 		a.handler.ServeHTTP(w, r)
-	})
-	return mux
+	}
 }
 
 // devOnly is the server-side half of every dev-only gate: it reports whether
@@ -604,6 +605,29 @@ func guardedEmitter[I IIdentity](p session.Peer[I], scheduledBy uint64, emit ses
 // produce, and wsx takes the hook unchanged. That is one fewer indirection and
 // one fewer library-authored error; internal/arch's FR-58 census records the
 // removal.
+
+// fragmentAdapter keeps dynamic children behind the same typed state boundary
+// as static fragments. Applications never hold an erased state.
+func fragmentAdapter[S any](fragment Fragment[S]) render.Fragment {
+	adapted := render.Fragment{
+		ID:    fragment.ID,
+		Dirty: dirtyAdapter(fragment.Dirty),
+	}
+	if fragment.Render != nil {
+		adapted.Render = renderAdapter(fragment.ID, fragment.Render)
+	}
+	if fragment.Children != nil {
+		adapted.Children = func(state any) []render.Fragment {
+			children := fragment.Children(state.(S))
+			result := make([]render.Fragment, len(children))
+			for index, child := range children {
+				result[index] = fragmentAdapter(child)
+			}
+			return result
+		}
+	}
+	return adapted
+}
 
 // renderAdapter turns a fragment's typed render into the opaque one the
 // renderer calls. The type assertion happens here, exactly once per render,

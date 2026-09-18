@@ -48,6 +48,19 @@ type Fragment[S any] struct {
 	// safe. Over-declaring costs a suppressed render; under-declaring is a
 	// correctness bug, and livetest.AssertDirtyComplete is what catches it.
 	Dirty func(prev, next S) bool
+
+	// Children declares an ordered, session-local collection of nested regions.
+	// Each child ID must start with ID + ":", be unique, and declare no children
+	// of its own. Definitions remain fixed; membership is a pure projection of
+	// state. Render must include every child, in this order, inside this region.
+	//
+	// Membership/order changes, snapshots, or this parent's Dirty returning true
+	// render the complete parent. Otherwise only dirty children render and patch.
+	// Set Dirty to the parent's structural projection; nil still means always.
+	// Child Dirty functions receive the same previous/next application states.
+	// Events may address only children in the last successfully sent render;
+	// reducers must also reject members removed by a queued state transition.
+	Children func(state S) []Fragment[S]
 }
 
 // Event is one inbound interaction, already past the refinement boundary and

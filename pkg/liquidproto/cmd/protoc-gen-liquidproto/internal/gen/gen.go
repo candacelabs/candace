@@ -284,7 +284,8 @@ func emitRegexps(generated *protogen.GeneratedFile, messages []validatedMessage)
 func emitValidator(generated *protogen.GeneratedFile, validated validatedMessage) {
 	message := validated.message
 	name := message.GoIdent.GoName
-	generated.P("// Validate", name, " validates Liquid Proto field predicates.")
+	generated.P("// Validate", name, " checks this message's annotated fields; it does not recurse.")
+	generated.P("// A failed predicate returns *liquidproto.Error. Nil input also returns an error.")
 	generated.P("func Validate", name, "(message *", name, ") error {")
 	generated.P("if message == nil {")
 	generated.P("return ", generated.QualifiedGoIdent(fmtPackage.Ident("Errorf")), "(\"Validate", name, ": nil *", name, "\")")

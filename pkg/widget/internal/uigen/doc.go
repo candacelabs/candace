@@ -24,6 +24,12 @@
 // walked rather than re-derived from the channels, and the dirty projection
 // becomes the widget's own dirty declaration.
 //
+// Each generated definition has a default constructor and view, plus NewWidgetAt
+// and WidgetViewAt forms that accept a host-assigned region. The region scopes
+// the live root, accessible title and animated scene identities; the definition's
+// name and event contracts remain shared. Hosts validate region syntax and
+// uniqueness before exposing instances through their live configuration.
+//
 // What is refused is listed by Refusals and is three shapes of one construct: a
 // control whose trigger is change, input or submit. A control declares a
 // caption, a trigger and an event, and nothing that says what kind of element it

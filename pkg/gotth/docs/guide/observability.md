@@ -206,3 +206,15 @@ children with it. That is a reason the provenance log is exempt from sampling
 and the traces are not — a sampled provenance log could not support a
 "100 %, zero unknown" claim, and a sampled trace can still answer "what does a
 slow event look like".
+
+### Active browser connections
+
+`app.ActiveConnections()` reads that application's connection registry directly.
+A connection remains counted until its cleanup deregisters it; refused upgrades
+never enter the count. Every widget on the same connection shares that registration,
+regardless of how many effect goroutines it starts.
+
+`gotthlive_sessions_active` follows the same registration and removal boundaries
+when a MeterProvider is configured. The historical `gotthlive_connections_closed_total`
+series also records origin, authentication and CSRF refusals; subtracting it from
+`gotthlive_connections_total` does not compute active connections.
