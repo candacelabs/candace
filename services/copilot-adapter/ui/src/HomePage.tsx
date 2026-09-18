@@ -42,6 +42,11 @@ function StatusChip({ label, value, color = "gray" }: { label: string; value: st
   </Paper>;
 }
 
+function ApprovalChip({ count, sessionId }: { count: number; sessionId: string | undefined }) {
+  const content = <><Text size="xs" c="dimmed" tt="uppercase" fw={700}>Approvals</Text><Text size="lg" fw={800} c={count > 0 ? "orange" : "gray"}>{count}</Text></>;
+  return sessionId === undefined ? <Paper className="flight-chip" withBorder radius="sm" p="xs">{content}</Paper> : <Paper component="a" href={`#/sessions/${sessionId}`} className="flight-chip approval-chip" withBorder radius="sm" p="xs" aria-label={`Open pending approval session`} title="Open the next session awaiting approval">{content}</Paper>;
+}
+
 function ServiceDot({ label, healthy }: { label: string; healthy: boolean | null }) {
   const color = healthy === null ? "yellow" : healthy ? "teal" : "red";
   return <Badge color={color} variant="light" size="lg" radius="sm"><span className="service-dot" />{label} · {healthy === null ? "unknown" : healthy ? "online" : "degraded"}</Badge>;
@@ -135,7 +140,7 @@ export function HomePage(props: HomePageProps) {
           <Group><Button variant="default" size="xs" loading={props.refreshing} onClick={props.onRefresh}>Refresh overview</Button><Button size="sm" onClick={props.onNewSession}>＋ New task</Button></Group>
         </Group>
         <Group gap="xs" className="flight-chip-row">
-          <StatusChip label="Tasks" value={props.loading ? "…" : props.error ? "Unavailable" : props.sessions.length} /><StatusChip label="Working now" value={counts.running} color="teal" /><StatusChip label="Idle" value={counts.idle} /><StatusChip label="Failed" value={counts.failed} color="red" /><StatusChip label="Approvals" value={pendingTotal} color={pendingTotal > 0 ? "orange" : "gray"} />
+          <StatusChip label="Tasks" value={props.loading ? "…" : props.error ? "Unavailable" : props.sessions.length} /><StatusChip label="Working now" value={counts.running} color="teal" /><StatusChip label="Idle" value={counts.idle} /><StatusChip label="Failed" value={counts.failed} color="red" /><ApprovalChip count={pendingTotal} sessionId={Object.entries(pending).find(([, count]) => count > 0)?.[0]} />
           <ServiceDot label="Langfuse" healthy={langfuseHealthy} /><ServiceDot label="CSF" healthy={props.health?.status === undefined ? null : props.health.status === "ok"} />
         </Group>
         <UsageStrip telemetry={props.telemetry} />
