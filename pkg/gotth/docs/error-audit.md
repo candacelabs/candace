@@ -496,16 +496,22 @@ the spec in §5 holds.
 | `internal/session/window.go:115` | *"gotth-live: acknowledged sequence N was never emitted (highest is M): acknowledge only patches this session sent"* | ↑ via `onAck`'s `Error` record, which carries `session_id` and `server_seq` | ✓ — `server_seq` is the causal identifier of an acknowledgement; no event exists | ✓ | PASS |
 | `internal/session/window.go:120` | *"gotth-live: acknowledged sequence N is below the high-water mark M: an acknowledgement is cumulative and never goes backwards"* | ↑ via the same record | ✓ | ✓ | PASS |
 
-### 3.7 `internal/render` (10; 8 at the original walk)
+### 3.7 `internal/render` (13; 8 at the original walk)
 
-Keyed collections add two authoring sites (2026-09-17). The startup namespace
-refusal names both overlapping region IDs and asks for disjoint identities; no
-session exists at construction. The child-projection refusal names parent and
-child and requires a unique colon-prefixed identity, a renderer and no nested
-collection. It becomes a render failure under the actor's existing session and
-causal record; production frames retain the generic error. Both provide an
-actionable correction without exposing application state. The error census moves
-`internal/render` from 8 to 10; the historical totals above remain dated.
+Keyed collections added two authoring sites on 2026-09-17: the startup namespace
+refusal and one combined child-projection refusal, taking the count from 8 to 10.
+On 2026-09-18 the collection renderer split that combined refusal into four
+specific messages: invalid child namespace, duplicate child ID, missing Render,
+and unsupported nested Children. The current count is **10 − 1 + 4 = 13**;
+the historical totals above remain dated. The five collection-related sites
+are graded individually below.
+
+The startup refusal names both overlapping region IDs; no session exists at
+construction. Each child refusal names the parent and child and identifies the
+required correction. `collectionChildren` carries it in a `Failure` to
+`Actor.noteRenderFailures`, whose log record supplies `session_id`,
+`fragment_id`, `event_id` and `transition_id`. Production frames retain the
+generic render error; the detailed correction is in that operator log.
 
 
 | Site | Message as it reads today | S | C | N | Verdict |
@@ -518,6 +524,11 @@ actionable correction without exposing application state. The error census moves
 | `:129` | *"a fragment ID is at most 64 bytes and this one is N: shorten it — the bound is the wire schema's, so a longer identity is a patch this library builds and then refuses to send"* | n/a (construction) | n/a (construction) | ✓ | PASS — **was *"a fragment ID is at most 64 bytes, this one is N"***, §4.4 |
 | `:139` | *"a fragment ID may hold only letters, digits and `_:.-` , not %q: remove that byte — the charset is the wire schema's, and a patch naming this region could not be sent"* | n/a (construction) | n/a (construction) | ✓ | PASS — **was ✗ on N**, §4.4 |
 | `internal/render/renderer.go:147` | `errWriterEscaped`: *"gotth-live: a fragment wrote to its io.Writer after Render returned: … so build the markup during the call rather than retaining the writer"* | ↑ `callRender` turns it into that fragment's `Failure`, and the actor's record carries `session_id`, `fragment_id`, `event_id` | ↑ via the same record | ✓ | PASS |
+| `internal/render/registry.go:127` | *"gotth-live: fragment %q overlaps the child namespace of %q: use disjoint region identities"* | n/a (construction) | n/a (construction) | ✓ — choose disjoint identities | PASS |
+| `internal/render/collection.go:76` | *"gotth-live: child %q must have a nonempty ID suffix inside %q's colon namespace"* | ↑ via `Actor.noteRenderFailures` | ↑ via the same record | ✓ — use the parent's colon prefix and a nonempty suffix | PASS |
+| `:78` | *"gotth-live: child %q is repeated in collection %q: child IDs must be unique"* | ↑ via `Actor.noteRenderFailures` | ↑ via the same record | ✓ — give each child a distinct ID | PASS |
+| `:80` | *"gotth-live: child %q of %q must declare Render"* | ↑ via `Actor.noteRenderFailures` | ↑ via the same record | ✓ — supply the child's renderer | PASS |
+| `:82` | *"gotth-live: child %q of %q cannot declare Children: nested collections are not supported"* | ↑ via `Actor.noteRenderFailures` | ↑ via the same record | ✓ — remove the nested collection declaration | PASS |
 
 ### 3.8 `internal/wsx` (10)
 

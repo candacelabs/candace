@@ -174,6 +174,103 @@ var _ = Describe("Dynamic child regions", func() {
 		Expect(ids(view.Render(context.Background(), moved).Updates)).To(Equal([]string{"cards"}))
 	})
 
+	It("does not suppress a parent whose old hash predates a committed child update", func() {
+		view.Commit(view.RenderAll(context.Background(), initial))
+		next := collectionState{Items: []collectionEntry{{"cards:a", 3}, {"cards:b", 2}}}
+		view.Mark(initial, next)
+		view.Commit(view.Render(context.Background(), next))
+		Expect(view.MarkID("cards")).To(BeTrue())
+		reverted := view.Render(context.Background(), initial)
+		Expect(ids(reverted.Updates)).To(Equal([]string{"cards"}))
+		Expect(reverted.Suppressed).To(BeEmpty())
+		view.Commit(reverted)
+
+		Expect(view.MarkID("cards")).To(BeTrue())
+		unchanged := view.Render(context.Background(), initial)
+		Expect(unchanged.Updates).To(BeEmpty())
+		Expect(unchanged.Suppressed).To(Equal([]string{"cards"}))
+		Expect(view.Pending()).To(BeFalse())
+	})
+
+	It("preserves child order and observes suppressed children without committing changes", func() {
+		initial.Items = []collectionEntry{{"cards:b", 2}, {"cards:a", 1}}
+		view.Commit(view.RenderAll(context.Background(), initial))
+		var suppressedIDs []string
+		view.Observe(func(ctx context.Context, id string) (context.Context, func(suppressed, failed bool)) {
+			return ctx, func(suppressed, failed bool) {
+				Expect(failed).To(BeFalse())
+				if suppressed {
+					suppressedIDs = append(suppressedIDs, id)
+				}
+			}
+		})
+		view.MarkID("cards:a")
+		view.MarkID("cards:b")
+		unchanged := view.Render(context.Background(), initial)
+		Expect(unchanged.Updates).To(BeEmpty())
+		Expect(unchanged.Suppressed).To(Equal([]string{"cards:b", "cards:a"}))
+		Expect(suppressedIDs).To(Equal(unchanged.Suppressed))
+		view.Commit(unchanged)
+		Expect(view.Pending()).To(BeFalse())
+
+		next := collectionState{Items: []collectionEntry{{"cards:b", 3}, {"cards:a", 4}}}
+		view.Mark(initial, next)
+		patch := view.Render(context.Background(), next)
+		Expect(patch.Updates).To(Equal([]render.Update{
+			{FragmentID: "cards:b", Op: render.OpMorph, HTML: "<article>3</article>"},
+			{FragmentID: "cards:a", Op: render.OpMorph, HTML: "<article>4</article>"},
+		}))
+	})
+
+	It("discards staged child hashes and membership when the parent render fails", func() {
+		parent := collectionFragment(&rendered)
+		renderParent := parent.Render
+		failParent := false
+		parent.Render = func(ctx context.Context, state any, writer io.Writer) error {
+			if failParent {
+				return fmt.Errorf("parent render failure")
+			}
+			return renderParent(ctx, state, writer)
+		}
+		view = mustRegistry(parent).NewRenderer()
+		view.Commit(view.RenderAll(context.Background(), initial))
+		next := collectionState{Items: []collectionEntry{{"cards:a", 3}, {"cards:b", 2}, {"cards:new", 4}}}
+		failParent = true
+		view.Mark(initial, next)
+		failed := view.Render(context.Background(), next)
+		Expect(failed.Updates).To(BeEmpty())
+		Expect(failed.Failed).To(HaveLen(1))
+		Expect(failed.Failed[0].FragmentID).To(Equal("cards"))
+		view.Commit(failed)
+		Expect(view.KnownID("cards:new")).To(BeFalse())
+		Expect(view.KnownID("cards:a")).To(BeTrue())
+		Expect(view.Pending()).To(BeFalse())
+
+		failParent = false
+		next.Items = next.Items[:2]
+		view.MarkID("cards:a")
+		Expect(ids(view.Render(context.Background(), next).Updates)).To(Equal([]string{"cards:a"}))
+	})
+
+	DescribeTable("identifies invalid child declarations before rendering",
+		func(child render.Fragment, message string) {
+			parent := collectionFragment(&rendered)
+			parent.Children = func(state any) []render.Fragment { return []render.Fragment{child} }
+			view = mustRegistry(parent).NewRenderer()
+			result := view.RenderAll(context.Background(), initial)
+			Expect(result.Failed).To(HaveLen(1))
+			Expect(result.Failed[0].Site).To(Equal("children"))
+			Expect(result.Failed[0].Value).To(MatchError(ContainSubstring(message)))
+			Expect(result.Updates).To(BeEmpty())
+			Expect(rendered).To(BeEmpty())
+		},
+		Entry("missing render", render.Fragment{ID: "cards:a"}, "must declare Render"),
+		Entry("nested collection", render.Fragment{
+			ID: "cards:a", Render: countFragment().Render,
+			Children: func(state any) []render.Fragment { return nil },
+		}, "cannot declare Children"),
+	)
+
 	It("rejects duplicate children and escaped namespaces without corrupting committed membership", func() {
 		view.Commit(view.RenderAll(context.Background(), initial))
 		for _, items := range [][]collectionEntry{

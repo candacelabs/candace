@@ -18,18 +18,18 @@ one exact source revision, published as a fresh snapshot with no upstream
 history. The provenance marker `.candace-export.json` records the source
 repository, source path, exact source revision, selected-tree object ID, and
 destination. Each published snapshot also carries an immutable `export-<sha12>`
-tag and a matching GitHub Release. Everything is Apache-2.0, per the `LICENSE`
+tag and a matching GitHub Release. First-party source is Apache-2.0, per the `LICENSE`
 at this root.
 
 Three consequences, and acting against any of them is expensive:
 
-- **No change lands here.** There is no PR flow and no maintainer watching this
-  repository for contributions. The exporter compares the destination
+- **No change lands here.** Snapshot updates arrive as ready PRs from `candace-export` against `main`.
+  Source fixes belong in the canonical repository. The exporter compares the destination
   byte-for-byte against the snapshot it last published and halts on any
   divergence, so a commit made here is not merely overwritten later — it wedges
   every future export until an operator investigates.
 - **A fix belongs upstream.** If you can reach the canonical monorepo, make the
-  change under its `candace/` folder and let the next `main` push republish it.
+  change under its `candace/` folder and let the next source `main` push propose a snapshot PR.
   If you cannot reach it, say exactly that and stop. Never commit here, never
   open a PR against this repository, and never fork and patch it as a
   substitute for the upstream change.
@@ -37,6 +37,9 @@ Three consequences, and acting against any of them is expensive:
   `export-<sha12>` tag or the source revision in `.candace-export.json`, never
   a branch. A branch name here means "whatever the last snapshot happened to
   be".
+
+For CSF composition, generated tools, and agent-consumer setup, read
+[`csf/AGENTS.md`](csf/AGENTS.md) and the [consumer example](examples/csf-consumer).
 
 ## Taxonomy
 

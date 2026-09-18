@@ -43,6 +43,11 @@ rather than of the machine that built it.
 
 ### From Bazel
 
+Download the archive and its `.sha256` from the same Release, then use the
+[checksum verification and SRI command](../README.md#consume-it-in-60-seconds).
+The sidecar contains a hexadecimal checksum; `archive_override.integrity`
+requires the command's complete `sha256-...` base64 SRI output.
+
 [`examples/external-consumer`](../examples/external-consumer) is the worked
 consumer *and* the acceptance test every archive passes before it is published:
 a complete Bazel repository that chooses every seam at once — its own identity,
@@ -63,7 +68,7 @@ explains the choice:
 
   archive_override(
       module_name = "candace",
-      integrity = "sha256-...",          # from the Release's .sha256
+      integrity = "sha256-...",          # verified archive's base64 SRI value
       strip_prefix = "candace-<sha12>",
       urls = ["https://github.com/candacelabs/candace/releases/download/export-<sha12>/candace-<sha12>.tar.gz"],
   )
