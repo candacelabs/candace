@@ -173,7 +173,7 @@ func (bridge *CopilotBridge) CreateSession(ctx context.Context, spec copilotadap
 		Model:               spec.Model,
 		WorkingDirectory:    spec.WorkingDirectory,
 		Streaming:           &streaming,
-		OnPermissionRequest: keepPermissionPending,
+		OnPermissionRequest: permissionHandler(spec.PermissionPolicy),
 		OnEvent:             translator.handle,
 		MCPServers:          bridge.mcpServers,
 	}
@@ -218,7 +218,7 @@ func (bridge *CopilotBridge) ResumeSession(ctx context.Context, spec copilotadap
 		Model:               spec.Model,
 		WorkingDirectory:    spec.WorkingDirectory,
 		Streaming:           &streaming,
-		OnPermissionRequest: keepPermissionPending,
+		OnPermissionRequest: permissionHandler(spec.PermissionPolicy),
 		OnEvent:             translator.handle,
 		MCPServers:          bridge.mcpServers,
 		ContinuePendingWork: &continuePending,
@@ -333,6 +333,15 @@ var errBridgeClosing = errors.New("copilot bridge: client shutdown already start
 // remain owned by PermissionRequestedData and HandlePendingPermissionRequest.
 func keepPermissionPending(_ copilot.PermissionRequest, _ copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
 	return &rpc.PermissionDecisionNoResult{}, nil
+}
+
+func permissionHandler(policy copilotadapter.PermissionPolicy) copilot.PermissionHandlerFunc {
+	if policy == copilotadapter.PermissionPolicyApproveAll {
+		return func(_ copilot.PermissionRequest, _ copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
+			return &rpc.PermissionDecisionApproved{}, nil
+		}
+	}
+	return keepPermissionPending
 }
 
 // disconnectTracker makes every compatibility goroutine visible to the

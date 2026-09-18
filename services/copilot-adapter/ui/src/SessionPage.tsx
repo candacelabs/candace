@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { ActionIcon, Alert, Badge, Box, Button, Center, Flex, Group, Loader, NativeSelect, Paper, Stack, Text, Textarea, Title } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Box, Button, Center, Flex, Group, Loader, NativeSelect, Paper, Stack, Switch, Text, Textarea, Title, Tooltip } from "@mantine/core";
 import { api, describeAmbiguousMutation, describeError, newClientUUID } from "./api/client";
 import type { Model, PromptMode, Session, SessionRequest, Subagent, TranscriptItem, Worktree } from "./api/client";
 import { Dock } from "./components/Dock";
@@ -87,6 +87,7 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
   const [sending, setSending] = useState(false);
   const [aborting, setAborting] = useState(false);
   const [switchingModel, setSwitchingModel] = useState(false);
+  const [switchingPolicy, setSwitchingPolicy] = useState(false);
   const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
   const [dockTab, setDockTab] = useState<DockTab>("subagents");
   const [dockOpen, setDockOpen] = useState(true);
@@ -213,6 +214,23 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
       setFailure(`The prompt could not be prepared. ${describeError(cause)}`);
       return;
     }
+
+    async function changePermissionPolicy(checked: boolean) {
+      if (session === null || switchingPolicy) return;
+      setSwitchingPolicy(true);
+      try {
+        const { data, error } = await api.PATCH("/v1/sessions/{sessionId}", {
+          params: { path: { sessionId } },
+          body: { permissionPolicy: checked ? "approveAll" : "ask" },
+        });
+        if (error !== undefined || data === undefined) throw new Error(error === undefined ? "permission policy could not be changed" : describeError(error));
+        setLive((current) => ({ ...current, session: data }));
+      } catch (cause) {
+        setFailure(describeError(cause));
+      } finally {
+        setSwitchingPolicy(false);
+      }
+    }
     promptAttempt.current = attempt;
     sendingRef.current = true;
     setSending(true);
@@ -331,6 +349,9 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
           </Box>
           <Badge variant="dot" color={connection === "live" ? "teal" : "orange"} visibleFrom="sm">{connection}</Badge>
           <ModelPicker compact models={models} value={session?.model ?? ""} onChange={(model) => void switchModel(model)} loading={modelsLoading} error={modelsError} disabled={switchingModel || session === null} onRefresh={onRefreshModels} />
+          <Tooltip label="the agent may run any command in this worktree as you">
+            <Switch label="Auto-approve tools" checked={session?.permissionPolicy === "approveAll"} onChange={(event) => void changePermissionPolicy(event.currentTarget.checked)} disabled={switchingPolicy || session === null} size="sm" />
+          </Tooltip>
         </Group>
       </Paper>
       {failure !== null && (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "@mantine/hooks";
-import { Accordion, Alert, Button, Group, Modal, NativeSelect, Radio, SimpleGrid, Stack, TextInput, Textarea } from "@mantine/core";
+import { Accordion, Alert, Button, Group, Modal, NativeSelect, Radio, SimpleGrid, Stack, Switch, TextInput, Textarea } from "@mantine/core";
 import { api, describeError, newClientUUID } from "../api/client";
 import type { CreateSessionRequest, Model, Repository, Session, Worktree, WorktreeMode } from "../api/client";
 import { ModelPicker } from "./ModelPicker";
@@ -33,6 +33,9 @@ export function NewSessionDialog({
   const [displayName, setDisplayName] = useState("");
   const [baseRef, setBaseRef] = useState("");
   const [systemInstructions, setSystemInstructions] = useState("");
+  const [permissionPolicy, setPermissionPolicy] = useState<"ask" | "approveAll">(() => {
+    try { return window.localStorage.getItem("candace-permission-policy") === "approveAll" ? "approveAll" : "ask"; } catch { return "ask"; }
+  });
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const submittingRef = useRef(false);
@@ -70,6 +73,7 @@ export function NewSessionDialog({
       const optional = {
         ...(displayName.trim() === "" ? {} : { displayName: displayName.trim() }),
         ...(systemInstructions.trim() === "" ? {} : { systemInstructions: systemInstructions.trim() }),
+        permissionPolicy,
       };
       switch (mode) {
         case "newWorktree":
@@ -145,6 +149,17 @@ export function NewSessionDialog({
             <TextInput data-autofocus label="Task name" value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} placeholder="Optional" />
             <ModelPicker models={models} value={model} onChange={setModel} loading={modelsLoading} error={modelsError} disabled={submitting} onRefresh={onRefreshModels} />
           </SimpleGrid>
+          <Switch
+            label="Auto-approve tools"
+            description="the agent may run any command in this worktree as you"
+            checked={permissionPolicy === "approveAll"}
+            onChange={(event) => {
+              const next = event.currentTarget.checked ? "approveAll" : "ask";
+              setPermissionPolicy(next);
+              try { window.localStorage.setItem("candace-permission-policy", next); } catch { /* storage is optional */ }
+            }}
+            disabled={submitting}
+          />
           <NativeSelect
             label="Repository"
             required

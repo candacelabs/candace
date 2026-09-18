@@ -263,6 +263,7 @@ type createSessionSubmission struct {
 	BaseRef            *string
 	DisplayName        *string
 	SystemInstructions *string
+	PermissionPolicy   api.PermissionPolicy
 }
 
 // CreateSession claims the client-generated identity in relational storage
@@ -478,7 +479,8 @@ func (adapter *CopilotAdapter) ensureStartingSessionWithWorktree(
 		row, err = queries.CreateSession(durableContext, storedb.CreateSessionParams{
 			ID: receipt.SessionID, WorktreeID: worktree.ID, DisplayName: displayName, Model: submission.Model,
 			WorkingDirectory: prepared.Path, SystemInstructions: instructions,
-			Status: string(api.SessionStatusStarting), CreatedAt: now, UpdatedAt: now,
+			PermissionPolicy: string(submission.PermissionPolicy),
+			Status:           string(api.SessionStatusStarting), CreatedAt: now, UpdatedAt: now,
 		})
 		if err != nil {
 			return err
@@ -537,6 +539,7 @@ func (adapter *CopilotAdapter) activateStartingSession(
 	spec := BridgeSessionSpec{
 		SessionID: row.ID, Model: row.Model, WorkingDirectory: prepared.Path,
 		SystemInstructions: row.SystemInstructions,
+		PermissionPolicy:   PermissionPolicy(row.PermissionPolicy),
 	}
 	handle, retained := adapter.sessions.lookup(row.ID)
 	ownedAttempt := false
@@ -749,6 +752,7 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 			IdempotencyKey: uuid.UUID(body.IdempotencyKey), Model: body.Model, RepositoryID: body.RepositoryId,
 			WorktreeMode: api.NewWorktree, BaseRef: body.BaseRef, DisplayName: body.DisplayName,
 			SystemInstructions: body.SystemInstructions,
+			PermissionPolicy:   body.PermissionPolicy,
 		}
 	case string(api.ReuseExistingWorktree):
 		body, decodeErr := request.AsExistingWorktreeSessionRequest()
@@ -760,6 +764,7 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 			IdempotencyKey: uuid.UUID(body.IdempotencyKey), Model: body.Model, RepositoryID: body.RepositoryId,
 			WorktreeMode: api.ReuseExistingWorktree, WorktreeID: &worktreeID, DisplayName: body.DisplayName,
 			SystemInstructions: body.SystemInstructions,
+			PermissionPolicy:   body.PermissionPolicy,
 		}
 	case string(api.ReuseCurrentWorktree):
 		body, decodeErr := request.AsCurrentWorktreeSessionRequest()
@@ -770,12 +775,16 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 			IdempotencyKey: uuid.UUID(body.IdempotencyKey), Model: body.Model, RepositoryID: body.RepositoryId,
 			WorktreeMode: api.ReuseCurrentWorktree, DisplayName: body.DisplayName,
 			SystemInstructions: body.SystemInstructions,
+			PermissionPolicy:   body.PermissionPolicy,
 		}
 	default:
 		return createSessionSubmission{}, fail(http.StatusBadRequest, errorCodeInvalidRequest, "worktreeMode is not supported")
 	}
 	if submission.IdempotencyKey == uuid.Nil || submission.Model == "" || submission.RepositoryID == "" {
 		return createSessionSubmission{}, fail(http.StatusBadRequest, errorCodeInvalidRequest, "idempotencyKey, model, and repositoryId are required")
+	}
+	if submission.PermissionPolicy == "" {
+		submission.PermissionPolicy = api.Ask
 	}
 	return submission, nil
 }
@@ -786,7 +795,8 @@ func (adapter *CopilotAdapter) claimSessionCreation(ctx context.Context, submiss
 		RepositoryID: submission.RepositoryID, WorktreeMode: string(submission.WorktreeMode),
 		WorktreeID: submission.WorktreeID, BaseRef: null.StringFromPtr(submission.BaseRef),
 		DisplayName: null.StringFromPtr(submission.DisplayName), SystemInstructions: null.StringFromPtr(submission.SystemInstructions),
-		CreatedAt: time.Now().UTC(),
+		PermissionPolicy: string(submission.PermissionPolicy),
+		CreatedAt:        time.Now().UTC(),
 	}
 	receipt, err := adapter.store.ClaimSessionCreation(ctx, parameters)
 	if err == nil {
@@ -814,7 +824,8 @@ func sameSessionCreation(receipt storedb.SessionCreation, submission createSessi
 		receipt.WorktreeMode == string(submission.WorktreeMode) && sameUUIDPointer(receipt.WorktreeID, submission.WorktreeID) &&
 		receipt.BaseRef.Equal(null.StringFromPtr(submission.BaseRef)) &&
 		receipt.DisplayName.Equal(null.StringFromPtr(submission.DisplayName)) &&
-		receipt.SystemInstructions.Equal(null.StringFromPtr(submission.SystemInstructions))
+		receipt.SystemInstructions.Equal(null.StringFromPtr(submission.SystemInstructions)) &&
+		receipt.PermissionPolicy == string(submission.PermissionPolicy)
 }
 
 func sameUUIDPointer(left *uuid.UUID, right *uuid.UUID) bool {
@@ -918,9 +929,9 @@ func (adapter *CopilotAdapter) GetActiveTurn(ctx context.Context, request api.Ge
 // UpdateSession changes a session's model or display name.
 func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.UpdateSessionRequestObject) (api.UpdateSessionResponseObject, error) {
 	ctx = requestContext(ctx)
-	if request.Body == nil || (request.Body.Model == nil && request.Body.DisplayName == nil) {
+	if request.Body == nil || (request.Body.Model == nil && request.Body.DisplayName == nil && request.Body.PermissionPolicy == nil) {
 		// minProperties:1 is not enforced by the generated validator.
-		return nil, fail(http.StatusBadRequest, errorCodeEmptyPatch, "at least one of model or displayName is required")
+		return nil, fail(http.StatusBadRequest, errorCodeEmptyPatch, "at least one of model, displayName, or permissionPolicy is required")
 	}
 	unlock := adapter.mutations.lock(request.SessionId)
 	defer unlock()
@@ -942,6 +953,9 @@ func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.Up
 	}
 	if request.Body.DisplayName != nil {
 		arguments.DisplayName = null.StringFrom(*request.Body.DisplayName)
+	}
+	if request.Body.PermissionPolicy != nil {
+		arguments.PermissionPolicy = null.StringFrom(string(*request.Body.PermissionPolicy))
 	}
 	// A CLI switched to a model the store never recorded is the one state
 	// nothing can reconcile later, so the switch carries its own undo.

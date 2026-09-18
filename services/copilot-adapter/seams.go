@@ -139,7 +139,15 @@ type BridgeSessionSpec struct {
 	WorkingDirectory   string
 	SystemInstructions string
 	RestoredTurns      []BridgeRestoredTurn
+	PermissionPolicy   PermissionPolicy
 }
+
+type PermissionPolicy string
+
+const (
+	PermissionPolicyAsk        PermissionPolicy = "ask"
+	PermissionPolicyApproveAll PermissionPolicy = "approveAll"
+)
 
 // BridgeRestoredTurn preserves the scheduling lane a durable turn occupied
 // before the adapter process restarted.

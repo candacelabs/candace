@@ -89,6 +89,7 @@ func (adapter *CopilotAdapter) RestoreSessions(ctx context.Context) error {
 		handle, err := adapter.bridge.ResumeSession(ctx, BridgeSessionSpec{
 			SessionID: row.ID, Model: row.Model, WorkingDirectory: worktree.Path,
 			SystemInstructions: row.SystemInstructions,
+			PermissionPolicy:   PermissionPolicy(row.PermissionPolicy),
 		})
 		if err != nil {
 			if errors.Is(err, ErrBridgeSessionMissing) {
@@ -214,6 +215,7 @@ func sessionCreationSubmission(receipt storedb.SessionCreation) createSessionSub
 		WorktreeMode: api.WorktreeMode(receipt.WorktreeMode), WorktreeID: receipt.WorktreeID,
 		BaseRef: receipt.BaseRef.Ptr(), DisplayName: receipt.DisplayName.Ptr(),
 		SystemInstructions: receipt.SystemInstructions.Ptr(),
+		PermissionPolicy:   api.PermissionPolicy(receipt.PermissionPolicy),
 	}
 }
 

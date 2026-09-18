@@ -35,9 +35,19 @@ current loopback composition uses no-op schema authentication.
 
 Resources: `Session` (id, displayName, model, workingDirectory, status of
 `starting|idle|running|ended|failed`, createdAt, updatedAt, lastTurnAt?,
-turnCount), `Turn`, `TranscriptItem` (sequence-numbered, assistant deltas
+turnCount, permissionPolicy of `ask|approveAll`), `Turn`, `TranscriptItem` (sequence-numbered, assistant deltas
 collapsed), `SessionRequest` (exact-identity tool permission) and the
 read-only `Model` list the CLI reports.
+
+Sessions default to asking for tool permission. Operators can opt a single
+session into immediate approval, or return it to prompts, without restarting
+the session:
+
+```bash
+curl -X PATCH http://localhost:8080/v1/sessions/<id> \
+  -H 'Content-Type: application/json' \
+  -d '{"permissionPolicy":"approveAll"}'
+```
 
 ### Streaming transports
 

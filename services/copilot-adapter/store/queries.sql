@@ -5,6 +5,7 @@ INSERT INTO sessions (
     display_name,
     model,
     working_directory,
+    permission_policy,
     system_instructions,
     status,
     created_at,
@@ -15,6 +16,7 @@ INSERT INTO sessions (
     sqlc.arg(display_name),
     sqlc.arg(model),
     sqlc.arg(working_directory),
+    sqlc.arg(permission_policy),
     sqlc.arg(system_instructions),
     sqlc.arg(status),
     sqlc.arg(created_at),
@@ -33,6 +35,7 @@ INSERT INTO session_creations (
     base_ref,
     display_name,
     system_instructions,
+    permission_policy,
     created_at
 ) VALUES (
     sqlc.arg(idempotency_key),
@@ -44,6 +47,7 @@ INSERT INTO session_creations (
     sqlc.narg(base_ref),
     sqlc.narg(display_name),
     sqlc.narg(system_instructions),
+    sqlc.arg(permission_policy),
     sqlc.arg(created_at)
 )
 ON CONFLICT (idempotency_key) DO NOTHING
@@ -225,6 +229,7 @@ LIMIT sqlc.arg(row_limit);
 UPDATE sessions
 SET model = COALESCE(sqlc.narg(model)::text, model),
     display_name = COALESCE(sqlc.narg(display_name)::text, display_name),
+    permission_policy = COALESCE(sqlc.narg(permission_policy)::text, permission_policy),
     updated_at = sqlc.arg(updated_at)
 WHERE id = sqlc.arg(id)
   AND status NOT IN ('ended', 'failed')
