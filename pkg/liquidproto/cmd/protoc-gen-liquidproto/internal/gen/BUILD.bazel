@@ -1,5 +1,11 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
+# The bounded CSF observer checks the generator's source, not its Go package API.
+exports_files(
+    ["gen.go"],
+    visibility = ["//csf:__pkg__"],
+)
+
 go_library(
     name = "gen",
     srcs = ["gen.go"],

@@ -70,7 +70,7 @@ var errorCensus = map[string]int{
 	"internal/cmd/gotth-live-dev": 3,
 	"internal/obs":                4,
 	"internal/protocol":           40,
-	"internal/render":             10, // keyed collection namespace and member contract refusals
+	"internal/render":             13, // namespace overlap plus four distinct child contract refusals; audit §3.7
 	"internal/session":            8,
 	"internal/wsx":                10,
 	// 37 at the walk, then 38 at revision 2: Config.Init's missing-hook

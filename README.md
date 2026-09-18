@@ -9,18 +9,19 @@ the pieces are usable on their own and the system is reproducible as a whole.
 
 | | |
 |---|---|
+| [**CSF — The Cerebrospinal Fluid**](csf) | Shared Go coordination for agents, typed tools, knowledge and simulation evidence. Start with the [consumer example](examples/csf-consumer). |
 | [**CandaceOS**](services/candaceos) | An agent-operated app lab: a harness proposes, Core approves and fences, a node executor reconciles Compose applications, and an operator UI watches. Its deployment kit is [`candaceos/`](candaceos). |
 | [**Warden**](services/warden) | A fleet watchdog: Raft-style leader election over a static peer set, liveness, incidents, and an authoritative view every mutation is fenced against. |
 | [**gotth-live**](pkg/gotth) | Server-driven live user interfaces from Go. State and rendering stay in your process; one WebSocket per tab carries events up and re-rendered fragments down. No npm, no CDN. |
 | [**xetcas**](xetcas) | A self-hosted Xet content-addressable storage server with a Git LFS front door. Re-pushing a 48 MiB model after editing 2% of it costs about 1 MiB. |
 | [**pkg/**](pkg) | The primitives the rest is built on: `pgmem` (a process-local PostgreSQL emulator for tests), `liquidproto` (protobuf refinement types), `cron`, `config`, `redact`, `telemetry`, and more. |
 
-Everything is Apache-2.0.
+First-party source is Apache-2.0. Dependencies, vendor simulator images and externally hosted paper figures retain their own licenses.
 
 ## Run one of them
 
-Go 1.26 and a clone. There is no `npm install`, no bundler, and no code
-generation step to run first:
+For this gotth-live example: Go 1.26 and a clone; no npm or code generation is needed.
+The optional CSF Workbench has a separate browser-asset build documented in its README:
 
 ```bash
 go run ./examples/gotth/counter
@@ -42,6 +43,7 @@ follows one click all the way through and names the file each step lives in.
 
 ```text
 candace/
+├── csf/          typed coordination library, contracts, examples and consumer guide
 ├── pkg/          domain-neutral primitives — nothing in them knows what CandaceOS is
 ├── services/     composable business logic — candaceos, warden
 ├── app/          runnable compositions — candaceos-core, candaceos-agent, warden
@@ -56,14 +58,11 @@ candace/
 
 The three Go trees are separated by one rule, about who may import whom:
 
-```mermaid
-flowchart LR
-  app["<b>app/</b><br/>runnable compositions<br/>each owns a cmd/"]
-  services["<b>services/</b><br/>composable business logic"]
-  pkg["<b>pkg/</b><br/>domain-neutral primitives"]
-  app --> services --> pkg
-  app --> pkg
-```
+| Imports | Allowed direction |
+|---|---|
+| Runnable compositions (`app/`) | Services, CSF and shared packages |
+| Domain services and CSF | Shared packages |
+| Domain-neutral packages (`pkg/`) | No import of services or application compositions |
 
 Nothing in `pkg/` imports `services/` or `app/`, which is what makes the
 primitives usable on their own:
@@ -89,26 +88,43 @@ primitives usable on their own:
 ## This repository is generated
 
 It is a **one-way snapshot** of a private monorepo's `candace/` folder at one
-exact revision, published with no upstream history. There is no PR flow here
-and no maintainer watching for contributions; a commit made here wedges the
-next export rather than being merged.
+exact revision, published with no upstream history. Snapshot updates arrive as ready pull requests from `candace-export` against
+`main`. Make source changes in the canonical repository; editing the generated
+destination directly would conflict with its next snapshot.
 
-Each snapshot carries an immutable `export-<sha12>` tag, a matching GitHub
+After its review PR is merged, the publisher verifies that tree and creates an immutable `export-<sha12>` tag, a matching GitHub
 Release, and a provenance marker, `.candace-export.json`, naming the exact
 source revision it came from. Cite the tag, not a branch.
 
 ## Consume it in 60 seconds
 
 Each Release carries `candace-<sha12>.tar.gz` and its `.sha256`. The tarball is
-this tree re-rooted so `MODULE.bazel` is at the archive root, built twice and
-byte-compared before it is kept. In your own `MODULE.bazel`:
+this tree re-rooted so `MODULE.bazel` is at the archive root, plus a deterministic
+`.candace-source.json` recording the source revision and selected tree, built twice and
+byte-compared before it is kept.
+
+Download both files from the same Release. In their directory, replace `<sha12>`
+with the 12-character revision from its tag and verify the hexadecimal checksum, then compute
+the base64 SRI value required by Bazel (Bash, `sha256sum` and OpenSSL):
+
+```bash
+set -euo pipefail
+archive='candace-<sha12>.tar.gz'
+sha256sum --check "$archive.sha256"
+printf 'sha256-'
+openssl dgst -sha256 -binary "$archive" | openssl base64 -A
+printf '\n'
+```
+
+Copy the complete `sha256-...` output line into `integrity` in your own
+`MODULE.bazel`; the `.sha256` file's hexadecimal value is not an SRI value:
 
 ```python
 bazel_dep(name = "candace", version = "0.0.0")
 
 archive_override(
     module_name = "candace",
-    integrity = "sha256-...",          # from the Release's .sha256
+    integrity = "sha256-...",          # base64 SRI output from the command above
     strip_prefix = "candace-<sha12>",
     urls = ["https://github.com/candacelabs/candace/releases/download/export-<sha12>/candace-<sha12>.tar.gz"],
 )

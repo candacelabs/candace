@@ -214,3 +214,32 @@ jobs:
       # inside a Git worktree.
       - name: Fleet
         run: ./candaceos/test-fleet.sh
+
+  csf_workbench:
+    name: CSF contracts and Workbench UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Prepare protobuf projection dependencies
+        run: |
+          python3 -m venv /tmp/csf-codegen
+          /tmp/csf-codegen/bin/pip install protobuf==7.35.1
+          echo '/tmp/csf-codegen/bin' >> "$GITHUB_PATH"
+      - name: Check public contract generation
+        run: |
+          bash proto/generate.sh check
+          bash csf/tools/codegen/generate.sh check
+          bash services/copilot-adapter/generate.sh check
+          bash services/copilot-adapter/store/generate.sh check
+          bash services/copilot-adapter/proto/generate.sh check
+      - name: Test and build the Workbench from public source only
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp -e npm_config_cache=/tmp/npm \
+            -v "$PWD:/src" -w /src/services/copilot-adapter/ui \
+            node:22-bookworm@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d \
+            bash -euo pipefail -c 'npm ci && npm run gen:check && npm test -- --run && npm run build'

@@ -5,6 +5,9 @@ tree is exported to. They ship with the snapshot: the export declaration in the
 monorepo's `Candacefile` sets `requires_workflows_write: true` precisely so the
 publisher may write this directory.
 
+The `csf_workbench` job also verifies public contract projections and builds/tests
+the Workbench browser assets using only this repository.
+
 ## They do not run where they are written
 
 In the monorepo this file lives at `candace/.github/workflows/`, and GitHub only

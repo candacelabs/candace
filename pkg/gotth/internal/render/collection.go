@@ -58,16 +58,30 @@ func collectionChildren(parent Fragment, state any) (children []Fragment, failur
 	children = parent.Children(state)
 	seen := make(map[string]bool, len(children))
 	for _, child := range children {
-		if err := validFragmentID(child.ID); err != nil {
+		if err := validCollectionChild(parent.ID, child, seen[child.ID]); err != nil {
 			return nil, &Failure{FragmentID: parent.ID, Site: childrenFailureSite, Value: err}
-		}
-		if !strings.HasPrefix(child.ID, parent.ID+":") || child.ID == parent.ID+":" || seen[child.ID] || child.Render == nil || child.Children != nil {
-			return nil, &Failure{FragmentID: parent.ID, Site: childrenFailureSite, Value: fmt.Errorf(
-				"gotth-live: child %q of %q must have a unique ID inside the parent's colon namespace, a Render, and no Children: correct the collection projection", child.ID, parent.ID)}
 		}
 		seen[child.ID] = true
 	}
 	return children, nil
+}
+
+func validCollectionChild(parentID string, child Fragment, duplicate bool) error {
+	if err := validFragmentID(child.ID); err != nil {
+		return err
+	}
+	namespace := parentID + ":"
+	switch {
+	case !strings.HasPrefix(child.ID, namespace) || child.ID == namespace:
+		return fmt.Errorf("gotth-live: child %q must have a nonempty ID suffix inside %q's colon namespace", child.ID, parentID)
+	case duplicate:
+		return fmt.Errorf("gotth-live: child %q is repeated in collection %q: child IDs must be unique", child.ID, parentID)
+	case child.Render == nil:
+		return fmt.Errorf("gotth-live: child %q of %q must declare Render", child.ID, parentID)
+	case child.Children != nil:
+		return fmt.Errorf("gotth-live: child %q of %q cannot declare Children: nested collections are not supported", child.ID, parentID)
+	}
+	return nil
 }
 
 func childIDs(children []Fragment) []string {
@@ -146,56 +160,66 @@ func (v *Renderer) renderCollection(ctx context.Context, state any, index int, p
 	}
 	ids := childIDs(children)
 	previous, initialized := v.collections[index]
-	whole := all || !initialized || v.parentDirty.has(index) || !slices.Equal(previous.ids, ids)
+	sameMembers := slices.Equal(previous.ids, ids)
+	whole := all || !initialized || v.parentDirty.has(index) || !sameMembers
 	v.parentDirty.clear(index)
-	pending := v.childDirty[index]
-	delete(v.childDirty, index)
-	cache := collectionCache{ids: ids, hashes: maps.Clone(previous.hashes), parentCurrent: whole}
-	if whole {
-		cache.hashes = make(map[string]uint64, len(children))
+	if !whole {
+		v.renderCollectionChildren(ctx, state, index, children, result)
+		return
 	}
-	var updates []Update
+	delete(v.childDirty, index)
+
+	// A parent update replaces every child. Stage their hashes together, and
+	// abandon the entire update if any child or the parent fails to render.
+	cache := collectionCache{ids: ids, hashes: make(map[string]uint64, len(children)), parentCurrent: true}
 	for _, child := range children {
-		if !whole && !pending[child.ID] {
-			continue
-		}
-		markup, hash, failed := v.collectionMarkup(ctx, state, child, previous.hashes[child.ID], !whole)
+		_, hash, failed := v.collectionMarkup(ctx, state, child, 0, false)
 		if failed != nil {
 			result.Failed = append(result.Failed, *failed)
-			if whole {
-				return
-			}
+			return
+		}
+		cache.hashes[child.ID] = hash
+	}
+	compareParent := !all && initialized && previous.parentCurrent && sameMembers
+	markup, hash, failed := v.collectionMarkup(ctx, state, parent, v.hashes[index], compareParent)
+	if failed != nil {
+		result.Failed = append(result.Failed, *failed)
+		return
+	}
+	if compareParent && hash == v.hashes[index] {
+		result.Suppressed = append(result.Suppressed, parent.ID)
+		return
+	}
+	result.updated = append(result.updated, index)
+	result.hashes = append(result.hashes, hash)
+	result.Updates = append(result.Updates, Update{FragmentID: parent.ID, Op: OpMorph, HTML: markup})
+	result.collections = append(result.collections, collectionResult{index: index, cache: cache, whole: true, dirty: []string{parent.ID}})
+}
+
+func (v *Renderer) renderCollectionChildren(ctx context.Context, state any, index int, children []Fragment, result *Result) {
+	pending := v.childDirty[index]
+	delete(v.childDirty, index)
+	previous := v.collections[index]
+	cache := collectionCache{ids: previous.ids, hashes: maps.Clone(previous.hashes)}
+	var dirty []string
+	for _, child := range children {
+		if !pending[child.ID] {
+			continue
+		}
+		markup, hash, failed := v.collectionMarkup(ctx, state, child, previous.hashes[child.ID], true)
+		if failed != nil {
+			result.Failed = append(result.Failed, *failed)
 			continue
 		}
 		cache.hashes[child.ID] = hash
-		if !whole {
-			if hash == previous.hashes[child.ID] {
-				result.Suppressed = append(result.Suppressed, child.ID)
-			} else {
-				updates = append(updates, Update{FragmentID: child.ID, Op: OpMorph, HTML: markup})
-			}
+		if hash == previous.hashes[child.ID] {
+			result.Suppressed = append(result.Suppressed, child.ID)
+			continue
 		}
+		result.Updates = append(result.Updates, Update{FragmentID: child.ID, Op: OpMorph, HTML: markup})
+		dirty = append(dirty, child.ID)
 	}
-	if whole {
-		markup, hash, failed := v.collectionMarkup(ctx, state, parent, v.hashes[index], !all && initialized && previous.parentCurrent && slices.Equal(previous.ids, ids))
-		if failed != nil {
-			result.Failed = append(result.Failed, *failed)
-			return
-		}
-		if !all && initialized && previous.parentCurrent && hash == v.hashes[index] && slices.Equal(previous.ids, ids) {
-			result.Suppressed = append(result.Suppressed, parent.ID)
-			return
-		}
-		result.updated = append(result.updated, index)
-		result.hashes = append(result.hashes, hash)
-		updates = []Update{{FragmentID: parent.ID, Op: OpMorph, HTML: markup}}
-	}
-	if len(updates) != 0 {
-		result.Updates = append(result.Updates, updates...)
-		dirty := make([]string, len(updates))
-		for index, update := range updates {
-			dirty[index] = update.FragmentID
-		}
-		result.collections = append(result.collections, collectionResult{index: index, cache: cache, whole: whole, dirty: dirty})
+	if len(dirty) != 0 {
+		result.collections = append(result.collections, collectionResult{index: index, cache: cache, dirty: dirty})
 	}
 }
