@@ -128,7 +128,9 @@ jobs:
       # should be a property of this tree, not of whichever image the runner
       # happens to boot. GOTOOLCHAIN=local makes a go.mod bump that outruns the
       # image fail here instead of silently downloading a different compiler.
-      - name: Build, vet, and test the module
+      # go test compiles the API inventory tool but does not run its ledger
+      # comparison. Run that command too so stale public API counts fail here.
+      - name: Build, vet, test, and check the exported API
         run: |
           docker run --rm \
             --user "$(id -u):$(id -g)" \
@@ -141,7 +143,12 @@ jobs:
             --volume "${PWD}:/src" \
             --workdir /src \
             golang:1.26.5-bookworm@sha256:6c5605ab3a9a9fb3c4eafe5b3d63cdbf3881caf113262b67862547b54a9db599 \
-            sh -eu -c 'go build ./... && go vet ./... && go test ./...'
+            sh -eu -c '
+              go build ./...
+              go vet ./...
+              go test ./...
+              (cd pkg/gotth/tools && go run ./apisurface)
+            '
 
   rust:
     name: Bazel build and test (xetcas)

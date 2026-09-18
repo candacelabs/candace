@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Current v0.1 API ledger; Phase 0 review closed |
-| **Date** | 2026-08-04; last synced 2026-08-11 |
+| **Date** | 2026-08-04; last synced 2026-09-18 |
 | **Author** | DEV-1 (Server Core / Go) |
 | **Satisfies** | PRD FR-65, FR-66; Phase 0 exit ("draft exported API surface sketched in `docs/api-surface.md`") |
 | **Governed by** | [RFC-0001 §14.2](rfc/001-architecture.md) · [review checklist §1.7](review-checklist.md) |
@@ -31,7 +31,7 @@ measured surface.
 | | `live` (exact) | `live/livetest` (ceiling) |
 |---|---:|---:|
 | Exported identifiers (types, funcs, methods, consts, vars) | **60** | 37 |
-| Exported struct fields | **54** | 33 |
+| Exported struct fields | **55** | 33 |
 
 *The `live` split was corrected from 41/48 to 40/49 when `tools/apisurface`
 first measured it: one struct field had been counted in the identifier column
@@ -199,6 +199,7 @@ application can create and cannot inspect. The measured cost of the cut is in
 | `Fragment[S]` | `ID` | `string` | Stable identity matching `^[A-Za-z0-9_:.-]{1,64}$`; must be unique per app (FR-21). |
 | | `Render` | `func(state S) templ.Component` | Pure render of this region from state (FR-18). |
 | | `Dirty` | `func(prev, next S) bool` | Optional; nil means "re-render on every transition". Over-declaring is safe (identical renders are suppressed); under-declaring is a bug `livetest.AssertDirtyComplete` catches. |
+| | `Children` | `func(state S) []Fragment[S]` | Optional ordered projection of child regions from state (FR-18, FR-21). Each child has a unique ID in the parent's `ID + ":"` namespace, a `Render`, and no nested `Children`. The parent's `Render` includes every child in projection order. |
 | `Event` | `Name` | `string` | The registered event name. |
 | | `FragmentID` | `string` | The fragment whose markup raised it. |
 | | `Fields` | `Fields` | Form values. |
@@ -586,6 +587,22 @@ patches from its own code rather than from telemetry, the hook lands in Phase 2
 ---
 
 ## 10. Changelog
+
+### Keyed child regions — added 2026-09-17; ledger corrected 2026-09-18
+
+`Fragment.Children` lets a consumer declare an ordered collection of stable
+child regions as a pure projection of its state, satisfying FR-18 and FR-21.
+The [Widget SDK's keyed collection](../../widget/keyed.go) uses this field so a
+changed child can patch its own region. Membership/order changes, snapshots and
+parent structural dirtiness still render the whole parent. Child IDs become
+known only after a successful send; reducers must also reject members removed
+by a queued state transition.
+
+This records an existing exported field that the ledger omitted: `live` remains
+at **60 identifiers**, and its field count is corrected from **54 to 55**.
+`live/livetest` remains **37 identifiers / 33 fields**; its documented,
+unimplemented `Audit` and `Report` rows remain unchanged. No runtime API is added
+by this ledger correction.
 
 ### Connection inspection — 2026-09-17
 
