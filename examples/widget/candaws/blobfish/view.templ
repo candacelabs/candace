@@ -4,16 +4,22 @@ package blobfish
 
 import "github.com/candacelabs/candace/pkg/gotth/live"
 
-// BlobfishView draws the Blobfish widget's live region.
-//
-// Every value in it is a pure read of state, because the same state must render
-// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+// BlobfishView draws the Blobfish widget's default live region.
 templ BlobfishView(state BlobfishState) {
-	<aside { live.Region(BlobfishRegion)... } class="widget" aria-labelledby={ BlobfishTitleID } data-widget="Blobfish" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
+	@BlobfishViewAt(state, BlobfishRegion)
+}
+
+// BlobfishViewAt draws one instance in its host-assigned live region.
+//
+// Every value in it is a pure read of state and region: equal inputs render
+// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+templ BlobfishViewAt(state BlobfishState, region string) {
+	{{ titleID := region + "-title" }}
+	<aside { live.Region(region)... } class="widget" aria-labelledby={ titleID } data-widget="Blobfish" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
 		<header class="widget-chrome">
-			<h2 class="widget-title widget-token-ink" id={ BlobfishTitleID }>{ state.TitleLabel() }</h2>
+			<h2 class="widget-title widget-token-ink" id={ titleID }>{ state.TitleLabel() }</h2>
 		</header>
-		<svg class="widget-scene" id={ state.MotionTickID() } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
+		<svg class="widget-scene" id={ state.MotionTickIDAt(region) } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
 			<ellipse class="widget-orbit widget-token-rule" cx="50" cy="50" rx="41" ry="29" transform="rotate(-9 50 50)"></ellipse>
 			<ellipse class="widget-orbit widget-token-rule" cx="50" cy="50" rx="29" ry="41" transform="rotate(47 50 50)"></ellipse>
 			<g class="widget-edge" transform="translate(26,50) rotate(-34.7)" style="--widget-edge-length: 63.25px">

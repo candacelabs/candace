@@ -99,10 +99,8 @@ func (a *Actor[I]) ingressEvent(ctx context.Context, in protocol.InboundEvent, n
 	}
 
 	fragmentID := in.FragmentID()
-	if _, ok := a.app.Registry().Index(fragmentID); !ok {
-		a.m.EventRejected(ctx, "unknown_fragment")
-		a.emitError(ctx, pb.ErrorCode_UNKNOWN_FRAGMENT,
-			"the event names a fragment this application does not declare", eventID, clientRef, false)
+	if !a.app.Registry().AdmitsID(fragmentID) {
+		a.rejectUnknownFragment(ctx, eventID, clientRef)
 		return
 	}
 
@@ -269,4 +267,12 @@ func copyFields(in []protocol.EventField) []Field {
 		out[i] = Field{Key: f.Key, Value: f.Value}
 	}
 	return out
+}
+
+const unknownFragmentMetric = "unknown_fragment"
+
+func (a *Actor[I]) rejectUnknownFragment(ctx context.Context, eventID, clientRef uint64) {
+	a.m.EventRejected(ctx, unknownFragmentMetric)
+	a.emitError(ctx, pb.ErrorCode_UNKNOWN_FRAGMENT,
+		"the event names a fragment this session does not currently declare", eventID, clientRef, false)
 }

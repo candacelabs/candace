@@ -19,7 +19,8 @@ var (
 	_liquidUploadXorbKeyHashRe0                = regexp.MustCompile("^[0-9a-f]{64}$")
 )
 
-// ValidateQueryReconstructionRequest validates Liquid Proto field predicates.
+// ValidateQueryReconstructionRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateQueryReconstructionRequest(message *QueryReconstructionRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateQueryReconstructionRequest: nil *QueryReconstructionRequest")
@@ -35,7 +36,8 @@ func ValidateQueryReconstructionRequest(message *QueryReconstructionRequest) err
 	return nil
 }
 
-// ValidateCasReconstructionTerm validates Liquid Proto field predicates.
+// ValidateCasReconstructionTerm checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateCasReconstructionTerm(message *CasReconstructionTerm) error {
 	if message == nil {
 		return fmt.Errorf("ValidateCasReconstructionTerm: nil *CasReconstructionTerm")
@@ -51,7 +53,8 @@ func ValidateCasReconstructionTerm(message *CasReconstructionTerm) error {
 	return nil
 }
 
-// ValidateCasReconstructionFetchInfo validates Liquid Proto field predicates.
+// ValidateCasReconstructionFetchInfo checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateCasReconstructionFetchInfo(message *CasReconstructionFetchInfo) error {
 	if message == nil {
 		return fmt.Errorf("ValidateCasReconstructionFetchInfo: nil *CasReconstructionFetchInfo")
@@ -67,7 +70,8 @@ func ValidateCasReconstructionFetchInfo(message *CasReconstructionFetchInfo) err
 	return nil
 }
 
-// ValidateXorbMultiRangeFetch validates Liquid Proto field predicates.
+// ValidateXorbMultiRangeFetch checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateXorbMultiRangeFetch(message *XorbMultiRangeFetch) error {
 	if message == nil {
 		return fmt.Errorf("ValidateXorbMultiRangeFetch: nil *XorbMultiRangeFetch")
@@ -83,7 +87,8 @@ func ValidateXorbMultiRangeFetch(message *XorbMultiRangeFetch) error {
 	return nil
 }
 
-// ValidateChunkDedupQuery validates Liquid Proto field predicates.
+// ValidateChunkDedupQuery checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateChunkDedupQuery(message *ChunkDedupQuery) error {
 	if message == nil {
 		return fmt.Errorf("ValidateChunkDedupQuery: nil *ChunkDedupQuery")
@@ -107,7 +112,8 @@ func ValidateChunkDedupQuery(message *ChunkDedupQuery) error {
 	return nil
 }
 
-// ValidateUploadXorbKey validates Liquid Proto field predicates.
+// ValidateUploadXorbKey checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateUploadXorbKey(message *UploadXorbKey) error {
 	if message == nil {
 		return fmt.Errorf("ValidateUploadXorbKey: nil *UploadXorbKey")
@@ -131,7 +137,8 @@ func ValidateUploadXorbKey(message *UploadXorbKey) error {
 	return nil
 }
 
-// ValidateUploadShardResponse validates Liquid Proto field predicates.
+// ValidateUploadShardResponse checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateUploadShardResponse(message *UploadShardResponse) error {
 	if message == nil {
 		return fmt.Errorf("ValidateUploadShardResponse: nil *UploadShardResponse")

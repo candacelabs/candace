@@ -36,6 +36,17 @@ not listed as supported below as unsupported until it has a black-box test.
 | Raw table fixtures and inspection | Supported subset | `Schema.Table`, `GetTable`, and `TableContext` return a checked `Table`; `Table.Insert`/`InsertContext` safely quote map keys and return the stored row after defaults/generated values; `Find`/`FindContext` combines template entries with `AND`, treats a nil value as `IS NULL`, and treats a nil or empty template as all rows | Upstream inspection and direct insertion are documented in [`readme.md`](https://github.com/oguimbal/pg-mem/blob/0fcbf5c2b4826116d67f2fe5e30e3c7a3bbf4eb6/readme.md) and exercised in [`src/tests/publicapi.spec.ts`](https://github.com/oguimbal/pg-mem/blob/0fcbf5c2b4826116d67f2fe5e30e3c7a3bbf4eb6/src/tests/publicapi.spec.ts) | This is a fixture helper, not an ORM: equality templates only, no projection/order/limit/raw update/delete, and no typed structs; a view can be looked up but remains subject to the executor's write rules |
 | Injectable translation | Supported | `WithTranslator` supplies a context-aware `ITranslator`; internal-dialect output executes without PostgreSQL reparsing when no custom functions are registered, and the boundary is covered with generated Gomock expectations | No direct pg-mem analogue; custom behavior in upstream is exposed through functions/types/extensions and interception in [`readme.md`](https://github.com/oguimbal/pg-mem/blob/0fcbf5c2b4826116d67f2fe5e30e3c7a3bbf4eb6/readme.md) | Replacing the translator can bypass the default PostgreSQL parse/rewrite guarantees; when custom functions are registered, translated statements must remain PostgreSQL-parseable for function rewriting; custom translators must be concurrency-safe |
 
+Named ordinary B-tree indexes support unique keys, partial predicates,
+expression keys, ordering, and `IF NOT EXISTS`. Index names follow the target
+table's schema, including explicitly qualified tables and quoted index names.
+The translator preserves the parsed definition while relocating schema
+qualification for SQLite. Composite foreign keys backed by a unique index and
+partial uniqueness are tested in `translator_test.go`. PostgreSQL-specific
+access methods, concurrent creation, included columns, storage options,
+tablespaces, and `NULLS NOT DISTINCT` are rejected. This provides constraint
+enforcement, not PostgreSQL planner or locking fidelity; the registered-function
+rewriting boundary above still applies.
+
 ## Exact v0.1 Go API
 
 - Database lifecycle and discovery: `New`, `NewContext`, `MustNew`,

@@ -16,7 +16,8 @@ var (
 	_liquidLfsObjectSpecOidRe0 = regexp.MustCompile("^[0-9a-f]{64}$")
 )
 
-// ValidateLfsObjectSpec validates Liquid Proto field predicates.
+// ValidateLfsObjectSpec checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateLfsObjectSpec(message *LfsObjectSpec) error {
 	if message == nil {
 		return fmt.Errorf("ValidateLfsObjectSpec: nil *LfsObjectSpec")
@@ -32,7 +33,8 @@ func ValidateLfsObjectSpec(message *LfsObjectSpec) error {
 	return nil
 }
 
-// ValidateLfsBatchRequest validates Liquid Proto field predicates.
+// ValidateLfsBatchRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateLfsBatchRequest(message *LfsBatchRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateLfsBatchRequest: nil *LfsBatchRequest")
@@ -56,7 +58,8 @@ func ValidateLfsBatchRequest(message *LfsBatchRequest) error {
 	return nil
 }
 
-// ValidateLfsAction validates Liquid Proto field predicates.
+// ValidateLfsAction checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateLfsAction(message *LfsAction) error {
 	if message == nil {
 		return fmt.Errorf("ValidateLfsAction: nil *LfsAction")
@@ -72,7 +75,8 @@ func ValidateLfsAction(message *LfsAction) error {
 	return nil
 }
 
-// ValidateLfsBatchResponse validates Liquid Proto field predicates.
+// ValidateLfsBatchResponse checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateLfsBatchResponse(message *LfsBatchResponse) error {
 	if message == nil {
 		return fmt.Errorf("ValidateLfsBatchResponse: nil *LfsBatchResponse")
@@ -88,7 +92,8 @@ func ValidateLfsBatchResponse(message *LfsBatchResponse) error {
 	return nil
 }
 
-// ValidateCasTokenInfo validates Liquid Proto field predicates.
+// ValidateCasTokenInfo checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateCasTokenInfo(message *CasTokenInfo) error {
 	if message == nil {
 		return fmt.Errorf("ValidateCasTokenInfo: nil *CasTokenInfo")

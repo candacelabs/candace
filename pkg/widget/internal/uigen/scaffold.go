@@ -9,6 +9,9 @@ import (
 	"github.com/candacelabs/candace/pkg/widget/internal/ir"
 )
 
+// titleIDSuffix is shared by the default title constant and instance views.
+const titleIDSuffix = "-title"
+
 // generatedBy is the first line of every file this package emits.
 //
 // It is the marker the repository's gates read: the coverage denominator, the
@@ -121,7 +124,7 @@ func writeConstants(source *strings.Builder, document *ir.Document, identifiers 
 // host — two widgets on one page cannot collide on it, and the registry refuses
 // them at startup if they try.
 func titleID(document *ir.Document) string {
-	return document.Region + "-title"
+	return document.Region + titleIDSuffix
 }
 
 // writeFieldConstants emits one constant per declared payload field.
@@ -203,11 +206,15 @@ func writeLifecycle(source *strings.Builder, document *ir.Document, identifiers 
 	fmt.Fprintf(source, "// look at an identity. It is a type parameter because the SDK's contract\n")
 	fmt.Fprintf(source, "// carries one — live.Session stopped erasing the application's identity type\n")
 	fmt.Fprintf(source, "// on 2026-09-03 — and a generated widget must fit whatever host registers it.\n")
-	fmt.Fprintf(source, "type %s[I live.IIdentity] struct{}\n\n", identifiers.widgetType)
+	fmt.Fprintf(source, "type %s[I live.IIdentity] struct {\n\tregion string\n}\n\n", identifiers.widgetType)
 	fmt.Fprintf(source, "// %s returns the widget a host registers, instantiated on that\n", identifiers.constructor)
 	fmt.Fprintf(source, "// host's own identity type.\n")
-	fmt.Fprintf(source, "func %s[I live.IIdentity]() *%s[I] { return &%s[I]{} }\n\n",
-		identifiers.constructor, identifiers.widgetType, identifiers.widgetType)
+	fmt.Fprintf(source, "func %s[I live.IIdentity]() *%s[I] { return %s[I](%s) }\n\n",
+		identifiers.constructor, identifiers.widgetType, identifiers.constructorAt, identifiers.regionConst)
+	fmt.Fprintf(source, "// %s gives one instance its host-assigned region. The host validates\n", identifiers.constructorAt)
+	fmt.Fprintf(source, "// region syntax and uniqueness when assembling its live configuration.\n")
+	fmt.Fprintf(source, "func %s[I live.IIdentity](region string) *%s[I] { return &%s[I]{region: region} }\n\n",
+		identifiers.constructorAt, identifiers.widgetType, identifiers.widgetType)
 	fmt.Fprintf(source, "// The contract, asserted at one instantiation. Anonymous is the identity a\n")
 	fmt.Fprintf(source, "// host with no accounts uses, and any other I satisfies the same interfaces:\n")
 	fmt.Fprintf(source, "// nothing below branches on it.\n")
@@ -241,13 +248,13 @@ func writeLifecycle(source *strings.Builder, document *ir.Document, identifiers 
 // into it. A subtraction each host has to remember is a subtraction the second
 // host forgets.
 func writeRegister(source *strings.Builder, document *ir.Document, identifiers *names) {
-	fmt.Fprintf(source, "// Register declares the widget, once per process and before any session.\n")
+	fmt.Fprintf(source, "// Register declares this instance's definition and assigned region.\n")
 	fmt.Fprintf(source, "//\n")
 	fmt.Fprintf(source, "// Events are the names a browser may send; Internal are the names only a\n")
 	fmt.Fprintf(source, "// declared stream delivers, which the host routes without registering.\n")
 	fmt.Fprintf(source, "func (instance *%s[I]) Register() widget.Registration {\n", identifiers.widgetType)
 	source.WriteString("\treturn widget.Registration{\n")
-	fmt.Fprintf(source, "\t\tName:   %s,\n\t\tRegion: %s,\n", identifiers.nameConst, identifiers.regionConst)
+	fmt.Fprintf(source, "\t\tName:   %s,\n\t\tRegion: instance.region,\n", identifiers.nameConst)
 
 	sendable, internal := splitEvents(document)
 	writeEventNames(source, "Events", sendable, identifiers)
@@ -421,7 +428,7 @@ func writeRender(source *strings.Builder, identifiers *names) {
 	fmt.Fprintf(source, "// equal state renders byte-identical markup.\n")
 	fmt.Fprintf(source, "func (instance *%s[I]) Render(state %s) templ.Component {\n",
 		identifiers.widgetType, identifiers.stateType)
-	fmt.Fprintf(source, "\treturn %s(state)\n}\n\n", identifiers.viewFunc)
+	fmt.Fprintf(source, "\treturn %s(state, instance.region)\n}\n\n", identifiers.viewAtFunc)
 }
 
 // writeDirty emits the widget's own answer to "did this transition reach my
@@ -561,9 +568,11 @@ func writeMotionDerivations(source *strings.Builder, document *ir.Document, iden
 	fmt.Fprintf(source, "// Every animation is finite and none repeats, so what starts one again is a new\n")
 	fmt.Fprintf(source, "// element: the scene carries this as its id, the tick advances, and the picture\n")
 	fmt.Fprintf(source, "// moves exactly as often as the data does.\n")
-	fmt.Fprintf(source, "func (state %s) %s() string {\n\treturn %s + \"-tick-\" + strconv.FormatUint(state.%s, 10)\n}\n\n",
-		identifiers.stateType, identifiers.motionTickFunc,
-		identifiers.regionConst, identifiers.fields[motion.RestartOn])
+	fmt.Fprintf(source, "func (state %s) %s() string {\n\treturn state.%s(%s)\n}\n\n",
+		identifiers.stateType, identifiers.motionTickFunc, identifiers.motionTickAtFunc, identifiers.regionConst)
+	fmt.Fprintf(source, "// %s namespaces the scene's tick identity under its live instance.\n", identifiers.motionTickAtFunc)
+	fmt.Fprintf(source, "func (state %s) %s(region string) string {\n\treturn region + \"-tick-\" + strconv.FormatUint(state.%s, 10)\n}\n\n",
+		identifiers.stateType, identifiers.motionTickAtFunc, identifiers.fields[motion.RestartOn])
 }
 
 // writeIndicatorDerivations emits each indicator's tone.

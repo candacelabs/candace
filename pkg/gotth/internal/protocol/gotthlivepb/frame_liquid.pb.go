@@ -20,7 +20,8 @@ var (
 	_liquidOriginSourceRe0             = regexp.MustCompile("^[a-z][a-z0-9_.:/-]*$")
 )
 
-// ValidateFrame validates Liquid Proto field predicates.
+// ValidateFrame checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateFrame(message *Frame) error {
 	if message == nil {
 		return fmt.Errorf("ValidateFrame: nil *Frame")
@@ -44,7 +45,8 @@ func ValidateFrame(message *Frame) error {
 	return nil
 }
 
-// ValidateEvent validates Liquid Proto field predicates.
+// ValidateEvent checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateEvent(message *Event) error {
 	if message == nil {
 		return fmt.Errorf("ValidateEvent: nil *Event")
@@ -84,7 +86,8 @@ func ValidateEvent(message *Event) error {
 	return nil
 }
 
-// ValidateEventField validates Liquid Proto field predicates.
+// ValidateEventField checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateEventField(message *EventField) error {
 	if message == nil {
 		return fmt.Errorf("ValidateEventField: nil *EventField")
@@ -108,7 +111,8 @@ func ValidateEventField(message *EventField) error {
 	return nil
 }
 
-// ValidateAck validates Liquid Proto field predicates.
+// ValidateAck checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateAck(message *Ack) error {
 	if message == nil {
 		return fmt.Errorf("ValidateAck: nil *Ack")
@@ -124,7 +128,8 @@ func ValidateAck(message *Ack) error {
 	return nil
 }
 
-// ValidateResyncRequest validates Liquid Proto field predicates.
+// ValidateResyncRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateResyncRequest(message *ResyncRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateResyncRequest: nil *ResyncRequest")
@@ -140,7 +145,8 @@ func ValidateResyncRequest(message *ResyncRequest) error {
 	return nil
 }
 
-// ValidateClientTelemetry validates Liquid Proto field predicates.
+// ValidateClientTelemetry checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateClientTelemetry(message *ClientTelemetry) error {
 	if message == nil {
 		return fmt.Errorf("ValidateClientTelemetry: nil *ClientTelemetry")
@@ -172,7 +178,8 @@ func ValidateClientTelemetry(message *ClientTelemetry) error {
 	return nil
 }
 
-// ValidatePatch validates Liquid Proto field predicates.
+// ValidatePatch checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidatePatch(message *Patch) error {
 	if message == nil {
 		return fmt.Errorf("ValidatePatch: nil *Patch")
@@ -212,7 +219,8 @@ func ValidatePatch(message *Patch) error {
 	return nil
 }
 
-// ValidateSnapshot validates Liquid Proto field predicates.
+// ValidateSnapshot checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateSnapshot(message *Snapshot) error {
 	if message == nil {
 		return fmt.Errorf("ValidateSnapshot: nil *Snapshot")
@@ -276,7 +284,8 @@ func ValidateSnapshot(message *Snapshot) error {
 	return nil
 }
 
-// ValidateFragmentUpdate validates Liquid Proto field predicates.
+// ValidateFragmentUpdate checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateFragmentUpdate(message *FragmentUpdate) error {
 	if message == nil {
 		return fmt.Errorf("ValidateFragmentUpdate: nil *FragmentUpdate")
@@ -300,7 +309,8 @@ func ValidateFragmentUpdate(message *FragmentUpdate) error {
 	return nil
 }
 
-// ValidateOrigin validates Liquid Proto field predicates.
+// ValidateOrigin checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateOrigin(message *Origin) error {
 	if message == nil {
 		return fmt.Errorf("ValidateOrigin: nil *Origin")
@@ -316,7 +326,8 @@ func ValidateOrigin(message *Origin) error {
 	return nil
 }
 
-// ValidateError validates Liquid Proto field predicates.
+// ValidateError checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateError(message *Error) error {
 	if message == nil {
 		return fmt.Errorf("ValidateError: nil *Error")
@@ -332,7 +343,8 @@ func ValidateError(message *Error) error {
 	return nil
 }
 
-// ValidateHeartbeat validates Liquid Proto field predicates.
+// ValidateHeartbeat checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHeartbeat(message *Heartbeat) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHeartbeat: nil *Heartbeat")

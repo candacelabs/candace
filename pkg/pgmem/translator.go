@@ -37,12 +37,58 @@ func (defaultTranslator) Translate(ctx context.Context, defaultSchema, statement
 		}
 		rewritePostgreSQLTree(rawStatement.Stmt.ProtoReflect(), defaultSchema)
 	}
+	if len(parsed.Stmts) == 1 {
+		if index := parsed.Stmts[0].Stmt.GetIndexStmt(); index != nil {
+			return deparseSQLiteIndex(parsed, index)
+		}
+	}
 
 	translated, err := pgquery.Deparse(parsed)
 	if err != nil {
 		return "", fmt.Errorf("deparse PostgreSQL AST: %w", err)
 	}
 	return strings.TrimSpace(translated), nil
+}
+
+func deparseSQLiteIndex(parsed *pgquery.ParseResult, index *pgquery.IndexStmt) (string, error) {
+	const (
+		btreeAccessMethod       = "btree"
+		createIndexPrefix       = "CREATE INDEX "
+		createUniqueIndexPrefix = "CREATE UNIQUE INDEX "
+		indexIfNotExists        = "IF NOT EXISTS "
+	)
+	if index.Idxname == "" || index.Relation == nil || index.Concurrent ||
+		(index.AccessMethod != "" && index.AccessMethod != btreeAccessMethod) ||
+		len(index.IndexIncludingParams) != 0 || len(index.Options) != 0 ||
+		index.TableSpace != "" || index.NullsNotDistinct {
+		return "", fmt.Errorf("pgmem: only named, ordinary btree indexes are supported: %w", ErrUnsupported)
+	}
+
+	// PostgreSQL qualifies the table; SQLite qualifies the index and resolves
+	// its unqualified table in that database. Keep the parsed key expressions,
+	// predicate, ordering and uniqueness intact in the upstream deparser.
+	qualifiedName := quoteIdentifier(index.Relation.Schemaname) + "." + quoteIdentifier(index.Idxname)
+	ifNotExists := index.IfNotExists
+	index.Relation.Schemaname = ""
+	index.Idxname = ""
+	index.IfNotExists = false
+	index.AccessMethod = ""
+	translated, err := pgquery.Deparse(parsed)
+	if err != nil {
+		return "", fmt.Errorf("deparse PostgreSQL index: %w", err)
+	}
+	prefix := createIndexPrefix
+	if index.Unique {
+		prefix = createUniqueIndexPrefix
+	}
+	definition, found := strings.CutPrefix(translated, prefix)
+	if !found {
+		return "", fmt.Errorf("pgmem: unexpected PostgreSQL index deparser output: %w", ErrUnsupported)
+	}
+	if ifNotExists {
+		prefix += indexIfNotExists
+	}
+	return prefix + qualifiedName + " " + definition, nil
 }
 
 func rewritePostgreSQLTree(message protoreflect.Message, defaultSchema string) {

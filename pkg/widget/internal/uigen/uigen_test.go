@@ -272,6 +272,16 @@ var _ = Describe("The generated scaffold", func() {
 			"_ widget.IDirtyDeclarer[NodeStatusState]                  = (*NodeStatus[live.AnonymousIdentity])(nil)"))
 	})
 
+	It("retains the default constructor and routes an assigned instance region through registration and render", func() {
+		scaffold := scaffoldOf(newBuilder().build())
+
+		Expect(scaffold).To(ContainSubstring("return NewNodeStatusAt[I](NodeStatusRegion)"))
+		Expect(scaffold).To(ContainSubstring("func NewNodeStatusAt[I live.IIdentity](region string) *NodeStatus[I]"))
+		Expect(scaffold).To(ContainSubstring("return &NodeStatus[I]{region: region}"))
+		Expect(scaffold).To(ContainSubstring("Region:   instance.region,"))
+		Expect(scaffold).To(ContainSubstring("return NodeStatusViewAt(state, instance.region)"))
+	})
+
 	It("carries the declared stream into the registration, for the host to resolve", func() {
 		Expect(scaffoldOf(newBuilder().build())).To(ContainSubstring(
 			`{Name: "healthWatch", Source: "widget.node-status.watch", Delivers: NodeStatusEventHealth},`))
@@ -476,7 +486,10 @@ var _ = Describe("The generated scaffold", func() {
 		It("makes the tick an identity, because a finished animation restarts by being a new element", func() {
 			Expect(scaffold).To(ContainSubstring(
 				"func (state NodeStatusState) MotionTickID() string {\n" +
-					"\treturn NodeStatusRegion + \"-tick-\" + strconv.FormatUint(state.Sequence, 10)\n}"))
+					"\treturn state.MotionTickIDAt(NodeStatusRegion)\n}"))
+			Expect(scaffold).To(ContainSubstring(
+				"func (state NodeStatusState) MotionTickIDAt(region string) string {\n" +
+					"\treturn region + \"-tick-\" + strconv.FormatUint(state.Sequence, 10)\n}"))
 		})
 
 		It("selects an indicator's tone between the two tokens the ontology fixes", func() {
@@ -632,10 +645,14 @@ var _ = Describe("The generated scaffold", func() {
 })
 
 var _ = Describe("The generated view", func() {
-	It("declares one live region, named by the region constant", func() {
-		Expect(viewOf(newBuilder().build())).To(ContainSubstring(
-			`<aside { live.Region(NodeStatusRegion)... } class="widget"` +
-				` aria-labelledby={ NodeStatusTitleID }` +
+	It("keeps the default view and accepts a host-assigned instance region", func() {
+		view := viewOf(newBuilder().build())
+		Expect(view).To(ContainSubstring("templ NodeStatusView(state NodeStatusState) {\n" +
+			"\t@NodeStatusViewAt(state, NodeStatusRegion)\n}"))
+		Expect(view).To(ContainSubstring("templ NodeStatusViewAt(state NodeStatusState, region string) {"))
+		Expect(view).To(ContainSubstring(
+			`<aside { live.Region(region)... } class="widget"` +
+				` aria-labelledby={ titleID }` +
 				` data-widget="NodeStatus" data-palette="fieldStation">`))
 	})
 
@@ -650,17 +667,18 @@ var _ = Describe("The generated view", func() {
 		It("is an aside labelled by its own title", func() {
 			view := viewOf(newBuilder().build())
 
-			Expect(view).To(ContainSubstring(`<aside { live.Region(NodeStatusRegion)... }`))
-			Expect(view).To(ContainSubstring(`aria-labelledby={ NodeStatusTitleID }`))
-			Expect(view).To(ContainSubstring(`<h2 class="widget-title widget-token-ink" id={ NodeStatusTitleID }>`))
+			Expect(view).To(ContainSubstring(`<aside { live.Region(region)... }`))
+			Expect(view).To(ContainSubstring(`aria-labelledby={ titleID }`))
+			Expect(view).To(ContainSubstring(`<h2 class="widget-title widget-token-ink" id={ titleID }>`))
 		})
 
-		It("names the label and the labelled element with one constant, so they cannot drift", func() {
+		It("derives the label and labelled element once from the instance region", func() {
 			// Two spellings of one identifier is an aria-labelledby pointing at
 			// nothing, which reads to a screen reader exactly like no name.
 			view := viewOf(newBuilder().build())
 
-			Expect(strings.Count(view, "NodeStatusTitleID")).To(Equal(2))
+			Expect(view).To(ContainSubstring(`{{ titleID := region + "-title" }}`))
+			Expect(strings.Count(view, "{ titleID }")).To(Equal(2))
 		})
 	})
 
@@ -772,7 +790,7 @@ var _ = Describe("The generated view", func() {
 
 		It("carries the widget's own half of the motion gate, and the tick that re-arms it", func() {
 			Expect(view).To(ContainSubstring(`data-motion={ state.MotionActiveText() }>`))
-			Expect(view).To(ContainSubstring(`<svg class="widget-scene" id={ state.MotionTickID() } viewBox=`))
+			Expect(view).To(ContainSubstring(`<svg class="widget-scene" id={ state.MotionTickIDAt(region) } viewBox=`))
 		})
 
 		It("selects an indicator's tone with a predicate and keeps its label beside it", func() {
@@ -943,6 +961,15 @@ var _ = Describe("What Generate refuses", func() {
 
 		Expect(generateError).To(MatchError(uigen.ErrNameCollision))
 		Expect(generateError.Error()).To(ContainSubstring("the generated package"))
+	})
+
+	It("refuses a state field colliding with the instance tick derivation", func() {
+		document := newBuilder().withFullScene()
+		document.StateFields = append(document.StateFields, &ir.StateField{Name: "motionTickIDAt", Type: ir.FieldText})
+		_, generateError := uigen.Generate(document, options)
+
+		Expect(generateError).To(MatchError(uigen.ErrNameCollision))
+		Expect(generateError.Error()).To(ContainSubstring("MotionTickIDAt"))
 	})
 })
 

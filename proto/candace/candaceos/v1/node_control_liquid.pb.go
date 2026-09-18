@@ -31,7 +31,8 @@ var (
 	_liquidHealthResponseNodeIdRe0     = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 )
 
-// ValidateNode validates Liquid Proto field predicates.
+// ValidateNode checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateNode(message *Node) error {
 	if message == nil {
 		return fmt.Errorf("ValidateNode: nil *Node")
@@ -71,7 +72,8 @@ func ValidateNode(message *Node) error {
 	return nil
 }
 
-// ValidateFence validates Liquid Proto field predicates.
+// ValidateFence checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateFence(message *Fence) error {
 	if message == nil {
 		return fmt.Errorf("ValidateFence: nil *Fence")
@@ -95,7 +97,8 @@ func ValidateFence(message *Fence) error {
 	return nil
 }
 
-// ValidateAssignment validates Liquid Proto field predicates.
+// ValidateAssignment checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateAssignment(message *Assignment) error {
 	if message == nil {
 		return fmt.Errorf("ValidateAssignment: nil *Assignment")
@@ -151,7 +154,8 @@ func ValidateAssignment(message *Assignment) error {
 	return nil
 }
 
-// ValidateRevisionLimits validates Liquid Proto field predicates.
+// ValidateRevisionLimits checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateRevisionLimits(message *RevisionLimits) error {
 	if message == nil {
 		return fmt.Errorf("ValidateRevisionLimits: nil *RevisionLimits")
@@ -175,7 +179,8 @@ func ValidateRevisionLimits(message *RevisionLimits) error {
 	return nil
 }
 
-// ValidateSourceSync validates Liquid Proto field predicates.
+// ValidateSourceSync checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateSourceSync(message *SourceSync) error {
 	if message == nil {
 		return fmt.Errorf("ValidateSourceSync: nil *SourceSync")
@@ -207,7 +212,8 @@ func ValidateSourceSync(message *SourceSync) error {
 	return nil
 }
 
-// ValidateAgentStatus validates Liquid Proto field predicates.
+// ValidateAgentStatus checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateAgentStatus(message *AgentStatus) error {
 	if message == nil {
 		return fmt.Errorf("ValidateAgentStatus: nil *AgentStatus")
@@ -231,7 +237,8 @@ func ValidateAgentStatus(message *AgentStatus) error {
 	return nil
 }
 
-// ValidateHealthResponse validates Liquid Proto field predicates.
+// ValidateHealthResponse checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHealthResponse(message *HealthResponse) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHealthResponse: nil *HealthResponse")

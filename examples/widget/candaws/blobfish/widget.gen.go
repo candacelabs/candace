@@ -82,11 +82,17 @@ type BlobfishState struct {
 // look at an identity. It is a type parameter because the SDK's contract
 // carries one — live.Session stopped erasing the application's identity type
 // on 2026-09-03 — and a generated widget must fit whatever host registers it.
-type Blobfish[I live.IIdentity] struct{}
+type Blobfish[I live.IIdentity] struct {
+	region string
+}
 
 // NewBlobfish returns the widget a host registers, instantiated on that
 // host's own identity type.
-func NewBlobfish[I live.IIdentity]() *Blobfish[I] { return &Blobfish[I]{} }
+func NewBlobfish[I live.IIdentity]() *Blobfish[I] { return NewBlobfishAt[I](BlobfishRegion) }
+
+// NewBlobfishAt gives one instance its host-assigned region. The host validates
+// region syntax and uniqueness when assembling its live configuration.
+func NewBlobfishAt[I live.IIdentity](region string) *Blobfish[I] { return &Blobfish[I]{region: region} }
 
 // The contract, asserted at one instantiation. Anonymous is the identity a
 // host with no accounts uses, and any other I satisfies the same interfaces:
@@ -96,14 +102,14 @@ var (
 	_ widget.IDirtyDeclarer[BlobfishState]                  = (*Blobfish[live.AnonymousIdentity])(nil)
 )
 
-// Register declares the widget, once per process and before any session.
+// Register declares this instance's definition and assigned region.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
 func (instance *Blobfish[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     BlobfishName,
-		Region:   BlobfishRegion,
+		Region:   instance.region,
 		Internal: []string{BlobfishEventReplicaReport},
 		Streams: []widget.StreamDeclaration{
 			{Name: "replicaWatch", Source: "widget.candaws.blobfish.watch", Delivers: BlobfishEventReplicaReport},
@@ -171,7 +177,7 @@ func (instance *Blobfish[I]) Reduce(
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
 func (instance *Blobfish[I]) Render(state BlobfishState) templ.Component {
-	return BlobfishView(state)
+	return BlobfishViewAt(state, instance.region)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
@@ -406,7 +412,12 @@ func (state BlobfishState) MotionActiveText() string {
 // element: the scene carries this as its id, the tick advances, and the picture
 // moves exactly as often as the data does.
 func (state BlobfishState) MotionTickID() string {
-	return BlobfishRegion + "-tick-" + strconv.FormatUint(state.Generation, 10)
+	return state.MotionTickIDAt(BlobfishRegion)
+}
+
+// MotionTickIDAt namespaces the scene's tick identity under its live instance.
+func (state BlobfishState) MotionTickIDAt(region string) string {
+	return region + "-tick-" + strconv.FormatUint(state.Generation, 10)
 }
 
 // DurabilityIndicatorTone is the "durabilityIndicator" indicator's tone: positive while its predicate holds, warning otherwise.

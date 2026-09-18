@@ -32,22 +32,25 @@ var ErrNameCollision = errors.New("uigen: two document identifiers emit one Go i
 // ordered sequences, because a generator that ranged a map would hand back the
 // determinism the IR's ordering exists to provide.
 type names struct {
-	widgetType   string
-	stateType    string
-	viewFunc     string
-	constructor  string
-	nameConst    string
-	regionConst  string
-	paletteConst string
-	titleIDConst string
+	widgetType    string
+	stateType     string
+	viewFunc      string
+	viewAtFunc    string
+	constructor   string
+	constructorAt string
+	nameConst     string
+	regionConst   string
+	paletteConst  string
+	titleIDConst  string
 
-	// The three derivations a widget's motion adds to its state type. They are
+	// The derivations a widget's motion adds to its state type. They are
 	// empty for a widget with no motion block, and are claimed only for one
 	// that has it: a document with no motion may name a label `motionActive`,
 	// and refusing it would be refusing a name nothing is using.
 	motionActiveFunc string
 	motionActiveText string
 	motionTickFunc   string
+	motionTickAtFunc string
 
 	fields         map[*ir.StateField]string
 	bindings       map[*ir.Binding]string
@@ -68,6 +71,7 @@ const (
 	motionActiveName = "MotionActive"
 	motionTextSuffix = "Text"
 	motionTickName   = "MotionTickID"
+	instanceSuffix   = "At"
 	toneSuffix       = "Tone"
 	pressedSuffix    = "PressedText"
 )
@@ -83,7 +87,9 @@ func newNames(document *ir.Document) (*names, error) {
 		widgetType:     widgetType,
 		stateType:      widgetType + "State",
 		viewFunc:       widgetType + "View",
+		viewAtFunc:     widgetType + "View" + instanceSuffix,
 		constructor:    "New" + widgetType,
+		constructorAt:  "New" + widgetType + instanceSuffix,
 		nameConst:      widgetType + "Name",
 		regionConst:    widgetType + "Region",
 		paletteConst:   widgetType + "Palette",
@@ -165,7 +171,11 @@ func newNames(document *ir.Document) (*names, error) {
 			if claimError := members.claim(motionTickName, "the motion block's restartOn"); claimError != nil {
 				return nil, claimError
 			}
+			if claimError := members.claim(motionTickName+instanceSuffix, "the motion block's restartOn"); claimError != nil {
+				return nil, claimError
+			}
 			derived.motionTickFunc = motionTickName
+			derived.motionTickAtFunc = motionTickName + instanceSuffix
 		}
 	}
 	for _, indicator := range document.Indicators {
@@ -197,7 +207,8 @@ func newNames(document *ir.Document) (*names, error) {
 	// second NodeStatusName.
 	packageLevel := newNamespace("the generated package")
 	for _, fixed := range []string{
-		derived.widgetType, derived.stateType, derived.viewFunc, derived.constructor,
+		derived.widgetType, derived.stateType, derived.viewFunc, derived.viewAtFunc,
+		derived.constructor, derived.constructorAt,
 		derived.nameConst, derived.regionConst, derived.paletteConst, derived.titleIDConst,
 	} {
 		if claimError := packageLevel.claim(fixed, document.Name); claimError != nil {

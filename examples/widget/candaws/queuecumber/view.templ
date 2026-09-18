@@ -4,17 +4,23 @@ package queuecumber
 
 import "github.com/candacelabs/candace/pkg/gotth/live"
 
-// QueuecumberView draws the Queuecumber widget's live region.
-//
-// Every value in it is a pure read of state, because the same state must render
-// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+// QueuecumberView draws the Queuecumber widget's default live region.
 templ QueuecumberView(state QueuecumberState) {
-	<aside { live.Region(QueuecumberRegion)... } class="widget" aria-labelledby={ QueuecumberTitleID } data-widget="Queuecumber" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
+	@QueuecumberViewAt(state, QueuecumberRegion)
+}
+
+// QueuecumberViewAt draws one instance in its host-assigned live region.
+//
+// Every value in it is a pure read of state and region: equal inputs render
+// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+templ QueuecumberViewAt(state QueuecumberState, region string) {
+	{{ titleID := region + "-title" }}
+	<aside { live.Region(region)... } class="widget" aria-labelledby={ titleID } data-widget="Queuecumber" data-palette="fieldStation" data-motion={ state.MotionActiveText() }>
 		<header class="widget-chrome">
 			<p class="widget-source widget-token-muted">{ state.SourceLabel() }</p>
-			<h2 class="widget-title widget-token-ink" id={ QueuecumberTitleID }>{ state.TitleLabel() }</h2>
+			<h2 class="widget-title widget-token-ink" id={ titleID }>{ state.TitleLabel() }</h2>
 		</header>
-		<svg class="widget-scene" id={ state.MotionTickID() } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
+		<svg class="widget-scene" id={ state.MotionTickIDAt(region) } viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
 			<g class="widget-edge" transform="translate(8,46) rotate(0)" style="--widget-edge-length: 30px">
 				<line class="widget-edge-line widget-token-rule" x1="0" y1="0" x2="30" y2="0"></line>
 				<circle class="widget-pulse widget-pulse-forward widget-token-accent" r="2" style="--widget-pulse-duration: 520ms; --widget-pulse-delay: 0ms"></circle>

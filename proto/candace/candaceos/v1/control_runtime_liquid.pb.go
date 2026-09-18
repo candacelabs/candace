@@ -23,7 +23,8 @@ var (
 	_liquidHarnessRuntimeIdentityImplementationRe0 = regexp.MustCompile("^[a-z0-9][a-z0-9._-]*$")
 )
 
-// ValidateCoreConfig validates Liquid Proto field predicates.
+// ValidateCoreConfig checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateCoreConfig(message *CoreConfig) error {
 	if message == nil {
 		return fmt.Errorf("ValidateCoreConfig: nil *CoreConfig")
@@ -79,7 +80,8 @@ func ValidateCoreConfig(message *CoreConfig) error {
 	return nil
 }
 
-// ValidateOllamaConfig validates Liquid Proto field predicates.
+// ValidateOllamaConfig checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateOllamaConfig(message *OllamaConfig) error {
 	if message == nil {
 		return fmt.Errorf("ValidateOllamaConfig: nil *OllamaConfig")
@@ -135,7 +137,8 @@ func ValidateOllamaConfig(message *OllamaConfig) error {
 	return nil
 }
 
-// ValidateOpenCodeConfig validates Liquid Proto field predicates.
+// ValidateOpenCodeConfig checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateOpenCodeConfig(message *OpenCodeConfig) error {
 	if message == nil {
 		return fmt.Errorf("ValidateOpenCodeConfig: nil *OpenCodeConfig")
@@ -207,7 +210,8 @@ func ValidateOpenCodeConfig(message *OpenCodeConfig) error {
 	return nil
 }
 
-// ValidateHarnessRuntimeIdentity validates Liquid Proto field predicates.
+// ValidateHarnessRuntimeIdentity checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessRuntimeIdentity(message *HarnessRuntimeIdentity) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessRuntimeIdentity: nil *HarnessRuntimeIdentity")
@@ -239,7 +243,8 @@ func ValidateHarnessRuntimeIdentity(message *HarnessRuntimeIdentity) error {
 	return nil
 }
 
-// ValidatePersistenceTiming validates Liquid Proto field predicates.
+// ValidatePersistenceTiming checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidatePersistenceTiming(message *PersistenceTiming) error {
 	if message == nil {
 		return fmt.Errorf("ValidatePersistenceTiming: nil *PersistenceTiming")

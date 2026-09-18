@@ -267,16 +267,9 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 		Expect(w.isClosed()).To(BeFalse())
 	})
 
-	// D-22. A rejected handshake decrements gotthlive_sessions_active without a
-	// matching increment, because wsx.Handler.ServeHTTP calls
-	// Metrics.ConnectionClosed on the origin, authentication and CSRF rejection
-	// paths, and Metrics.ConnectionOpened is only called from Actor.mount —
-	// which those paths never reach. The gauge therefore counts DOWN under
-	// exactly the hostile traffic FR-51 is about, and an operator alerting on
-	// live sessions is alerting on a number that goes negative.
-	//
-	// Asserted as the current behaviour so the spec goes red when it is fixed.
-	It("counts gotthlive_sessions_active down on every rejected handshake (D-22, FR-34)", func() {
+	// D-22 previously let refused handshakes decrement the active gauge.
+	// Regression: only registry membership changes the active gauge.
+	It("keeps gotthlive_sessions_active at zero after rejected handshakes (D-22, FR-34)", func() {
 		rec := obstest.NewMetrics()
 		s := serve(func(cfg *live.Config[board, chaosUser]) {
 			cfg.Logger = nil
@@ -303,13 +296,9 @@ var _ = Describe("An event flood from a hostile client (PRD case 5, FR-51)", fun
 			"%d rejected upgrades: gotthlive_sessions_active = %.0f, gotthlive_connections_total = %.0f, gotthlive_connections_closed_total = %.0f",
 			attempts, active, opened, closed))
 
-		Expect(active).To(Equal(float64(-attempts)),
-			"gotthlive_sessions_active is %.0f after %d rejected handshakes. This spec records D-22: "+
-				"ConnectionClosed decrements the gauge on the origin, authentication and CSRF rejection "+
-				"paths, which ConnectionOpened never ran on. If this is now 0, D-22 is fixed and this "+
-				"spec should assert non-negativity instead", active, attempts)
+		Expect(active).To(BeZero(), "rejected handshakes never enter the live registry")
 		Expect(opened).To(BeZero(),
-			"no session was opened, which is what makes the decrement above unmatched")
+			"no session was opened")
 	})
 
 	// D-23. live.Limits.validate() checks only for negative values and

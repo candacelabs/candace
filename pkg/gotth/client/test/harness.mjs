@@ -123,7 +123,7 @@ export class fakeSocket {
   deliver(frame) {
     const bytes = encodeFrame(frame);
     // binaryType is "arraybuffer", so the runtime receives an ArrayBuffer.
-    this.onmessage({ data: bytes.buffer });
+    this.onmessage?.({ data: bytes.buffer });
     return this;
   }
 
@@ -132,11 +132,11 @@ export class fakeSocket {
   // cable, a killed server and a proxy timeout all look like.
   drop(code) {
     if (this.readyState === 3) {
-      this.onclose({ code: code === undefined ? 1006 : code });
+      this.onclose?.({ code: code === undefined ? 1006 : code });
       return this;
     }
     this.readyState = 3;
-    this.onclose({ code: code === undefined ? 1006 : code });
+    this.onclose?.({ code: code === undefined ? 1006 : code });
     return this;
   }
 
@@ -186,7 +186,10 @@ export async function harness(t, opts) {
     activeElement: null,
     addEventListener(type, fn) {
       if (!listeners.has(type)) listeners.set(type, []);
-      listeners.get(type).push(fn);
+      if (!listeners.get(type).includes(fn)) listeners.get(type).push(fn);
+    },
+    removeEventListener(type, fn) {
+      listeners.set(type, (listeners.get(type) || []).filter((listener) => listener !== fn));
     },
     querySelectorAll: (sel) => root.querySelectorAll(sel),
     querySelector: (sel) => root.querySelectorAll(sel)[0] || null,

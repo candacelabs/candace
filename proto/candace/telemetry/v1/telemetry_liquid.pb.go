@@ -17,7 +17,8 @@ var (
 	_liquidTraceContextSpanIdRe0  = regexp.MustCompile("^[0-9a-f]{16}$")
 )
 
-// ValidateTraceContext validates Liquid Proto field predicates.
+// ValidateTraceContext checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateTraceContext(message *TraceContext) error {
 	if message == nil {
 		return fmt.Errorf("ValidateTraceContext: nil *TraceContext")
@@ -49,7 +50,8 @@ func ValidateTraceContext(message *TraceContext) error {
 	return nil
 }
 
-// ValidateLogRecord validates Liquid Proto field predicates.
+// ValidateLogRecord checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateLogRecord(message *LogRecord) error {
 	if message == nil {
 		return fmt.Errorf("ValidateLogRecord: nil *LogRecord")

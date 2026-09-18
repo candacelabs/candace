@@ -55,11 +55,19 @@ type NodeStatusState struct {
 // look at an identity. It is a type parameter because the SDK's contract
 // carries one — live.Session stopped erasing the application's identity type
 // on 2026-09-03 — and a generated widget must fit whatever host registers it.
-type NodeStatus[I live.IIdentity] struct{}
+type NodeStatus[I live.IIdentity] struct {
+	region string
+}
 
 // NewNodeStatus returns the widget a host registers, instantiated on that
 // host's own identity type.
-func NewNodeStatus[I live.IIdentity]() *NodeStatus[I] { return &NodeStatus[I]{} }
+func NewNodeStatus[I live.IIdentity]() *NodeStatus[I] { return NewNodeStatusAt[I](NodeStatusRegion) }
+
+// NewNodeStatusAt gives one instance its host-assigned region. The host validates
+// region syntax and uniqueness when assembling its live configuration.
+func NewNodeStatusAt[I live.IIdentity](region string) *NodeStatus[I] {
+	return &NodeStatus[I]{region: region}
+}
 
 // The contract, asserted at one instantiation. Anonymous is the identity a
 // host with no accounts uses, and any other I satisfies the same interfaces:
@@ -69,14 +77,14 @@ var (
 	_ widget.IDirtyDeclarer[NodeStatusState]                  = (*NodeStatus[live.AnonymousIdentity])(nil)
 )
 
-// Register declares the widget, once per process and before any session.
+// Register declares this instance's definition and assigned region.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
 func (instance *NodeStatus[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     NodeStatusName,
-		Region:   NodeStatusRegion,
+		Region:   instance.region,
 		Internal: []string{NodeStatusEventHealth},
 		Streams: []widget.StreamDeclaration{
 			{Name: "healthWatch", Source: "widget.node-status.watch", Delivers: NodeStatusEventHealth},
@@ -116,7 +124,7 @@ func (instance *NodeStatus[I]) Reduce(
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
 func (instance *NodeStatus[I]) Render(state NodeStatusState) templ.Component {
-	return NodeStatusView(state)
+	return NodeStatusViewAt(state, instance.region)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the

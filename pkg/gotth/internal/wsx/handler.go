@@ -271,7 +271,7 @@ func (h *Handler[I]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// or `Close` wins and this registration is refused. A session that is
 	// refused is closed here, before any goroutine exists for it.
 	sess := h.newConn(c, peer)
-	if err := h.register(sess); err != nil {
+	if err := h.register(sessionCtx, sess); err != nil {
 		// The error was constructed and then discarded here until the Phase 4
 		// error audit. A library-produced error that reaches nobody is FR-58's
 		// failure mode with the volume turned to zero: the operator saw a
@@ -406,7 +406,7 @@ func (h *Handler[I]) dropIdentity(identity I) {
 // `draining` set. There is no interleaving in which a session is live and
 // absent from the snapshot, which is what let `Close` report a successful drain
 // over a session it never touched (C-34).
-func (h *Handler[I]) register(c *conn[I]) error {
+func (h *Handler[I]) register(ctx context.Context, c *conn[I]) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.draining {
@@ -423,14 +423,20 @@ func (h *Handler[I]) register(c *conn[I]) error {
 	// and never momentarily double (BR-8).
 	h.pending--
 	h.sessions[c.peer.ID] = c
+	h.opts.Metrics.ConnectionOpened(ctx)
+	h.opts.Metrics.SessionsActive(ctx, 1)
 	return nil
 }
 
 // deregister removes a session exactly once.
-func (h *Handler[I]) deregister(c *conn[I]) {
+func (h *Handler[I]) deregister(ctx context.Context, c *conn[I]) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if _, exists := h.sessions[c.peer.ID]; !exists {
+		return
+	}
 	delete(h.sessions, c.peer.ID)
+	h.opts.Metrics.SessionsActive(ctx, -1)
 }
 
 // Close drains every live session, closing each with the going-away code, and

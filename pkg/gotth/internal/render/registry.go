@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/maphash"
 	"io"
+	"strings"
 )
 
 // Op is how a fragment update is applied to the DOM. It mirrors the wire
@@ -74,6 +75,9 @@ type Fragment struct {
 	Render RenderFunc
 	// Dirty is the optional change declaration.
 	Dirty DirtyFunc
+
+	// Children projects ordered nested regions from session state.
+	Children func(state any) []Fragment
 }
 
 // Registry is an application's fragment set. It is immutable after
@@ -112,6 +116,17 @@ func NewRegistry(frags []Fragment) (*Registry, error) {
 					"give each live region a distinct identity", prev, i, f.ID)
 		}
 		index[f.ID] = i
+	}
+
+	for _, parent := range frags {
+		if parent.Children == nil {
+			continue
+		}
+		for _, other := range frags {
+			if other.ID != parent.ID && strings.HasPrefix(other.ID, parent.ID+":") {
+				return nil, fmt.Errorf("gotth-live: fragment %q overlaps the child namespace of %q: use disjoint region identities", other.ID, parent.ID)
+			}
+		}
 	}
 
 	return &Registry{
@@ -161,4 +176,19 @@ func (r *Registry) IDs() []string {
 func (r *Registry) Index(id string) (int, bool) {
 	i, ok := r.index[id]
 	return i, ok
+}
+
+// AdmitsID is the immutable ingress check. A dynamic child passes only its
+// declared namespace here; the actor checks exact committed membership before
+// dispatch, after any in-progress send and membership publication finish.
+func (r *Registry) AdmitsID(id string) bool {
+	if _, known := r.index[id]; known {
+		return true
+	}
+	for _, parent := range r.frags {
+		if parent.Children != nil && id != parent.ID+":" && strings.HasPrefix(id, parent.ID+":") {
+			return true
+		}
+	}
+	return false
 }

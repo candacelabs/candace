@@ -19,7 +19,8 @@ var (
 	_liquidAppSourceEntryPathRe1         = regexp.MustCompile("^([^/]+/){64}")
 )
 
-// ValidateAppSourceSelection validates Liquid Proto field predicates.
+// ValidateAppSourceSelection checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateAppSourceSelection(message *AppSourceSelection) error {
 	if message == nil {
 		return fmt.Errorf("ValidateAppSourceSelection: nil *AppSourceSelection")
@@ -43,7 +44,8 @@ func ValidateAppSourceSelection(message *AppSourceSelection) error {
 	return nil
 }
 
-// ValidateAppSourceLimits validates Liquid Proto field predicates.
+// ValidateAppSourceLimits checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateAppSourceLimits(message *AppSourceLimits) error {
 	if message == nil {
 		return fmt.Errorf("ValidateAppSourceLimits: nil *AppSourceLimits")
@@ -67,7 +69,8 @@ func ValidateAppSourceLimits(message *AppSourceLimits) error {
 	return nil
 }
 
-// ValidateAppSourceEntry validates Liquid Proto field predicates.
+// ValidateAppSourceEntry checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateAppSourceEntry(message *AppSourceEntry) error {
 	if message == nil {
 		return fmt.Errorf("ValidateAppSourceEntry: nil *AppSourceEntry")

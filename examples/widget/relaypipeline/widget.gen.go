@@ -74,11 +74,21 @@ type RelayPipelineState struct {
 // look at an identity. It is a type parameter because the SDK's contract
 // carries one — live.Session stopped erasing the application's identity type
 // on 2026-09-03 — and a generated widget must fit whatever host registers it.
-type RelayPipeline[I live.IIdentity] struct{}
+type RelayPipeline[I live.IIdentity] struct {
+	region string
+}
 
 // NewRelayPipeline returns the widget a host registers, instantiated on that
 // host's own identity type.
-func NewRelayPipeline[I live.IIdentity]() *RelayPipeline[I] { return &RelayPipeline[I]{} }
+func NewRelayPipeline[I live.IIdentity]() *RelayPipeline[I] {
+	return NewRelayPipelineAt[I](RelayPipelineRegion)
+}
+
+// NewRelayPipelineAt gives one instance its host-assigned region. The host validates
+// region syntax and uniqueness when assembling its live configuration.
+func NewRelayPipelineAt[I live.IIdentity](region string) *RelayPipeline[I] {
+	return &RelayPipeline[I]{region: region}
+}
 
 // The contract, asserted at one instantiation. Anonymous is the identity a
 // host with no accounts uses, and any other I satisfies the same interfaces:
@@ -88,14 +98,14 @@ var (
 	_ widget.IDirtyDeclarer[RelayPipelineState]                  = (*RelayPipeline[live.AnonymousIdentity])(nil)
 )
 
-// Register declares the widget, once per process and before any session.
+// Register declares this instance's definition and assigned region.
 //
 // Events are the names a browser may send; Internal are the names only a
 // declared stream delivers, which the host routes without registering.
 func (instance *RelayPipeline[I]) Register() widget.Registration {
 	return widget.Registration{
 		Name:     RelayPipelineName,
-		Region:   RelayPipelineRegion,
+		Region:   instance.region,
 		Internal: []string{RelayPipelineEventAdvance},
 		Streams: []widget.StreamDeclaration{
 			{Name: "pipelineWatch", Source: "widget.relay.watch", Delivers: RelayPipelineEventAdvance},
@@ -155,7 +165,7 @@ func (instance *RelayPipeline[I]) Reduce(
 // Render draws the widget's live region. It is a pure function of state:
 // equal state renders byte-identical markup.
 func (instance *RelayPipeline[I]) Render(state RelayPipelineState) templ.Component {
-	return RelayPipelineView(state)
+	return RelayPipelineViewAt(state, instance.region)
 }
 
 // Dirty reports whether a transition may have changed this widget's markup: the
@@ -326,5 +336,10 @@ func (state RelayPipelineState) MotionActiveText() string {
 // element: the scene carries this as its id, the tick advances, and the picture
 // moves exactly as often as the data does.
 func (state RelayPipelineState) MotionTickID() string {
-	return RelayPipelineRegion + "-tick-" + strconv.FormatUint(state.Cursor, 10)
+	return state.MotionTickIDAt(RelayPipelineRegion)
+}
+
+// MotionTickIDAt namespaces the scene's tick identity under its live instance.
+func (state RelayPipelineState) MotionTickIDAt(region string) string {
+	return region + "-tick-" + strconv.FormatUint(state.Cursor, 10)
 }

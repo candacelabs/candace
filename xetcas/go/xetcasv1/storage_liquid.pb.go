@@ -19,7 +19,8 @@ var (
 	_liquidFileRecordSha256Re0       = regexp.MustCompile("^[0-9a-f]{64}$")
 )
 
-// ValidateXorbRecord validates Liquid Proto field predicates.
+// ValidateXorbRecord checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateXorbRecord(message *XorbRecord) error {
 	if message == nil {
 		return fmt.Errorf("ValidateXorbRecord: nil *XorbRecord")
@@ -51,7 +52,8 @@ func ValidateXorbRecord(message *XorbRecord) error {
 	return nil
 }
 
-// ValidateFileTermRecord validates Liquid Proto field predicates.
+// ValidateFileTermRecord checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateFileTermRecord(message *FileTermRecord) error {
 	if message == nil {
 		return fmt.Errorf("ValidateFileTermRecord: nil *FileTermRecord")
@@ -67,7 +69,8 @@ func ValidateFileTermRecord(message *FileTermRecord) error {
 	return nil
 }
 
-// ValidateFileRecord validates Liquid Proto field predicates.
+// ValidateFileRecord checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateFileRecord(message *FileRecord) error {
 	if message == nil {
 		return fmt.Errorf("ValidateFileRecord: nil *FileRecord")

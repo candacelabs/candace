@@ -72,7 +72,10 @@ type Options[I IIdentity] struct {
 	Ticks <-chan time.Time
 }
 
-// Actor owns one session's state, and is the only thing that touches it.
+// Actor implements the service owning one connection's widget state and effects.
+// Its Run method processes events on one goroutine, serializing reducers and
+// renderers. Its parent starts Run and waits for it at cleanup. Shared mutable
+// objects accessed elsewhere still require synchronization or ownership transfer.
 //
 // It selects over three typed, bounded inputs: a mailbox of events, effect
 // results and synthesized backpressure signals; a channel of client
@@ -334,7 +337,6 @@ func (a *Actor[I]) mount(ctx context.Context) {
 	a.state = state
 	a.transitionID = 1
 	a.stateVersion = 1
-	a.m.ConnectionOpened(ctx)
 	a.m.TrackedBytes(ctx, a.TrackedBytes())
 
 	// BR-5. H-10 makes Snapshot the first frame on a connection, and mount's
@@ -412,6 +414,14 @@ func (a *Actor[I]) transition(ctx context.Context, ev Event, origin protocol.Ori
 		a.emitError(ctx, pb.ErrorCode_INVALID_FRAME,
 			"the event claims to have seen a patch this session has not sent: reconnect and resynchronise",
 			ev.ID, ev.ClientRef, false)
+		return
+	}
+
+	// Dynamic membership is checked here, on its owner. A browser may answer
+	// a just-written structural patch before send returns; ingress must not
+	// reject that valid event against the previous committed member set.
+	if origin.Kind == pb.OriginKind_CLIENT_EVENT && !a.view.KnownID(ev.FragmentID) {
+		a.rejectUnknownFragment(ctx, ev.ID, ev.ClientRef)
 		return
 	}
 
@@ -686,6 +696,8 @@ func (a *Actor[I]) emitSnapshot(ctx context.Context, origin protocol.Origin, sup
 	return n, true
 }
 
+const patchUpdatesField = "gotthlive.v1.Patch.updates"
+
 // renderPass runs one render under gotthlive.render. The per-fragment spans
 // inside it come from the observer installed once in New.
 func (a *Actor[I]) renderPass(ctx context.Context, all bool) render.Result {
@@ -700,7 +712,17 @@ func (a *Actor[I]) renderPass(ctx context.Context, all bool) render.Result {
 	if all {
 		return a.view.RenderAll(ctx, a.state)
 	}
-	return a.view.Render(ctx, a.state)
+	result := a.view.Render(ctx, a.state)
+	bound, _ := protocol.ListBound(patchUpdatesField)
+	if len(result.Updates) > bound {
+		// A large child update set fits as the existing parent regions. Never
+		// install hashes for an oversized pass the protocol would refuse.
+		a.view.Discard(result)
+		complete := a.view.RenderAll(ctx, a.state)
+		complete.Failed = append(result.Failed, complete.Failed...)
+		return complete
+	}
+	return result
 }
 
 // observeFragments installs gotthlive.render.fragment, one span per fragment a

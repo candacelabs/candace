@@ -16,7 +16,8 @@ var (
 	_liquidWebUIClawMessageRequestExpectedRunIdRe0 = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 )
 
-// ValidateWebUIPromptRequest validates Liquid Proto field predicates.
+// ValidateWebUIPromptRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateWebUIPromptRequest(message *WebUIPromptRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateWebUIPromptRequest: nil *WebUIPromptRequest")
@@ -32,7 +33,8 @@ func ValidateWebUIPromptRequest(message *WebUIPromptRequest) error {
 	return nil
 }
 
-// ValidateWebUIClawMessageRequest validates Liquid Proto field predicates.
+// ValidateWebUIClawMessageRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateWebUIClawMessageRequest(message *WebUIClawMessageRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateWebUIClawMessageRequest: nil *WebUIClawMessageRequest")
@@ -64,7 +66,8 @@ func ValidateWebUIClawMessageRequest(message *WebUIClawMessageRequest) error {
 	return nil
 }
 
-// ValidateWebUIApprovalRequest validates Liquid Proto field predicates.
+// ValidateWebUIApprovalRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateWebUIApprovalRequest(message *WebUIApprovalRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateWebUIApprovalRequest: nil *WebUIApprovalRequest")

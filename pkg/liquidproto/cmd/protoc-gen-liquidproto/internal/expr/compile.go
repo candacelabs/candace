@@ -41,7 +41,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("predicate %q: %s", e.Source, e.Msg)
 }
 
-// Compile accepts comparisons, &&, ||, !, len(), and matches().
+// Compile accepts comparisons, signed integer literals, &&, ||, !, len(), and matches().
 func Compile(src string, fieldType Type, receiver, regexpPrefix string) (*Program, error) {
 	if strings.TrimSpace(src) == "" {
 		return nil, &Error{Source: src, Msg: "predicate is empty"}
@@ -161,6 +161,17 @@ func (c *checker) checkLiteral(literal *ast.BasicLit) (value, error) {
 }
 
 func (c *checker) checkUnary(expression *ast.UnaryExpr) (value, error) {
+	if expression.Op == token.SUB {
+		operand, err := c.check(expression.X)
+		if err != nil {
+			return value{}, err
+		}
+		if operand.typ.Kind != KindUntypedInt || operand.integer == nil {
+			return value{}, c.errf(expression.Pos(), "unary - requires an integer literal")
+		}
+		integer := constant.UnaryOp(token.SUB, operand.integer, 0)
+		return value{typ: typeUntypedInt, code: integer.ExactString(), prec: precUnary, integer: integer}, nil
+	}
 	if expression.Op != token.NOT {
 		return value{}, c.errf(expression.Pos(), "unary operator %s is not part of the predicate grammar", expression.Op)
 	}

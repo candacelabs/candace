@@ -117,9 +117,9 @@ test("the shipped bundle boots against a document and installs one global", () =
   assert.equal(typeof globalThis.gotthLive.start, "function");
   assert.equal(globalThis.gotthLive.status(), "");
 
-  // FR-26's composition tracking is wired at boot, before any patch arrives.
-  assert.ok(listeners.includes("compositionstart"));
-  assert.ok(listeners.includes("compositionend"));
+  // Embedding shells may finish loading after unmount; start owns listeners.
+  assert.deepEqual(listeners, []);
+  assert.equal(typeof globalThis.gotthLive.stop, "function");
 
   delete globalThis.document;
   delete globalThis.gotthLive;

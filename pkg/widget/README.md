@@ -29,8 +29,10 @@ region, its own UI — and every widget a host serves runs inside one process.
 HOST's identity type, threaded through and never read — and its six methods are
 the lifecycle phases of
 [`docs/ontology.md`](docs/ontology.md) rather than a shape chosen for
-convenience: `Register`, `Mount`, `Reduce`, `Render`, `Effect`, `Unmount`, plus
-the `Snapshot` a host reads without knowing the widget's type. `S` is the
+convenience: `Register`, `Mount`, `Reduce`, `Render`, `Unmount`, and
+`Snapshot`, which a host reads without knowing the widget's type. Effects are
+returned as `live.Effect` values whose `Run` functions perform the work; there
+is no `Effect` method on the widget interface. `S` is the
 widget's own state type and every phase is written in it, so nothing an author
 writes ever holds an untyped state. Only the registry holds widgets of several
 different `S` at once, and `widget.Register` is where — once, behind a generic
@@ -40,6 +42,34 @@ shell, in an unexported adapter — that is erased.
 ontology's reading rather than an omission: a tick is what a `Stream` delivers
 without a user, so it reaches `Reduce` as the event the stream carries — the
 same way an effect failure does, so a reducer sees every cause in one switch.
+
+**A live UI session means one accepted gotth-live WebSocket connection and the
+server-side state maintained for that connection.** In this README, "session"
+always means that connection's lifetime, not a login or a stored agent
+conversation. Each connection gets an initial state value for each mounted
+widget; its reducer and renderer run serially on the connection's owning
+goroutine. A reconnect creates a new session and initializes state again;
+restoring durable application data is the host's responsibility. Separate
+state values can still refer to shared objects: this is not deep copying or
+memory isolation. See the [connection implementation](../gotth/internal/wsx)
+and [widget initialization](registry.go).
+
+**Widget count does not determine connection count.** A date widget and a widget
+with many asynchronous workers share the same WebSocket when mounted on the same
+live page. `live.App.ActiveConnections()` counts that connection once. The
+service that owns connection state (currently named `Actor` in
+[`internal/session/actor.go`](../gotth/internal/session/actor.go)) serializes all
+of its widget reducers and renderers on one goroutine; effects do their
+asynchronous work on additional goroutines. Their count is a separate measurement.
+A consumer explicitly
+opening another transport creates another connection; widget mounting does not.
+
+The host **app** is the runnable composition that owns the application process.
+gotth-live acts as an in-process **service**, managing live connections and their
+goroutines. That service can outlive many individual connections. Widget
+`Mount`/`Unmount` follow each connection's lifetime; shared application services
+retain their own owners and lifetimes. The current bounded cleanup behavior is
+described below.
 
 ```go
 registry := widget.NewRegistry()
@@ -74,9 +104,92 @@ registration, because the field names are a contract with whatever fills the
 event. Renaming a field in the document is then a compile error at every site
 that fills it, rather than a card that silently stops updating.
 
-There is no per-widget port, container or connection: what separates two
-widgets is what separates two goroutines, and the Go runtime schedules them.
+There is no per-widget port, container or connection. Widgets share the host's
+address space; the session serializes reducer work and effects can run
+concurrently. Mounting a widget does not allocate a private heap or require a
+dedicated goroutine per widget.
 [`examples/widget/`](../../examples/widget) is the smallest host that does it.
+
+### Shared memory, ownership and cleanup
+
+A widget is an in-process composition unit with per-session state and lifecycle
+hooks. Those hooks do not create a memory-isolation boundary. Its interface
+specifies operations, not an implementation strategy or automatic resource
+ownership. The registry reuses registered widget implementations across
+sessions; mutable receiver fields or injected dependencies can therefore be
+shared even when each session has its own state value.
+
+| Concern | Consumer contract |
+|---|---|
+| State passed by value | Copying a struct, slice, map or pointer does not recursively copy referenced data. Reducers must not mutate prior state; copy the parts that change or use immutable values. |
+| Concurrent effects | Return results through events instead of mutating reducer-owned state. Shared mutable dependencies need an explicit owner or synchronization protocol: channels, locks or appropriate atomics. |
+| Read-only sharing | Data initialized before publication and never mutated afterward may be shared without a mutex. Exclusive ownership transfer is another option, provided the sender stops using the transferred mutable data. |
+| Borrowed resources | Passing a resource does not transfer cleanup responsibility automatically. Its owner must keep it usable until all authorized users finish; a child must not close a borrowed pool or clear shared state on its own exit. |
+| Shared reads and writes | If one goroutine changes data while another accesses the same data, synchronize those accesses. When using a mutex, readers and writers must use the same mutex. Locking only the pointer handoff does not protect subsequent access to its contents. |
+| Clearing a pointer | `thingy = nil` assigns to the variable `thingy`; `*thingy = nil` writes to the location it points to, when the stored type permits `nil`. A shared location needs synchronization with readers in either case. Clearing one pointer slot does not clear other copies of the pointer or wait for users of the old object. |
+| Garbage collection | Ending a goroutine or unmounting a widget does not free everything it used. Ordinary Go objects remain alive while reachable. Unreachable memory becomes eligible for collection; neither immediate reclamation nor return to the OS is guaranteed. |
+| External resources | Files, sockets, subscriptions and foreign allocations require their documented cleanup. A reachable Go wrapper does not guarantee that its underlying resource is still open or valid. |
+
+For resources used by workers, the ownership protocol is: stop accepting new
+work, request cancellation, perform any documented action needed to unblock
+work, wait for affected workers to finish, then release resources they could
+still use and drop retained references. Cancellation is a request, not proof
+of completion. Clearing fields before users finish can introduce a race or a
+nil dereference; closing a resource too early can cause a logical failure even
+when its `Close` method is concurrency-safe.
+
+**Current shutdown boundary:** gotth-live's
+[`Actor.shutdown`](../gotth/internal/session/actor.go) waits for effects only up
+to `EffectDrainTimeout`, records an abandoned effect if the deadline expires,
+then calls teardown. The registry calls `Unmount` in reverse registration
+order. An effect that ignores cancellation can therefore outlive `Unmount`;
+neither that hook nor a closed session establishes that all effects have
+finished. Application-created goroutines are not automatically tracked either.
+Keep resources used by outstanding workers valid until their users finish;
+the current SDK does not enforce that ownership protocol for arbitrary widget
+implementations.
+
+These rules follow the [Go memory model](https://go.dev/ref/mem),
+[garbage collector guide](https://go.dev/doc/gc-guide), and
+[`context.CancelFunc` contract](https://pkg.go.dev/context#CancelFunc).
+Race-enabled tests can detect races on exercised paths; they do not prove
+correct shutdown ordering or the absence of all races.
+
+### Channel ownership discipline
+
+Prefer a single owning goroutine and typed channel messages when coordinating
+mutable state, queued work or lifecycle transitions. A mutex is appropriate for
+a short synchronous operation on shared state. Immutable snapshots can be
+shared after safe publication. Choose the simplest protocol that makes the
+owner and completion visible; a widget does not need a dedicated goroutine
+just to implement this convention. This follows Go's
+[mutex-or-channel guidance](https://go.dev/wiki/MutexOrChannel).
+
+For an API that **transfers ownership**, document this agreement:
+
+| Stage | Ownership rule |
+|---|---|
+| Before sending | The sender owns the payload's mutable data and finishes any prior uses before handing it off. |
+| Handoff | A successful send transfers the payload ownership specified by the API. A buffered send means the channel has accepted the value, not that processing has finished. If a cancellation branch wins instead of sending, ownership stays with the sender. |
+| After sending | The sender must not read, mutate, clear, close or recycle the transferred mutable payload through any retained alias. The receiver may already be using it. |
+| Receiving | The receiver owns subsequent mutation and whatever cleanup responsibility the API explicitly transfers. Borrowed dependencies, such as a host-owned database pool, retain their original owner. |
+| Returning ownership | Use an explicit reply or other documented handoff before the original sender resumes access. A receipt acknowledging submission is not completion or return of ownership. |
+| Sharing instead | If both sides need concurrent access, declare immutable sharing or a shared synchronization protocol. Sending a pointer does not itself authorize concurrent mutation. |
+
+Go channel sends copy values. Sending a pointer leaves both pointer copies
+valid and pointing to the same object; sending a slice or map does not deep-copy
+its backing data. **The ownership transfer is an API discipline, not pointer
+invalidation enforced by Go.** Setting one variable to `nil` does not revoke
+other aliases. This resembles the intent of a move-based API, but C++
+[`std::move`](https://eel.is/c++draft/forward) itself is a cast; the receiving
+operation and type determine whether ownership actually moves.
+
+Document the payload, owner, borrowed dependencies, completion signal and
+shutdown behavior at each asynchronous boundary. These are implementation and
+review obligations. The repository's `GOROUTINE-SHARED-STATE` advisory locates
+captured writes and later caller accesses without locally matched mutex
+sections or a recognized WaitGroup completion pattern. It does not follow arbitrary aliases or library lifecycle callbacks,
+and cannot prove that a channel or mutex protocol is correct.
 
 **A widget's region is a landmark.** The generated root is an `<aside>` carrying
 `aria-labelledby` pointing at its own title's `id`, both spelled from the same
@@ -118,6 +231,14 @@ its document's computed dirty projection, so the declaration is derived from the
 same source the render is.
 
 ## Generating a widget
+
+**What `internal` means in Go:** only packages inside the directory tree rooted
+at the parent of `internal` may import its packages. Here, that parent is
+`pkg/widget`. Thus `pkg/widget/internal/cmd/widgetc` may import
+`pkg/widget/internal/uigen`: they are different packages, but both are inside
+the permitted tree. A package outside `pkg/widget` cannot import `uigen`, even
+from the same repository or Go module. This is an import boundary enforced by
+Go, not a process boundary or a restriction to a single package.
 
 `internal/uigen` emits a `.templ` view and a Go scaffold implementing the
 contract, from one resolved document. `gen.sh` writes every generated widget in
@@ -276,3 +397,25 @@ rather than only the refusal, because nothing generates before it validates.
 
 It is not a product surface: a consumer of this package calls `Interpret` and
 implements `IWidget[S, I]`, and `gen.sh` is what runs the generator here.
+
+## Multiple instances of one definition
+
+Use a typed keyed collection when a host snapshot contains many instances of the
+same generated widget:
+
+```go
+cards, err := widget.NewKeyedCollection[CardState, Identity](
+    "board.cards", generated.NewCardAt[Identity],
+)
+fragment := widget.KeyedFragment(cards, func(state BoardState) widget.KeyedState[CardState] {
+    return state.Cards
+})
+```
+
+The collection reuses actual generated widget methods, keeps registration fixed,
+and adds, removes or reorders members through immutable state. Card changes patch
+their own regions; structural changes patch the collection parent over the same
+socket. Check construction errors before mounting. The
+[keyed collection guide](docs/keyed-collections.md) includes concrete generated
+consumer snippets, the host subscription/cleanup contract, and links to its
+compiling WebSocket regression tests.

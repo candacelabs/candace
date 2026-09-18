@@ -53,7 +53,8 @@ var (
 	_liquidReconcileRevisionComposePathRe1     = regexp.MustCompile("(^/|/$|//|(^|/)\\.\\.?(/|$))")
 )
 
-// ValidateHarnessContext validates Liquid Proto field predicates.
+// ValidateHarnessContext checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessContext(message *HarnessContext) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessContext: nil *HarnessContext")
@@ -69,7 +70,8 @@ func ValidateHarnessContext(message *HarnessContext) error {
 	return nil
 }
 
-// ValidateHarnessSession validates Liquid Proto field predicates.
+// ValidateHarnessSession checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessSession(message *HarnessSession) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessSession: nil *HarnessSession")
@@ -85,7 +87,8 @@ func ValidateHarnessSession(message *HarnessSession) error {
 	return nil
 }
 
-// ValidateHarnessPrompt validates Liquid Proto field predicates.
+// ValidateHarnessPrompt checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessPrompt(message *HarnessPrompt) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessPrompt: nil *HarnessPrompt")
@@ -117,7 +120,8 @@ func ValidateHarnessPrompt(message *HarnessPrompt) error {
 	return nil
 }
 
-// ValidateHarnessSessionStarted validates Liquid Proto field predicates.
+// ValidateHarnessSessionStarted checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessSessionStarted(message *HarnessSessionStarted) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessSessionStarted: nil *HarnessSessionStarted")
@@ -133,7 +137,8 @@ func ValidateHarnessSessionStarted(message *HarnessSessionStarted) error {
 	return nil
 }
 
-// ValidateHarnessUserMessage validates Liquid Proto field predicates.
+// ValidateHarnessUserMessage checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessUserMessage(message *HarnessUserMessage) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessUserMessage: nil *HarnessUserMessage")
@@ -149,7 +154,8 @@ func ValidateHarnessUserMessage(message *HarnessUserMessage) error {
 	return nil
 }
 
-// ValidateHarnessAssistantDelta validates Liquid Proto field predicates.
+// ValidateHarnessAssistantDelta checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessAssistantDelta(message *HarnessAssistantDelta) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessAssistantDelta: nil *HarnessAssistantDelta")
@@ -173,7 +179,8 @@ func ValidateHarnessAssistantDelta(message *HarnessAssistantDelta) error {
 	return nil
 }
 
-// ValidateHarnessAssistantMessage validates Liquid Proto field predicates.
+// ValidateHarnessAssistantMessage checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessAssistantMessage(message *HarnessAssistantMessage) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessAssistantMessage: nil *HarnessAssistantMessage")
@@ -197,7 +204,8 @@ func ValidateHarnessAssistantMessage(message *HarnessAssistantMessage) error {
 	return nil
 }
 
-// ValidateHarnessToolStarted validates Liquid Proto field predicates.
+// ValidateHarnessToolStarted checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessToolStarted(message *HarnessToolStarted) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessToolStarted: nil *HarnessToolStarted")
@@ -221,7 +229,8 @@ func ValidateHarnessToolStarted(message *HarnessToolStarted) error {
 	return nil
 }
 
-// ValidateHarnessToolFailed validates Liquid Proto field predicates.
+// ValidateHarnessToolFailed checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessToolFailed(message *HarnessToolFailed) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessToolFailed: nil *HarnessToolFailed")
@@ -237,7 +246,8 @@ func ValidateHarnessToolFailed(message *HarnessToolFailed) error {
 	return nil
 }
 
-// ValidateHarnessToolCompleted validates Liquid Proto field predicates.
+// ValidateHarnessToolCompleted checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessToolCompleted(message *HarnessToolCompleted) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessToolCompleted: nil *HarnessToolCompleted")
@@ -261,7 +271,8 @@ func ValidateHarnessToolCompleted(message *HarnessToolCompleted) error {
 	return nil
 }
 
-// ValidateHarnessError validates Liquid Proto field predicates.
+// ValidateHarnessError checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessError(message *HarnessError) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessError: nil *HarnessError")
@@ -277,7 +288,8 @@ func ValidateHarnessError(message *HarnessError) error {
 	return nil
 }
 
-// ValidateHarnessEvent validates Liquid Proto field predicates.
+// ValidateHarnessEvent checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessEvent(message *HarnessEvent) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessEvent: nil *HarnessEvent")
@@ -301,7 +313,8 @@ func ValidateHarnessEvent(message *HarnessEvent) error {
 	return nil
 }
 
-// ValidateHarnessFleetNode validates Liquid Proto field predicates.
+// ValidateHarnessFleetNode checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessFleetNode(message *HarnessFleetNode) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessFleetNode: nil *HarnessFleetNode")
@@ -373,7 +386,8 @@ func ValidateHarnessFleetNode(message *HarnessFleetNode) error {
 	return nil
 }
 
-// ValidateHarnessFleetStatus validates Liquid Proto field predicates.
+// ValidateHarnessFleetStatus checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessFleetStatus(message *HarnessFleetStatus) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessFleetStatus: nil *HarnessFleetStatus")
@@ -421,7 +435,8 @@ func ValidateHarnessFleetStatus(message *HarnessFleetStatus) error {
 	return nil
 }
 
-// ValidateReconcileIntent validates Liquid Proto field predicates.
+// ValidateReconcileIntent checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateReconcileIntent(message *ReconcileIntent) error {
 	if message == nil {
 		return fmt.Errorf("ValidateReconcileIntent: nil *ReconcileIntent")
@@ -509,7 +524,8 @@ func ValidateReconcileIntent(message *ReconcileIntent) error {
 	return nil
 }
 
-// ValidateReconcileRevision validates Liquid Proto field predicates.
+// ValidateReconcileRevision checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateReconcileRevision(message *ReconcileRevision) error {
 	if message == nil {
 		return fmt.Errorf("ValidateReconcileRevision: nil *ReconcileRevision")
@@ -557,7 +573,8 @@ func ValidateReconcileRevision(message *ReconcileRevision) error {
 	return nil
 }
 
-// ValidateReconcileEvidence validates Liquid Proto field predicates.
+// ValidateReconcileEvidence checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateReconcileEvidence(message *ReconcileEvidence) error {
 	if message == nil {
 		return fmt.Errorf("ValidateReconcileEvidence: nil *ReconcileEvidence")
@@ -581,7 +598,8 @@ func ValidateReconcileEvidence(message *ReconcileEvidence) error {
 	return nil
 }
 
-// ValidateHarnessReconcileRequest validates Liquid Proto field predicates.
+// ValidateHarnessReconcileRequest checks this message's annotated fields; it does not recurse.
+// A failed predicate returns *liquidproto.Error. Nil input also returns an error.
 func ValidateHarnessReconcileRequest(message *HarnessReconcileRequest) error {
 	if message == nil {
 		return fmt.Errorf("ValidateHarnessReconcileRequest: nil *HarnessReconcileRequest")

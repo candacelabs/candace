@@ -532,7 +532,8 @@ function apply(p) {
 // from the one that ships.
 
 var listening = {},
-  timers = new WeakMap();
+  timers = new WeakMap(),
+  pending = new Set();
 
 export function bind(root) {
   var els = root.querySelectorAll("[" + A_ON + "],details"),
@@ -736,9 +737,12 @@ function dispatch(e) {
   }
   if (d) {
     clearTimeout(r.t);
+    pending.delete(r.t);
     r.t = setTimeout(function () {
+      pending.delete(r.t);
       sendEvent(name, fid, fs);
     }, d);
+    pending.add(r.t);
     return;
   }
   sendEvent(name, fid, fs);
@@ -1219,7 +1223,38 @@ function open() {
   sock.onclose = onClose;
 }
 
-export function start(url) {
+// A page has one live connection. Starting a new island releases the previous
+// island first; stop is also safe before a socket reaches its first Snapshot.
+export function stop() {
+  clearTimeout(retry);
+  retry = 0;
+  pending.forEach(clearTimeout);
+  pending.clear();
+  timers = new WeakMap();
+  newSession();
+  document.removeEventListener("visibilitychange", vis);
+  document.removeEventListener("compositionstart", compositionStart);
+  document.removeEventListener("compositionend", compositionEnd);
+  document.removeEventListener("DOMContentLoaded", bootReady);
+  for (var type in listening) document.removeEventListener(type, dispatch, true);
+  listening = {};
+  composing = null;
+  declared = new WeakMap();
+  if (sock) {
+    sock.onmessage = sock.onclose = null;
+    sock.close(1000, "island unmounted");
+    sock = null;
+  }
+  endpoint = null;
+  attempt = 0;
+  setStatus("closed");
+}
+
+export function start(url, root) {
+  if (endpoint) stop();
+  bind(root || document);
+  document.addEventListener("compositionstart", compositionStart);
+  document.addEventListener("compositionend", compositionEnd);
   var u = new URL(url, location.href);
   u.protocol = u.protocol === "https:" ? "wss:" : u.protocol === "http:" ? "ws:" : u.protocol;
   endpoint = u.href;
@@ -1233,21 +1268,24 @@ export function start(url) {
 //#endregion
 
 //#region bootstrap
+var bootURL;
+function compositionStart(e) {
+  composing = e.target;
+}
+function compositionEnd() {
+  composing = null;
+}
+function bootReady() {
+  if (bootURL) start(bootURL);
+}
 function boot() {
-  var s = document.currentScript,
-    u = s && s.getAttribute("data-gotth-url");
-  document.addEventListener("compositionstart", function (e) {
-    composing = e.target;
-  });
-  document.addEventListener("compositionend", function () {
-    composing = null;
-  });
-  function go() {
-    bind(document);
-    if (u) start(u);
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go);
-  else go();
+  var s = document.currentScript;
+  bootURL = s && s.getAttribute("data-gotth-url");
+  // An embedding shell may load the script after its island was unmounted.
+  // Without an explicit URL, loading alone owns no listeners or connection.
+  if (!bootURL) return;
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootReady, { once: true });
+  else bootReady();
 }
 
 // One namespaced global and nothing else on window (review-checklist §7.9).
@@ -1257,6 +1295,7 @@ if (typeof document !== "undefined") {
   globalThis.gotthLive = {
     version: VERSION,
     start: start,
+    stop: stop,
     status: function () {
       return status;
     },

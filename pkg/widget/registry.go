@@ -329,10 +329,9 @@ type MountOptions[I live.IIdentity] struct {
 // is the whole of the enforcement.
 //
 // This is the whole of "mounting a widget into a host". The host calls
-// live.New on the result and serves the handler; every widget then runs as the
-// goroutines the library already schedules — one per session, plus one per
-// effect — which is what the monolithic-microservices claim actually cashes out
-// to. There is no per-widget process, port or connection.
+// live.New on the result and serves the handler. Every widget on a connection
+// shares its event loop and transport; effects may add goroutines. There is no
+// per-widget process, port, connection or mandatory goroutine.
 func (registry *Registry[I]) LiveConfig(options MountOptions[I]) (live.Config[HostState, I], error) {
 	if len(registry.widgets) == 0 {
 		return live.Config[HostState, I]{}, ErrNoWidgets

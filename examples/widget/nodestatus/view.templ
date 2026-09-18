@@ -4,14 +4,20 @@ package nodestatus
 
 import "github.com/candacelabs/candace/pkg/gotth/live"
 
-// NodeStatusView draws the NodeStatus widget's live region.
-//
-// Every value in it is a pure read of state, because the same state must render
-// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+// NodeStatusView draws the NodeStatus widget's default live region.
 templ NodeStatusView(state NodeStatusState) {
-	<aside { live.Region(NodeStatusRegion)... } class="widget" aria-labelledby={ NodeStatusTitleID } data-widget="NodeStatus" data-palette="fieldStation">
+	@NodeStatusViewAt(state, NodeStatusRegion)
+}
+
+// NodeStatusViewAt draws one instance in its host-assigned live region.
+//
+// Every value in it is a pure read of state and region: equal inputs render
+// byte-identical markup: that comparison is what suppresses a patch nobody needs.
+templ NodeStatusViewAt(state NodeStatusState, region string) {
+	{{ titleID := region + "-title" }}
+	<aside { live.Region(region)... } class="widget" aria-labelledby={ titleID } data-widget="NodeStatus" data-palette="fieldStation">
 		<header class="widget-chrome">
-			<h2 class="widget-title widget-token-ink" id={ NodeStatusTitleID }>{ state.TitleLabel() }</h2>
+			<h2 class="widget-title widget-token-ink" id={ titleID }>{ state.TitleLabel() }</h2>
 		</header>
 		<svg class="widget-scene" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={ state.SceneDescriptionLabel() }>
 			<g class="widget-node widget-role-node" transform="translate(50,50)">

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -12,7 +13,41 @@ import (
 	"github.com/candacelabs/candace/pkg/gotth/live"
 	"github.com/candacelabs/candace/pkg/gotth/live/livetest"
 	"github.com/candacelabs/candace/pkg/widget"
+	"github.com/candacelabs/candace/pkg/widget/widgettest"
 )
+
+var _ = Describe("Generated keyed widgets through the registry adapter", func() {
+	It("names each root, accessible title and animated scene under its assigned region", func() {
+		var markup strings.Builder
+		for _, region := range []string{"card.alpha", "card.beta"} {
+			card, mountError := widgettest.Mount(context.Background(),
+				clusterheartbeats.NewClusterHeartbeatsAt[live.AnonymousIdentity](region))
+			Expect(mountError).ToNot(HaveOccurred())
+			Expect(card.Region()).To(Equal(region))
+			Expect(card.Apply(snapshot(7, true, 3))).To(BeEmpty())
+			rendered, renderError := card.Render(context.Background())
+			Expect(renderError).ToNot(HaveOccurred())
+			markup.WriteString(rendered.String())
+		}
+		for _, region := range []string{"card.alpha", "card.beta"} {
+			Expect(strings.Count(markup.String(), `data-gotth-region="`+region+`"`)).To(Equal(1))
+			Expect(strings.Count(markup.String(), `id="`+region+`-title"`)).To(Equal(1))
+			Expect(strings.Count(markup.String(), `aria-labelledby="`+region+`-title"`)).To(Equal(1))
+			Expect(strings.Count(markup.String(), `id="`+region+`-tick-7"`)).To(Equal(1))
+		}
+		Expect(markup.String()).ToNot(ContainSubstring(clusterheartbeats.ClusterHeartbeatsTitleID))
+	})
+
+	It("preserves the default constructor's registered region and accessible title", func() {
+		card, mountError := widgettest.Mount(context.Background(),
+			clusterheartbeats.NewClusterHeartbeats[live.AnonymousIdentity]())
+		Expect(mountError).ToNot(HaveOccurred())
+		Expect(card.Region()).To(Equal(clusterheartbeats.ClusterHeartbeatsRegion))
+		rendered, renderError := card.Render(context.Background())
+		Expect(renderError).ToNot(HaveOccurred())
+		Expect(rendered.String()).To(ContainSubstring(`id="` + clusterheartbeats.ClusterHeartbeatsTitleID + `"`))
+	})
+})
 
 // snapshot is one cluster delivery, as the wire carries it.
 func snapshot(sequence uint64, leaderKnown bool, aliveVoters int) live.Event {

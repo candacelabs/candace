@@ -130,7 +130,7 @@ func (h *Handler[I]) serve(ctx context.Context, c *conn[I], app session.IApp[I])
 		// still report a live session at the instant `Close` returned nil —
 		// which is one of the two things L9-1's probe caught. The original
 		// order was the other way round and had the same lag.
-		h.deregister(c)
+		h.deregister(ctx, c)
 		close(c.done)
 	}()
 

@@ -3,17 +3,81 @@ package widget_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/a-h/templ"
+	"github.com/coder/websocket"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 
 	"github.com/candacelabs/candace/pkg/gotth/live"
+	"github.com/candacelabs/candace/pkg/patience"
 	"github.com/candacelabs/candace/pkg/widget"
 	"github.com/candacelabs/candace/pkg/widget/internal/mocks"
 )
+
+var connectionBudget = patience.Budget{Within: 10 * time.Second}
+
+var _ = Describe("Widget connection ownership", func() {
+	DescribeTable("shares one connection independently of widgets and effect workers", func(widgets, workers int) {
+		registry := widget.NewRegistry[live.AnonymousIdentity]()
+		controller := gomock.NewController(GinkgoT())
+		var started, stopped atomic.Int64
+		for index := range widgets {
+			addConnectionWidget(controller, registry, index, workers, &started, &stopped)
+		}
+		config, err := registry.LiveConfig(widget.MountOptions[live.AnonymousIdentity]{
+			Origins: []string{live.AnyOrigin}, Authenticate: live.Anonymous,
+			Authorize: live.AllowAll[live.AnonymousIdentity], CSRF: live.NoCSRFCheck,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		app, err := live.New(config)
+		Expect(err).NotTo(HaveOccurred())
+		server := httptest.NewServer(app.Handler())
+		DeferCleanup(server.Close)
+		ctx, cancel := context.WithTimeout(context.Background(), connectionBudget.Within)
+		DeferCleanup(cancel)
+		connection, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"),
+			&websocket.DialOptions{Subprotocols: []string{"gotth-live.v1"}})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = connection.CloseNow() })
+		_, _, err = connection.Read(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		patience.Await(GinkgoT(), "widget effects started", connectionBudget, started.Load,
+			func(count int64) bool { return count == int64(widgets*workers) })
+		Expect(app.ActiveConnections()).To(Equal(1))
+		Expect(connection.CloseNow()).To(Succeed())
+		Expect(app.Close(ctx)).To(Succeed())
+		Expect(app.ActiveConnections()).To(BeZero())
+		Expect(stopped.Load()).To(Equal(started.Load()))
+	}, Entry("date widget", 1, 0), Entry("many widgets", 32, 0),
+		Entry("one widget with a thousand workers", 1, 1000), Entry("many widgets with workers", 32, 1))
+})
+
+func addConnectionWidget(controller *gomock.Controller, registry *widget.Registry[live.AnonymousIdentity], index, workers int, started, stopped *atomic.Int64) {
+	GinkgoHelper()
+	instance := stub[int](controller, registrationFor(fmt.Sprintf("Widget%d", index),
+		fmt.Sprintf("widget.%d", index), fmt.Sprintf("widget.%d.ping", index)))
+	effects := make([]live.Effect[live.AnonymousIdentity], workers)
+	for worker := range workers {
+		effects[worker] = live.Effect[live.AnonymousIdentity]{Source: fmt.Sprintf("worker.%d", worker),
+			Run: func(ctx context.Context, peer live.Session[live.AnonymousIdentity], emit live.Emitter) error {
+				started.Add(1)
+				defer stopped.Add(1)
+				<-ctx.Done()
+				return ctx.Err()
+			}}
+	}
+	instance.EXPECT().Mount(gomock.Any(), gomock.Any()).Return(index, effects, nil)
+	instance.EXPECT().Render(index).Return(templ.Raw("<span>widget</span>"))
+	instance.EXPECT().Unmount(gomock.Any(), gomock.Any(), index)
+	Expect(widget.Register(registry, instance)).To(Succeed())
+}
 
 // namedEffect is an effect that does nothing under a given name. A name is the
 // whole of what these specs assert about one, and since live.Effect[live.AnonymousIdentity] became a
