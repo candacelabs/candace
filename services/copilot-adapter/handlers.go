@@ -540,6 +540,13 @@ func (adapter *CopilotAdapter) activateStartingSession(
 		SessionID: row.ID, Model: row.Model, WorkingDirectory: prepared.Path,
 		SystemInstructions: row.SystemInstructions,
 		PermissionPolicy:   PermissionPolicy(row.PermissionPolicy),
+		PermissionPolicyFor: func() (PermissionPolicy, error) {
+			current, err := adapter.store.GetSession(context.Background(), row.ID)
+			if err != nil {
+				return "", err
+			}
+			return PermissionPolicy(current.PermissionPolicy), nil
+		},
 	}
 	handle, retained := adapter.sessions.lookup(row.ID)
 	ownedAttempt := false

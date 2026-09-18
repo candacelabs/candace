@@ -134,12 +134,13 @@ type BridgeEvent struct {
 
 // BridgeSessionSpec is what the adapter asks the bridge to start.
 type BridgeSessionSpec struct {
-	SessionID          uuid.UUID
-	Model              string
-	WorkingDirectory   string
-	SystemInstructions string
-	RestoredTurns      []BridgeRestoredTurn
-	PermissionPolicy   PermissionPolicy
+	SessionID           uuid.UUID
+	Model               string
+	WorkingDirectory    string
+	SystemInstructions  string
+	RestoredTurns       []BridgeRestoredTurn
+	PermissionPolicy    PermissionPolicy
+	PermissionPolicyFor func() (PermissionPolicy, error)
 }
 
 type PermissionPolicy string

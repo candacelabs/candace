@@ -90,6 +90,13 @@ func (adapter *CopilotAdapter) RestoreSessions(ctx context.Context) error {
 			SessionID: row.ID, Model: row.Model, WorkingDirectory: worktree.Path,
 			SystemInstructions: row.SystemInstructions,
 			PermissionPolicy:   PermissionPolicy(row.PermissionPolicy),
+			PermissionPolicyFor: func() (PermissionPolicy, error) {
+				current, err := adapter.store.GetSession(context.Background(), row.ID)
+				if err != nil {
+					return "", err
+				}
+				return PermissionPolicy(current.PermissionPolicy), nil
+			},
 		})
 		if err != nil {
 			if errors.Is(err, ErrBridgeSessionMissing) {

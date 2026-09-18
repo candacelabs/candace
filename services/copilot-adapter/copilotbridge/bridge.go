@@ -173,7 +173,7 @@ func (bridge *CopilotBridge) CreateSession(ctx context.Context, spec copilotadap
 		Model:               spec.Model,
 		WorkingDirectory:    spec.WorkingDirectory,
 		Streaming:           &streaming,
-		OnPermissionRequest: permissionHandler(spec.PermissionPolicy),
+		OnPermissionRequest: permissionHandler(spec.PermissionPolicy, spec.PermissionPolicyFor),
 		OnEvent:             translator.handle,
 		MCPServers:          bridge.mcpServers,
 	}
@@ -218,7 +218,7 @@ func (bridge *CopilotBridge) ResumeSession(ctx context.Context, spec copilotadap
 		Model:               spec.Model,
 		WorkingDirectory:    spec.WorkingDirectory,
 		Streaming:           &streaming,
-		OnPermissionRequest: permissionHandler(spec.PermissionPolicy),
+		OnPermissionRequest: permissionHandler(spec.PermissionPolicy, spec.PermissionPolicyFor),
 		OnEvent:             translator.handle,
 		MCPServers:          bridge.mcpServers,
 		ContinuePendingWork: &continuePending,
@@ -335,10 +335,32 @@ func keepPermissionPending(_ copilot.PermissionRequest, _ copilot.PermissionInvo
 	return &rpc.PermissionDecisionNoResult{}, nil
 }
 
-func permissionHandler(policy copilotadapter.PermissionPolicy) copilot.PermissionHandlerFunc {
+func permissionHandler(policy copilotadapter.PermissionPolicy, resolve func() (copilotadapter.PermissionPolicy, error)) copilot.PermissionHandlerFunc {
 	if policy == copilotadapter.PermissionPolicyApproveAll {
 		return func(_ copilot.PermissionRequest, _ copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
+			if resolve != nil {
+				var err error
+				policy, err = resolve()
+				if err != nil {
+					return &rpc.PermissionDecisionNoResult{}, err
+				}
+				if policy != copilotadapter.PermissionPolicyApproveAll {
+					return &rpc.PermissionDecisionNoResult{}, nil
+				}
+			}
 			return &rpc.PermissionDecisionApproved{}, nil
+		}
+	}
+	if resolve != nil {
+		return func(_ copilot.PermissionRequest, _ copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
+			current, err := resolve()
+			if err != nil {
+				return &rpc.PermissionDecisionNoResult{}, err
+			}
+			if current == copilotadapter.PermissionPolicyApproveAll {
+				return &rpc.PermissionDecisionApproved{}, nil
+			}
+			return &rpc.PermissionDecisionNoResult{}, nil
 		}
 	}
 	return keepPermissionPending
