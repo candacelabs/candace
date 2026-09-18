@@ -20,6 +20,8 @@ func (c *iViewConverterImpl) Session(source storedb.Session) api.Session {
 	apiSession.Id = c.uuidUUIDToPUuidUUID(source.ID)
 	apiSession.LastTurnAt = nullTimePointer(source.LastTurnAt)
 	apiSession.Model = source.Model
+	pApiPermissionPolicy := api.PermissionPolicy(source.PermissionPolicy)
+	apiSession.PermissionPolicy = &pApiPermissionPolicy
 	apiSession.Status = api.SessionStatus(source.Status)
 	apiSession.UpdatedAt = utcTimePointer(source.UpdatedAt)
 	apiSession.WorkingDirectory = source.WorkingDirectory
@@ -33,6 +35,8 @@ func (c *iViewConverterImpl) SessionEventVersion(source storedb.SessionEventVers
 	apiSession.Id = c.uuidUUIDToPUuidUUID(source.ID)
 	apiSession.LastTurnAt = nullTimePointer(source.LastTurnAt)
 	apiSession.Model = source.Model
+	pApiPermissionPolicy := api.PermissionPolicy(source.PermissionPolicy)
+	apiSession.PermissionPolicy = &pApiPermissionPolicy
 	apiSession.Status = api.SessionStatus(source.Status)
 	pInt64 := source.TurnCount
 	apiSession.TurnCount = &pInt64

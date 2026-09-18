@@ -75,6 +75,7 @@ func startScheduleRuntime(
 var _ = Describe("the adapter over pgmem and a mocked CLI", func() {
 	var (
 		ctx       context.Context
+		db        *sql.DB
 		queries   *storedb.Queries
 		bridge    *MockICopilotBridge
 		worktrees *MockIWorktreeManager
@@ -91,7 +92,7 @@ var _ = Describe("the adapter over pgmem and a mocked CLI", func() {
 		ctx = context.Background()
 		database := pgmem.MustNew()
 		DeferCleanup(database.Close)
-		db := database.Open()
+		db = database.Open()
 		DeferCleanup(db.Close)
 		Expect(store.ApplyMigrations(ctx, db)).To(Succeed())
 
@@ -146,6 +147,7 @@ var _ = Describe("the adapter over pgmem and a mocked CLI", func() {
 					Path:       "/tmp/work", BaseRef: "HEAD",
 				}, nil
 			})
+
 		bridge.EXPECT().CreateSession(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, spec copilotadapter.BridgeSessionSpec) (copilotadapter.BridgeSession, error) {
 				Expect(spec.Model).To(Equal("gpt-5"))
@@ -414,6 +416,66 @@ var _ = Describe("the adapter over pgmem and a mocked CLI", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(refused.StatusCode()).To(Equal(http.StatusConflict))
 		Expect(refused.JSON409).NotTo(BeNil())
+	})
+
+	It("drains live pending permissions before atomically enabling approveAll", func() {
+		events = make(chan copilotadapter.BridgeEvent, 16)
+		resolved = make(chan copilotadapter.BridgeResolution, 8)
+		worktrees.EXPECT().Prepare(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, request copilotadapter.WorktreeRequest) (copilotadapter.PreparedWorktree, error) {
+				return copilotadapter.PreparedWorktree{
+					Repository: copilotadapter.Repository{ID: request.RepositoryID, DisplayName: "Repo", Root: "/tmp/work", DefaultRef: "HEAD"},
+					Path:       "/tmp/work", BaseRef: "HEAD",
+				}, nil
+			})
+		bridge.EXPECT().CreateSession(gomock.Any(), gomock.Any()).Return(copilotadapter.BridgeSession{
+			Events: events,
+			Resolve: func(_ context.Context, resolution copilotadapter.BridgeResolution) error {
+				resolved <- resolution
+				return nil
+			},
+			Close: func(_ context.Context) error { return nil },
+		}, nil)
+		created, err := client.CreateSessionWithResponse(ctx, newWorktreeSessionBody("gpt-5", "repo"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.StatusCode()).To(Equal(http.StatusCreated), string(created.Body))
+		sessionID := *created.JSON201.Id
+		requestID := uuid.New()
+		events <- copilotadapter.BridgeEvent{
+			Kind: copilotadapter.BridgeEventRequestOpened, RequestID: &requestID,
+			RequestKind: copilotadapter.BridgeRequestPermission, Text: "Run the command?", ToolName: "shell",
+		}
+		Eventually(func() storedb.PendingRequest {
+			request, lookupErr := queries.GetSessionRequest(ctx, requestID)
+			if lookupErr != nil {
+				return storedb.PendingRequest{}
+			}
+			return request
+		}).WithTimeout(projectionBudget).Should(HaveField("Status", Equal(string(api.Pending))))
+
+		updated, err := client.UpdateSessionWithBodyWithResponse(
+			ctx, sessionID, "application/json", bytesReader(`{"permissionPolicy":"approveAll"}`),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(updated.StatusCode()).To(Equal(http.StatusOK), string(updated.Body))
+		Expect(updated.JSON200.PermissionPolicy).To(PointTo(Equal(api.ApproveAll)))
+		Expect(<-resolved).To(And(
+			HaveField("RequestID", Equal(requestID)),
+			HaveField("Decision", Equal(string(api.Approve))),
+		))
+		Eventually(func() string {
+			request, lookupErr := queries.GetSessionRequest(ctx, requestID)
+			if lookupErr != nil {
+				return ""
+			}
+			return request.Status
+		}).WithTimeout(projectionBudget).Should(Equal(string(api.Approved)))
+		var audit string
+		Expect(db.QueryRowContext(ctx,
+			"SELECT delta_text FROM session_events WHERE session_id = $1 ORDER BY seq DESC LIMIT 1", sessionID,
+		).Scan(&audit)).To(Succeed())
+		Expect(audit).To(ContainSubstring(`"event":"permissionPolicyChanged"`))
+		Expect(audit).To(ContainSubstring(requestID.String()))
 	})
 
 	It("rejects a nil prompt idempotency key before persistence or CLI delivery", func() {

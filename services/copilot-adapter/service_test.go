@@ -221,6 +221,53 @@ var _ = Describe("Handler", func() {
 		Expect(response.JSON200.Data).To(BeEmpty())
 	})
 
+	It("round-trips a permission policy PATCH and records the structured audit payload", func() {
+		ctx := context.Background()
+		sessionID := uuid.New()
+		worktreeID := uuid.New()
+		now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+		existing := storedb.Session{
+			ID: sessionID, WorktreeID: worktreeID, DisplayName: "policy", Model: "model",
+			WorkingDirectory: "/workspace", Status: string(api.SessionStatusIdle),
+			PermissionPolicy: string(api.Ask), CreatedAt: now, UpdatedAt: now,
+		}
+		updated := existing
+		updated.PermissionPolicy = string(api.ApproveAll)
+		updated.UpdatedAt = now.Add(time.Second)
+		store.EXPECT().GetSession(gomock.Any(), sessionID).Return(existing, nil)
+		store.EXPECT().ListPendingPermissionSessionRequests(gomock.Any(), sessionID).Return(nil, nil)
+		store.EXPECT().Transact(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, transaction copilotadapter.StoreTransaction) error {
+			store.EXPECT().UpdateSessionMetadata(gomock.Any(), gomock.Any()).Return(updated, nil)
+			store.EXPECT().AllocateSessionEventSeq(gomock.Any(), sessionID).Return(int64(1), nil)
+			store.EXPECT().InsertSessionEvent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, event storedb.InsertSessionEventParams) (storedb.SessionEvent, error) {
+				Expect(event.DeltaText).To(ContainSubstring(`"event":"permissionPolicyChanged"`))
+				Expect(event.DeltaText).To(ContainSubstring(`"from":"ask"`))
+				Expect(event.DeltaText).To(ContainSubstring(`"to":"approveAll"`))
+				return storedb.SessionEvent{SessionID: sessionID, Seq: 1, Kind: string(api.SessionEventKindSessionUpdated)}, nil
+			})
+			store.EXPECT().SnapshotSessionEvent(gomock.Any(), gomock.Any()).Return(storedb.SessionEventVersion{}, nil)
+			return transaction(store)
+		})
+		store.EXPECT().CountSessionTurns(gomock.Any(), sessionID).Return(int64(0), nil)
+
+		response, err := client.UpdateSessionWithBodyWithResponse(ctx, sessionID, "application/json", bytesReader(`{"permissionPolicy":"approveAll"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.StatusCode()).To(Equal(http.StatusOK), string(response.Body))
+		Expect(response.JSON200).NotTo(BeNil())
+		Expect(response.JSON200.PermissionPolicy).To(PointTo(Equal(api.ApproveAll)))
+	})
+
+	It("rejects an unknown permission policy before touching persistence", func() {
+		sessionID := uuid.New()
+		response, err := client.UpdateSessionWithBodyWithResponse(
+			context.Background(), sessionID, "application/json", bytesReader(`{"permissionPolicy":"maybe"}`),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.StatusCode()).To(Equal(http.StatusBadRequest), string(response.Body))
+		Expect(response.JSON400).NotTo(BeNil())
+		Expect(response.JSON400.Code).To(Equal("invalid_request"))
+	})
+
 	It("rejects a session body the contract forbids with the shared Error shape", func() {
 		response, err := client.CreateSessionWithBodyWithResponse(context.Background(), "application/json",
 			bytesReader(`{"model": ""}`))

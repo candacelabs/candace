@@ -835,6 +835,23 @@ func insertSessionUpdatedEventWithSeq(ctx context.Context, queries storedb.Queri
 	return seq, err
 }
 
+func insertSessionPolicyAuditEventWithSeq(
+	ctx context.Context,
+	queries storedb.Querier,
+	sessionID uuid.UUID,
+	occurredAt time.Time,
+	audit string,
+) (int64, error) {
+	seq, err := insertEventWithSeq(ctx, queries, storedb.InsertSessionEventParams{
+		SessionID: sessionID, Kind: string(api.SessionEventKindSessionUpdated), OccurredAt: occurredAt, DeltaText: audit,
+	})
+	if err != nil {
+		return 0, err
+	}
+	_, err = queries.SnapshotSessionEvent(ctx, storedb.SnapshotSessionEventParams{SessionID: sessionID, EventSeq: seq})
+	return seq, err
+}
+
 func insertTurnEvent(
 	ctx context.Context,
 	queries storedb.Querier,

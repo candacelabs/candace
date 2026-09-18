@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "@mantine/hooks";
-import { Accordion, Alert, Button, Group, Modal, NativeSelect, Radio, SimpleGrid, Stack, Switch, TextInput, Textarea } from "@mantine/core";
+import { Accordion, Alert, Button, Group, Modal, NativeSelect, Radio, SimpleGrid, Stack, Switch, TextInput, Textarea, Tooltip } from "@mantine/core";
 import { api, describeError, newClientUUID } from "../api/client";
 import type { CreateSessionRequest, Model, Repository, Session, Worktree, WorktreeMode } from "../api/client";
 import { ModelPicker } from "./ModelPicker";
@@ -109,6 +109,7 @@ export function NewSessionDialog({
         return;
       }
       created = data;
+      try { window.localStorage.setItem("candace-permission-policy", permissionPolicy); } catch { /* storage is optional */ }
       attemptRef.current = null;
     } catch (cause) {
       setFailure(`Task creation did not receive a response and may have succeeded. Retry will reuse the same idempotency key. ${describeError(cause)}`);
@@ -149,17 +150,15 @@ export function NewSessionDialog({
             <TextInput data-autofocus label="Task name" value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} placeholder="Optional" />
             <ModelPicker models={models} value={model} onChange={setModel} loading={modelsLoading} error={modelsError} disabled={submitting} onRefresh={onRefreshModels} />
           </SimpleGrid>
-          <Switch
-            label="Auto-approve tools"
-            description="the agent may run any command in this worktree as you"
-            checked={permissionPolicy === "approveAll"}
-            onChange={(event) => {
-              const next = event.currentTarget.checked ? "approveAll" : "ask";
-              setPermissionPolicy(next);
-              try { window.localStorage.setItem("candace-permission-policy", next); } catch { /* storage is optional */ }
-            }}
-            disabled={submitting}
-          />
+          <Tooltip label="Warning: auto-approve lets the agent run any command in this worktree as you" multiline maw={320}>
+            <Switch
+              label="Auto-approve tools"
+              description="the agent may run any command in this worktree as you"
+              checked={permissionPolicy === "approveAll"}
+              onChange={(event) => setPermissionPolicy(event.currentTarget.checked ? "approveAll" : "ask")}
+              disabled={submitting}
+            />
+          </Tooltip>
           <NativeSelect
             label="Repository"
             required

@@ -44,7 +44,10 @@ function stubClientUUID() {
   return getRandomValues;
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
 
 describe("NewSessionDialog", () => {
   it("requires an explicit model choice when the catalog has several options", () => {
@@ -81,7 +84,29 @@ describe("NewSessionDialog", () => {
     fireEvent.change(screen.getByLabelText("Task name"), { target: { value: "Review" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Start task" })); });
     await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
-    expect(body).toEqual({ idempotencyKey: clientKey, repositoryId: "candace", model: "gpt-5.6", worktreeMode: "newWorktree", displayName: "Review" });
+    expect(body).toEqual({
+      idempotencyKey: clientKey, repositoryId: "candace", model: "gpt-5.6", worktreeMode: "newWorktree",
+      displayName: "Review", permissionPolicy: "ask",
+    });
+    expect(localStorage.getItem("candace-permission-policy")).toBe("ask");
+  });
+
+  it("uses the last successfully created task policy without persisting an unsubmitted toggle", async () => {
+    localStorage.setItem("candace-permission-policy", "approveAll");
+    stubClientUUID();
+    let body: Record<string, unknown> = {};
+    vi.stubGlobal("fetch", async (request: Request) => {
+      body = await request.clone().json() as Record<string, unknown>;
+      return new Response(JSON.stringify(created), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    render(<NewSessionDialog repositories={[repository]} worktrees={[worktree]} models={[model]} onClose={() => undefined} onCreated={() => undefined} />);
+    const toggle = screen.getByRole("switch", { name: /Auto-approve tools/ });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("candace-permission-policy")).toBe("approveAll");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Start task" })); });
+    await vi.waitFor(() => expect(body["permissionPolicy"]).toBe("ask"));
+    expect(localStorage.getItem("candace-permission-policy")).toBe("ask");
   });
 
   it("addresses a selected managed worktree by ID, never by path", async () => {

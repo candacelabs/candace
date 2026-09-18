@@ -759,7 +759,7 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 			IdempotencyKey: uuid.UUID(body.IdempotencyKey), Model: body.Model, RepositoryID: body.RepositoryId,
 			WorktreeMode: api.NewWorktree, BaseRef: body.BaseRef, DisplayName: body.DisplayName,
 			SystemInstructions: body.SystemInstructions,
-			PermissionPolicy:   body.PermissionPolicy,
+			PermissionPolicy:   permissionPolicyValue(body.PermissionPolicy),
 		}
 	case string(api.ReuseExistingWorktree):
 		body, decodeErr := request.AsExistingWorktreeSessionRequest()
@@ -771,7 +771,7 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 			IdempotencyKey: uuid.UUID(body.IdempotencyKey), Model: body.Model, RepositoryID: body.RepositoryId,
 			WorktreeMode: api.ReuseExistingWorktree, WorktreeID: &worktreeID, DisplayName: body.DisplayName,
 			SystemInstructions: body.SystemInstructions,
-			PermissionPolicy:   body.PermissionPolicy,
+			PermissionPolicy:   permissionPolicyValue(body.PermissionPolicy),
 		}
 	case string(api.ReuseCurrentWorktree):
 		body, decodeErr := request.AsCurrentWorktreeSessionRequest()
@@ -782,7 +782,7 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 			IdempotencyKey: uuid.UUID(body.IdempotencyKey), Model: body.Model, RepositoryID: body.RepositoryId,
 			WorktreeMode: api.ReuseCurrentWorktree, DisplayName: body.DisplayName,
 			SystemInstructions: body.SystemInstructions,
-			PermissionPolicy:   body.PermissionPolicy,
+			PermissionPolicy:   permissionPolicyValue(body.PermissionPolicy),
 		}
 	default:
 		return createSessionSubmission{}, fail(http.StatusBadRequest, errorCodeInvalidRequest, "worktreeMode is not supported")
@@ -794,6 +794,13 @@ func decodeCreateSessionRequest(request api.CreateSessionRequest) (createSession
 		submission.PermissionPolicy = api.Ask
 	}
 	return submission, nil
+}
+
+func permissionPolicyValue(value *api.PermissionPolicy) api.PermissionPolicy {
+	if value == nil {
+		return api.Ask
+	}
+	return *value
 }
 
 func (adapter *CopilotAdapter) claimSessionCreation(ctx context.Context, submission createSessionSubmission) (storedb.SessionCreation, error) {
@@ -940,6 +947,9 @@ func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.Up
 		// minProperties:1 is not enforced by the generated validator.
 		return nil, fail(http.StatusBadRequest, errorCodeEmptyPatch, "at least one of model, displayName, or permissionPolicy is required")
 	}
+	if request.Body.PermissionPolicy != nil && !request.Body.PermissionPolicy.Valid() {
+		return nil, fail(http.StatusBadRequest, errorCodeInvalidRequest, "permissionPolicy is not supported")
+	}
 	unlock := adapter.mutations.lock(request.SessionId)
 	defer unlock()
 	existing, err := adapter.store.GetSession(ctx, request.SessionId)
@@ -953,6 +963,17 @@ func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.Up
 	}
 	if existing.Status == string(api.SessionStatusEnded) || existing.Status == string(api.SessionStatusFailed) {
 		return nil, fail(http.StatusConflict, errorCodeSessionTerminal, "the session has ended")
+	}
+	var policyDrain []storedb.PendingRequest
+	policyChanged := request.Body.PermissionPolicy != nil &&
+		string(*request.Body.PermissionPolicy) != existing.PermissionPolicy
+	if request.Body.PermissionPolicy != nil &&
+		*request.Body.PermissionPolicy == api.ApproveAll &&
+		existing.PermissionPolicy != string(api.ApproveAll) {
+		policyDrain, err = adapter.resolvePendingPermissionRequests(ctx, request.SessionId)
+		if err != nil {
+			return nil, err
+		}
 	}
 	arguments := storedb.UpdateSessionMetadataParams{ID: request.SessionId, UpdatedAt: time.Now().UTC()}
 	if request.Body.Model != nil {
@@ -997,7 +1018,47 @@ func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.Up
 		if err != nil {
 			return err
 		}
-		eventSeq, err = insertSessionUpdatedEventWithSeq(ctx, queries, request.SessionId, arguments.UpdatedAt)
+		for _, pending := range policyDrain {
+			resolved, resolveErr := queries.CompleteExternalSessionRequestResolution(ctx, storedb.CompleteExternalSessionRequestResolutionParams{
+				ID: pending.ID, Status: string(api.Approved), Decision: string(api.Approve),
+				ResolvedAt: null.TimeFrom(arguments.UpdatedAt),
+			})
+			if errors.Is(resolveErr, sql.ErrNoRows) {
+				current, lookupErr := queries.GetSessionRequest(ctx, pending.ID)
+				if lookupErr != nil {
+					return lookupErr
+				}
+				if current.Status != string(api.Approved) {
+					return resolveErr
+				}
+				continue
+			}
+			if resolveErr != nil {
+				return resolveErr
+			}
+			if err := insertRequestEvent(ctx, queries, request.SessionId, resolved.ID, api.SessionEventKindRequestResolved, arguments.UpdatedAt); err != nil {
+				return err
+			}
+		}
+		if policyChanged {
+			audit, marshalErr := json.Marshal(struct {
+				Event             string      `json:"event"`
+				From              string      `json:"from"`
+				To                string      `json:"to"`
+				DrainedRequestIDs []uuid.UUID `json:"drainedRequestIds"`
+			}{
+				Event:             "permissionPolicyChanged",
+				From:              existing.PermissionPolicy,
+				To:                string(*request.Body.PermissionPolicy),
+				DrainedRequestIDs: requestIDs(policyDrain),
+			})
+			if marshalErr != nil {
+				return marshalErr
+			}
+			eventSeq, err = insertSessionPolicyAuditEventWithSeq(ctx, queries, request.SessionId, arguments.UpdatedAt, string(audit))
+		} else {
+			eventSeq, err = insertSessionUpdatedEventWithSeq(ctx, queries, request.SessionId, arguments.UpdatedAt)
+		}
 		return err
 	})
 	if err != nil {
@@ -1018,6 +1079,7 @@ func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.Up
 				}
 				return api.UpdateSession200JSONResponse(view), nil
 			}
+
 		}
 		if restoreModel != nil {
 			if rollbackErr := restoreModel(); rollbackErr != nil {
@@ -1033,7 +1095,46 @@ func (adapter *CopilotAdapter) UpdateSession(ctx context.Context, request api.Up
 	if err != nil {
 		return nil, storeFailure(err)
 	}
+	if len(policyDrain) > 0 {
+		if handle, live := adapter.sessions.lookup(request.SessionId); live && handle.AcknowledgeResolution != nil {
+			for _, pending := range policyDrain {
+				handle.AcknowledgeResolution(pending.ID)
+			}
+		}
+	}
 	return api.UpdateSession200JSONResponse(view), nil
+}
+
+// resolvePendingPermissionRequests crosses the live SDK boundary before the
+// policy and durable request transitions are committed together. If any
+// request cannot be delivered, the policy remains unchanged and callers can
+// retry the whole flip without leaving a durable half-transition.
+func (adapter *CopilotAdapter) resolvePendingPermissionRequests(ctx context.Context, sessionID uuid.UUID) ([]storedb.PendingRequest, error) {
+	pending, err := adapter.store.ListPendingPermissionSessionRequests(ctx, sessionID)
+	if err != nil {
+		return nil, storeFailure(err)
+	}
+	if len(pending) == 0 {
+		return nil, nil
+	}
+	handle, live := adapter.sessions.lookup(sessionID)
+	if !live || handle.Resolve == nil {
+		return nil, fail(http.StatusConflict, errorCodeSessionNotLive, errNoLiveSession.Error())
+	}
+	for _, request := range pending {
+		if err := handle.Resolve(ctx, BridgeResolution{RequestID: request.ID, Decision: string(api.Approve)}); err != nil {
+			return nil, fail(http.StatusInternalServerError, errorCodeCLIResolveFailed, err.Error())
+		}
+	}
+	return pending, nil
+}
+
+func requestIDs(requests []storedb.PendingRequest) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(requests))
+	for _, request := range requests {
+		ids = append(ids, request.ID)
+	}
+	return ids
 }
 
 func (adapter *CopilotAdapter) reconcileSessionEvent(eventSeq int64, expected storedb.Session) (storedb.Session, bool, error) {

@@ -49,6 +49,16 @@ curl -X PATCH http://localhost:8080/v1/sessions/<id> \
   -d '{"permissionPolicy":"approveAll"}'
 ```
 
+Flipping a live session to `approveAll` first resolves every currently pending
+permission through the live Copilot bridge, then commits the policy and durable
+request transitions in one store transaction. A failed bridge delivery leaves
+the persisted policy unchanged. Because pending requests have no actor column,
+the corresponding `sessionUpdated` event stores a structured
+`permissionPolicyChanged` audit payload containing the old policy, new policy,
+and drained request IDs. The New task dialog remembers the policy from the last
+successfully created task in browser local storage; it does not persist an
+unsubmitted toggle.
+
 ### Streaming transports
 
 `GET /v1/sessions/{sessionId}/events` is Server-Sent Events. The generated

@@ -239,7 +239,7 @@ SET sdk_create_attempt_id = $1
 WHERE idempotency_key = $2
   AND session_id = $3
   AND sdk_create_attempt_id IS NULL
-RETURNING idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at
+RETURNING idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at, permission_policy
 `
 
 type BeginSessionCreationSDKAttemptParams struct {
@@ -264,6 +264,7 @@ func (q *Queries) BeginSessionCreationSDKAttempt(ctx context.Context, arg BeginS
 		&i.CreatedAt,
 		&i.SdkCreateAttemptID,
 		&i.CompletedAt,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -417,6 +418,7 @@ INSERT INTO session_creations (
     base_ref,
     display_name,
     system_instructions,
+    permission_policy,
     created_at
 ) VALUES (
     $1,
@@ -428,10 +430,11 @@ INSERT INTO session_creations (
     $7,
     $8,
     $9,
-    $10
+    COALESCE(NULLIF($10::text, ''), 'ask'),
+    $11
 )
 ON CONFLICT (idempotency_key) DO NOTHING
-RETURNING idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at
+RETURNING idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at, permission_policy
 `
 
 type ClaimSessionCreationParams struct {
@@ -444,6 +447,7 @@ type ClaimSessionCreationParams struct {
 	BaseRef            null.String `json:"base_ref"`
 	DisplayName        null.String `json:"display_name"`
 	SystemInstructions null.String `json:"system_instructions"`
+	PermissionPolicy   string      `json:"permission_policy"`
 	CreatedAt          time.Time   `json:"created_at"`
 }
 
@@ -458,6 +462,7 @@ func (q *Queries) ClaimSessionCreation(ctx context.Context, arg ClaimSessionCrea
 		arg.BaseRef,
 		arg.DisplayName,
 		arg.SystemInstructions,
+		arg.PermissionPolicy,
 		arg.CreatedAt,
 	)
 	var i SessionCreation
@@ -474,6 +479,7 @@ func (q *Queries) ClaimSessionCreation(ctx context.Context, arg ClaimSessionCrea
 		&i.CreatedAt,
 		&i.SdkCreateAttemptID,
 		&i.CompletedAt,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -637,7 +643,7 @@ SET completed_at = COALESCE(completed_at, $1)
 WHERE idempotency_key = $2
   AND session_id = $3
   AND sdk_create_attempt_id = $4
-RETURNING idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at
+RETURNING idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at, permission_policy
 `
 
 type CompleteSessionCreationParams struct {
@@ -668,6 +674,7 @@ func (q *Queries) CompleteSessionCreation(ctx context.Context, arg CompleteSessi
 		&i.CreatedAt,
 		&i.SdkCreateAttemptID,
 		&i.CompletedAt,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -725,7 +732,7 @@ SET status = 'idle',
     updated_at = $1
 WHERE id = $2
   AND status = 'starting'
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type CompleteStartingSessionParams struct {
@@ -748,6 +755,7 @@ func (q *Queries) CompleteStartingSession(ctx context.Context, arg CompleteStart
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -934,6 +942,7 @@ INSERT INTO sessions (
     display_name,
     model,
     working_directory,
+    permission_policy,
     system_instructions,
     status,
     created_at,
@@ -944,12 +953,13 @@ INSERT INTO sessions (
     $3,
     $4,
     $5,
-    $6,
+    COALESCE(NULLIF($6::text, ''), 'ask'),
     $7,
     $8,
-    $9
+    $9,
+    $10
 )
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type CreateSessionParams struct {
@@ -958,6 +968,7 @@ type CreateSessionParams struct {
 	DisplayName        string    `json:"display_name"`
 	Model              string    `json:"model"`
 	WorkingDirectory   string    `json:"working_directory"`
+	PermissionPolicy   string    `json:"permission_policy"`
 	SystemInstructions string    `json:"system_instructions"`
 	Status             string    `json:"status"`
 	CreatedAt          time.Time `json:"created_at"`
@@ -971,6 +982,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.DisplayName,
 		arg.Model,
 		arg.WorkingDirectory,
+		arg.PermissionPolicy,
 		arg.SystemInstructions,
 		arg.Status,
 		arg.CreatedAt,
@@ -989,6 +1001,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -1223,7 +1236,7 @@ SET status = 'failed',
     updated_at = $2
 WHERE id = $3
   AND status = 'starting'
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type FailStartingSessionParams struct {
@@ -1247,6 +1260,7 @@ func (q *Queries) FailStartingSession(ctx context.Context, arg FailStartingSessi
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -1603,7 +1617,7 @@ func (q *Queries) GetRunningTurn(ctx context.Context, sessionID uuid.UUID) (Turn
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 FROM sessions
 WHERE id = $1
 `
@@ -1623,12 +1637,13 @@ func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
 
 const getSessionCreation = `-- name: GetSessionCreation :one
-SELECT idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at
+SELECT idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at, permission_policy
 FROM session_creations
 WHERE idempotency_key = $1
 `
@@ -1649,12 +1664,13 @@ func (q *Queries) GetSessionCreation(ctx context.Context, idempotencyKey uuid.UU
 		&i.CreatedAt,
 		&i.SdkCreateAttemptID,
 		&i.CompletedAt,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
 
 const getSessionCreationBySessionID = `-- name: GetSessionCreationBySessionID :one
-SELECT idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at
+SELECT idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at, permission_policy
 FROM session_creations
 WHERE session_id = $1
 `
@@ -1675,12 +1691,13 @@ func (q *Queries) GetSessionCreationBySessionID(ctx context.Context, sessionID u
 		&i.CreatedAt,
 		&i.SdkCreateAttemptID,
 		&i.CompletedAt,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
 
 const getSessionEventVersion = `-- name: GetSessionEventVersion :one
-SELECT session_id, event_seq, id, worktree_id, display_name, model, working_directory, status, created_at, updated_at, last_turn_at, turn_count
+SELECT session_id, event_seq, id, worktree_id, display_name, model, working_directory, status, created_at, updated_at, last_turn_at, turn_count, permission_policy
 FROM session_event_versions
 WHERE session_id = $1
   AND event_seq = $2
@@ -1707,6 +1724,7 @@ func (q *Queries) GetSessionEventVersion(ctx context.Context, arg GetSessionEven
 		&i.UpdatedAt,
 		&i.LastTurnAt,
 		&i.TurnCount,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -2571,7 +2589,7 @@ func (q *Queries) ListChatSchedules(ctx context.Context) ([]ChatSchedule, error)
 }
 
 const listIncompleteSessionCreations = `-- name: ListIncompleteSessionCreations :many
-SELECT idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at
+SELECT idempotency_key, session_id, model, repository_id, worktree_mode, worktree_id, base_ref, display_name, system_instructions, created_at, sdk_create_attempt_id, completed_at, permission_policy
 FROM session_creations
 WHERE completed_at IS NULL
 ORDER BY created_at ASC, idempotency_key ASC
@@ -2599,6 +2617,7 @@ func (q *Queries) ListIncompleteSessionCreations(ctx context.Context) ([]Session
 			&i.CreatedAt,
 			&i.SdkCreateAttemptID,
 			&i.CompletedAt,
+			&i.PermissionPolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -2659,7 +2678,7 @@ func (q *Queries) ListPendingPermissionSessionRequests(ctx context.Context, sess
 }
 
 const listResumableSessions = `-- name: ListResumableSessions :many
-SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 FROM sessions
 WHERE status NOT IN ('ended', 'failed')
 ORDER BY created_at ASC, id ASC
@@ -2686,6 +2705,7 @@ func (q *Queries) ListResumableSessions(ctx context.Context) ([]Session, error) 
 			&i.LastTurnAt,
 			&i.EndedAt,
 			&i.WorktreeID,
+			&i.PermissionPolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -2827,7 +2847,7 @@ func (q *Queries) ListSessionTasks(ctx context.Context) ([]SessionTask, error) {
 
 const listSessionTelemetry = `-- name: ListSessionTelemetry :many
 WITH session_page AS (
-    SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id FROM sessions AS session
+    SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy FROM sessions AS session
     WHERE ($1::TIMESTAMPTZ IS NULL
            OR session.created_at < $1::TIMESTAMPTZ
            OR (session.created_at = $1::TIMESTAMPTZ
@@ -3000,7 +3020,7 @@ func (q *Queries) ListSessionTelemetry(ctx context.Context, arg ListSessionTelem
 }
 
 const listSessions = `-- name: ListSessions :many
-SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 FROM sessions
 WHERE ($1::text IS NULL OR status = $1::text)
   AND ($2::timestamptz IS NULL
@@ -3044,6 +3064,7 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 			&i.LastTurnAt,
 			&i.EndedAt,
 			&i.WorktreeID,
+			&i.PermissionPolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -3258,7 +3279,7 @@ func (q *Queries) ListTurnTraceTranscript(ctx context.Context, arg ListTurnTrace
 }
 
 const listWorktreeSessions = `-- name: ListWorktreeSessions :many
-SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+SELECT id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 FROM sessions
 WHERE worktree_id = $1
 ORDER BY id ASC
@@ -3285,6 +3306,7 @@ func (q *Queries) ListWorktreeSessions(ctx context.Context, worktreeID uuid.UUID
 			&i.LastTurnAt,
 			&i.EndedAt,
 			&i.WorktreeID,
+			&i.PermissionPolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -3348,7 +3370,7 @@ const lockSession = `-- name: LockSession :one
 UPDATE sessions
 SET updated_at = updated_at
 WHERE id = $1
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 func (q *Queries) LockSession(ctx context.Context, id uuid.UUID) (Session, error) {
@@ -3366,6 +3388,7 @@ func (q *Queries) LockSession(ctx context.Context, id uuid.UUID) (Session, error
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -3376,7 +3399,7 @@ SET status = $1,
     ended_at = $2,
     updated_at = $3
 WHERE id = $4
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type MarkSessionEndedParams struct {
@@ -3406,6 +3429,7 @@ func (q *Queries) MarkSessionEnded(ctx context.Context, arg MarkSessionEndedPara
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -3622,7 +3646,7 @@ SET status = 'failed',
     updated_at = $2
 WHERE worktree_id = $3
   AND status NOT IN ('ended', 'failed')
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type QuarantineWorktreeSessionsParams struct {
@@ -3652,6 +3676,7 @@ func (q *Queries) QuarantineWorktreeSessions(ctx context.Context, arg Quarantine
 			&i.LastTurnAt,
 			&i.EndedAt,
 			&i.WorktreeID,
+			&i.PermissionPolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -3781,6 +3806,7 @@ INSERT INTO session_event_versions (
     model,
     working_directory,
     status,
+    permission_policy,
     created_at,
     updated_at,
     last_turn_at,
@@ -3795,13 +3821,14 @@ SELECT
     sessions.model,
     sessions.working_directory,
     sessions.status,
+    sessions.permission_policy,
     sessions.created_at,
     sessions.updated_at,
     sessions.last_turn_at,
     (SELECT COUNT(*) FROM turns WHERE turns.session_id = sessions.id)
 FROM sessions
 WHERE sessions.id = $2
-RETURNING session_id, event_seq, id, worktree_id, display_name, model, working_directory, status, created_at, updated_at, last_turn_at, turn_count
+RETURNING session_id, event_seq, id, worktree_id, display_name, model, working_directory, status, created_at, updated_at, last_turn_at, turn_count, permission_policy
 `
 
 type SnapshotSessionEventParams struct {
@@ -3825,6 +3852,7 @@ func (q *Queries) SnapshotSessionEvent(ctx context.Context, arg SnapshotSessionE
 		&i.UpdatedAt,
 		&i.LastTurnAt,
 		&i.TurnCount,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -3943,7 +3971,7 @@ UPDATE sessions
 SET last_turn_at = $1,
     updated_at = $2
 WHERE id = $3
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type TouchSessionLastTurnParams struct {
@@ -3967,6 +3995,7 @@ func (q *Queries) TouchSessionLastTurn(ctx context.Context, arg TouchSessionLast
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -4052,23 +4081,26 @@ const updateSessionMetadata = `-- name: UpdateSessionMetadata :one
 UPDATE sessions
 SET model = COALESCE($1::text, model),
     display_name = COALESCE($2::text, display_name),
-    updated_at = $3
-WHERE id = $4
+    permission_policy = COALESCE($3::text, permission_policy),
+    updated_at = $4
+WHERE id = $5
   AND status NOT IN ('ended', 'failed')
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type UpdateSessionMetadataParams struct {
-	Model       null.String `json:"model"`
-	DisplayName null.String `json:"display_name"`
-	UpdatedAt   time.Time   `json:"updated_at"`
-	ID          uuid.UUID   `json:"id"`
+	Model            null.String `json:"model"`
+	DisplayName      null.String `json:"display_name"`
+	PermissionPolicy null.String `json:"permission_policy"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+	ID               uuid.UUID   `json:"id"`
 }
 
 func (q *Queries) UpdateSessionMetadata(ctx context.Context, arg UpdateSessionMetadataParams) (Session, error) {
 	row := q.db.QueryRowContext(ctx, updateSessionMetadata,
 		arg.Model,
 		arg.DisplayName,
+		arg.PermissionPolicy,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -4085,6 +4117,7 @@ func (q *Queries) UpdateSessionMetadata(ctx context.Context, arg UpdateSessionMe
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }
@@ -4095,7 +4128,7 @@ SET status = $1,
     updated_at = $2
 WHERE id = $3
   AND status NOT IN ('ended', 'failed')
-RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id
+RETURNING id, display_name, model, working_directory, system_instructions, status, created_at, updated_at, last_turn_at, ended_at, worktree_id, permission_policy
 `
 
 type UpdateSessionStatusParams struct {
@@ -4119,6 +4152,7 @@ func (q *Queries) UpdateSessionStatus(ctx context.Context, arg UpdateSessionStat
 		&i.LastTurnAt,
 		&i.EndedAt,
 		&i.WorktreeID,
+		&i.PermissionPolicy,
 	)
 	return i, err
 }

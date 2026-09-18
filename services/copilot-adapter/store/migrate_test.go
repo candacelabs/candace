@@ -30,6 +30,9 @@ var migrationNames = []string{
 	"000010_session_creation_state.up.sql",
 	"000011_schedule_creation_idempotency.up.sql",
 	"000012_usage_telemetry.up.sql",
+	"000013_session_tasks.up.sql",
+	"000014_session_permission_policy.up.sql",
+	"000015_session_event_permission_policy.up.sql",
 }
 
 var _ = Describe("schema upgrades", func() {

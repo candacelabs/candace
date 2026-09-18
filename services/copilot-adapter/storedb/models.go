@@ -115,6 +115,7 @@ type Session struct {
 	LastTurnAt         null.Time `json:"last_turn_at"`
 	EndedAt            null.Time `json:"ended_at"`
 	WorktreeID         uuid.UUID `json:"worktree_id"`
+	PermissionPolicy   string    `json:"permission_policy"`
 }
 
 type SessionCounter struct {
@@ -136,6 +137,7 @@ type SessionCreation struct {
 	CreatedAt          time.Time   `json:"created_at"`
 	SdkCreateAttemptID *uuid.UUID  `json:"sdk_create_attempt_id"`
 	CompletedAt        null.Time   `json:"completed_at"`
+	PermissionPolicy   string      `json:"permission_policy"`
 }
 
 type SessionEvent struct {
@@ -164,6 +166,7 @@ type SessionEventVersion struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 	LastTurnAt       null.Time `json:"last_turn_at"`
 	TurnCount        int64     `json:"turn_count"`
+	PermissionPolicy string    `json:"permission_policy"`
 }
 
 type SessionTask struct {

@@ -352,7 +352,7 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
           </Box>
           <Badge variant="dot" color={connection === "live" ? "teal" : "orange"} visibleFrom="sm">{connection}</Badge>
           <ModelPicker compact models={models} value={session?.model ?? ""} onChange={(model) => void switchModel(model)} loading={modelsLoading} error={modelsError} disabled={switchingModel || session === null} onRefresh={onRefreshModels} />
-          <Tooltip label="the agent may run any command in this worktree as you">
+          <Tooltip label="Warning: auto-approve lets the agent run any command in this worktree as you" multiline maw={320}>
             <Switch label="Auto-approve tools" checked={session?.permissionPolicy === "approveAll"} onChange={(event) => void changePermissionPolicy(event.currentTarget.checked)} disabled={switchingPolicy || session === null} size="sm" />
           </Tooltip>
         </Group>

@@ -16,7 +16,7 @@ INSERT INTO sessions (
     sqlc.arg(display_name),
     sqlc.arg(model),
     sqlc.arg(working_directory),
-    sqlc.arg(permission_policy),
+    COALESCE(NULLIF(sqlc.arg(permission_policy)::text, ''), 'ask'),
     sqlc.arg(system_instructions),
     sqlc.arg(status),
     sqlc.arg(created_at),
@@ -47,7 +47,7 @@ INSERT INTO session_creations (
     sqlc.narg(base_ref),
     sqlc.narg(display_name),
     sqlc.narg(system_instructions),
-    sqlc.arg(permission_policy),
+    COALESCE(NULLIF(sqlc.arg(permission_policy)::text, ''), 'ask'),
     sqlc.arg(created_at)
 )
 ON CONFLICT (idempotency_key) DO NOTHING
@@ -604,6 +604,7 @@ INSERT INTO session_event_versions (
     model,
     working_directory,
     status,
+    permission_policy,
     created_at,
     updated_at,
     last_turn_at,
@@ -618,6 +619,7 @@ SELECT
     sessions.model,
     sessions.working_directory,
     sessions.status,
+    sessions.permission_policy,
     sessions.created_at,
     sessions.updated_at,
     sessions.last_turn_at,
