@@ -1467,7 +1467,6 @@ components:
         - createdAt
         - updatedAt
         - turnCount
-        - permissionPolicy
       properties:
         id:
           type: string

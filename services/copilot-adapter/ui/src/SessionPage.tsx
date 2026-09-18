@@ -215,22 +215,6 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
       return;
     }
 
-    async function changePermissionPolicy(checked: boolean) {
-      if (session === null || switchingPolicy) return;
-      setSwitchingPolicy(true);
-      try {
-        const { data, error } = await api.PATCH("/v1/sessions/{sessionId}", {
-          params: { path: { sessionId } },
-          body: { permissionPolicy: checked ? "approveAll" : "ask" },
-        });
-        if (error !== undefined || data === undefined) throw new Error(error === undefined ? "permission policy could not be changed" : describeError(error));
-        setLive((current) => ({ ...current, session: data }));
-      } catch (cause) {
-        setFailure(describeError(cause));
-      } finally {
-        setSwitchingPolicy(false);
-      }
-    }
     promptAttempt.current = attempt;
     sendingRef.current = true;
     setSending(true);
@@ -251,8 +235,10 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
           setPromptUncertain(false);
           setFailure(describeError(response.error));
         }
+
         return;
       }
+
       promptAttempt.current = null;
       setPromptUncertain(false);
       setDraft((current) => current === submittedDraft ? "" : current);
@@ -264,6 +250,23 @@ export function SessionPage({ sessionId, initialSession, worktree, models, model
     } finally {
       sendingRef.current = false;
       setSending(false);
+    }
+  }
+
+  async function changePermissionPolicy(checked: boolean) {
+    if (session === null || switchingPolicy) return;
+    setSwitchingPolicy(true);
+    try {
+      const { data, error } = await api.PATCH("/v1/sessions/{sessionId}", {
+        params: { path: { sessionId } },
+        body: { permissionPolicy: checked ? "approveAll" : "ask" },
+      });
+      if (error !== undefined || data === undefined) throw new Error(error === undefined ? "permission policy could not be changed" : describeError(error));
+      setLive((current) => ({ ...current, session: data }));
+    } catch (cause) {
+      setFailure(describeError(cause));
+    } finally {
+      setSwitchingPolicy(false);
     }
   }
 

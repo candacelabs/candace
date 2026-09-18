@@ -864,7 +864,13 @@ export interface components {
             readonly lastTurnAt?: string;
             /** Format: int64 */
             readonly turnCount: number;
+            permissionPolicy?: components["schemas"]["PermissionPolicy"];
         };
+        /**
+         * @default ask
+         * @enum {string}
+         */
+        PermissionPolicy: "ask" | "approveAll";
         SessionList: {
             data: components["schemas"]["Session"][];
             /** @description Pass as cursor for the next page. Absent on the last page. */
@@ -895,6 +901,7 @@ export interface components {
             baseRef?: string;
             displayName?: string;
             systemInstructions?: string;
+            permissionPolicy?: components["schemas"]["PermissionPolicy"];
         };
         ExistingWorktreeSessionRequest: {
             /**
@@ -917,6 +924,7 @@ export interface components {
             worktreeId: string;
             displayName?: string;
             systemInstructions?: string;
+            permissionPolicy?: components["schemas"]["PermissionPolicy"];
         };
         CurrentWorktreeSessionRequest: {
             /**
@@ -934,11 +942,13 @@ export interface components {
             worktreeMode: "reuseCurrentWorktree";
             displayName?: string;
             systemInstructions?: string;
+            permissionPolicy?: components["schemas"]["PermissionPolicy"];
         };
         /** @description At least one property must be present. */
         UpdateSessionRequest: {
             model?: string;
             displayName?: string;
+            permissionPolicy?: components["schemas"]["PermissionPolicy"];
         };
         /**
          * @description queue appends behind the current work; steer interrupts it.
