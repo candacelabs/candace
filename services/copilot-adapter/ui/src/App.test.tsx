@@ -53,6 +53,30 @@ afterEach(() => {
 });
 
 describe("App resource reloads", () => {
+  it("polls live health, telemetry, approvals, and activity without replacing the session snapshot", async () => {
+    let liveStatus: Session["status"] = "running";
+    vi.stubGlobal("fetch", async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/workbench/theme/get") return json({ theme: {} });
+      if (path === "/healthz") return json({ status: "ok", cliAvailable: true });
+      if (path === "/v1/sessions") return json({ data: [{ ...session("Current task"), status: liveStatus }] });
+      if (path === "/v1/repositories") return json({ data: [repository] });
+      if (path === "/v1/worktrees") return json({ data: [worktree] });
+      if (path === "/v1/models") return json({ data: [model] });
+      if (path === "/v1/telemetry") return json({ observedAt: "2026-09-18T00:00:00Z", sessions: [], traces: [] });
+      if (path.endsWith("/requests")) return json({ data: [] });
+      if (path.endsWith("/transcript")) return json({ data: [] });
+      throw new Error(`unexpected request ${path}`);
+    });
+    render(<App />);
+    expect(await screen.findByRole("link", { name: "Continue Current task" })).toBeTruthy();
+    vi.useFakeTimers();
+    liveStatus = "failed";
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByText("failed")).toBeTruthy();
+    vi.useRealTimers();
+  });
+
   it("refreshes an Auto-only catalog into real choices without retaining an unavailable selection", async () => {
     const auto: Model = { id: "auto", displayName: "Auto", capabilities: [] };
     const second: Model = { id: "second-model", displayName: "Second model", capabilities: ["chat"] };

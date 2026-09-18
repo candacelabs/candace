@@ -73,6 +73,43 @@ input:not([class*="mantine-"]):focus, textarea:not([class*="mantine-"]):focus, s
 .error { margin: 0; padding: 9px 11px; font-size: 12px; }
 @keyframes pulse { 50% { opacity: .3; } }
 
+.home-flight-deck {
+  --deck-bg: #0b0e13;
+  --deck-panel: #121821;
+  --deck-line: #273140;
+  --deck-ink: #edf2f7;
+  --deck-muted: #8793a5;
+  background: radial-gradient(circle at 90% -10%, #17243a 0, transparent 34%), var(--deck-bg);
+  color: var(--deck-ink);
+  color-scheme: dark;
+}
+.home-flight-deck .mantine-Container-root { max-width: 1480px; }
+.home-flight-deck .mantine-Paper-root, .home-flight-deck .mantine-Card-root { border-color: var(--deck-line); background: color-mix(in srgb, var(--deck-panel) 94%, transparent); }
+.home-flight-deck .mantine-Title-root { letter-spacing: -.025em; }
+.home-flight-deck .eyebrow { color: #f59f00; }
+.flight-chip-row { flex-wrap: wrap; }
+.flight-chip { min-width: 92px; border-color: var(--deck-line); background: #111722 !important; }
+.service-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 9px currentColor; }
+.session-deck-card { min-height: 145px; color: var(--deck-ink); transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+.flight-skeleton { height: 145px; border: 1px solid var(--deck-line); border-radius: var(--mantine-radius-md); background: linear-gradient(100deg, #111722 30%, #1a2432 45%, #111722 60%); background-size: 200% 100%; animation: deck-shimmer 1.4s linear infinite; }
+.session-deck-card:hover, .session-deck-card:focus-visible { transform: translateY(-2px); border-color: #f59f00; background: #182231; }
+.status-pulse { animation: pulse 1.8s ease-in-out infinite; }
+.usage-strip { background: linear-gradient(110deg, #111b27, #121821) !important; }
+.usage-ring { display: flex; width: 62px; height: 62px; align-items: center; justify-content: center; flex-direction: column; border-radius: 50%; background: conic-gradient(#f59f00 var(--usage-angle, 0deg), #273140 0); position: relative; }
+.usage-ring::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: #111722; }
+.usage-ring strong, .usage-ring span { z-index: 1; line-height: 1; }
+.usage-ring strong { font-size: 14px; }
+.usage-ring span { margin-top: 3px; color: var(--deck-muted); font-size: 8px; text-transform: uppercase; }
+.usage-ring.critical { background: conic-gradient(#fa5252 var(--usage-angle, 0deg), #273140 0); }
+.activity-row { display: grid; grid-template-columns: 64px minmax(110px, 20%) minmax(0, 1fr); gap: 10px; align-items: center; min-height: 31px; border-top: 1px solid rgba(39,49,64,.65); }
+.activity-row > :last-child { color: #c7d0dc; }
+.home-flight-deck input { background: #0d131c; border-color: var(--deck-line); }
+@keyframes deck-shimmer { to { background-position: -200% 0; } }
+@media (max-width: 650px) {
+  .activity-row { grid-template-columns: 54px minmax(0, 1fr); }
+  .activity-row > :last-child { grid-column: 2; }
+}
+
 /* Shell, navigation, transcript, approval and composer presentation uses Mantine. */
 
 /* Dock and shared pane elements. */

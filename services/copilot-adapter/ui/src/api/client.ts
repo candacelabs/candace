@@ -38,6 +38,9 @@ export type ChatScheduleStatus = Schemas["ChatScheduleStatus"];
 export type Subagent = Schemas["Subagent"];
 export type SubagentActivity = Schemas["SubagentActivity"];
 export type ApiError = Schemas["Error"];
+export type Health = Schemas["Health"];
+export type TelemetrySnapshot = Schemas["TelemetrySnapshot"];
+export type TranscriptPage = Schemas["TranscriptPage"];
 
 // The adapter answers every failure with the contract's Error body; this turns
 // one into something renderable without leaking the envelope into components.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "@mantine/hooks";
 import { Affix, AppShell, MantineProvider, Overlay, Alert, Anchor, Button } from "@mantine/core";
 import { api, describeError } from "./api/client";
-import type { Model, Repository, Session, Worktree } from "./api/client";
+import type { Health, Model, Repository, Session, TelemetrySnapshot, TranscriptItem, Worktree } from "./api/client";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPage } from "./SessionPage";
@@ -41,7 +41,7 @@ async function allSessions(): Promise<Session[]> {
 export function App() {
   return (
     <>
-      <MantineProvider theme={workbenchTheme} forceColorScheme="light">
+      <MantineProvider theme={workbenchTheme} forceColorScheme="dark">
         <Workbench />
       </MantineProvider>
       <WorkbenchThemeOverride />
@@ -67,6 +67,10 @@ function Workbench() {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const modelReloadRunning = useRef(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [telemetry, setTelemetry] = useState<TelemetrySnapshot | null>(null);
+  const [pendingBySession, setPendingBySession] = useState<Record<string, number>>({});
+  const [activity, setActivity] = useState<Array<TranscriptItem & { sessionName: string }>>([]);
   const [creating, setCreating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const reducedMotion = useReducedMotion();
@@ -147,6 +151,43 @@ function Workbench() {
     void reloadModels();
   }, [reload, reloadModels]);
 
+  const reloadHomeLive = useCallback(async () => {
+    if (sessionId !== null) return;
+    const [healthResponse, telemetryResponse] = await Promise.all([
+      fetch(new Request(new URL("/healthz", window.location.origin).toString())).then(async (response) => response.ok ? response.json() as Promise<Health> : null).catch(() => null),
+      api.GET("/v1/telemetry", {}).then((response) => response.data ?? null).catch(() => null),
+    ]);
+    setHealth(healthResponse);
+    setTelemetry(telemetryResponse);
+    const requestEntries = await Promise.all(sessions.map(async (session) => {
+      try {
+        const response = await api.GET("/v1/sessions/{sessionId}/requests", { params: { path: { sessionId: session.id } } });
+        return [session.id, response.data?.data.filter((request) => request.status === "pending").length ?? 0] as const;
+      } catch {
+        return [session.id, 0] as const;
+      }
+    }));
+    setPendingBySession(Object.fromEntries(requestEntries));
+    const transcriptPages = await Promise.all(sessions.slice(0, 12).map(async (session) => {
+      try {
+        const response = await api.GET("/v1/sessions/{sessionId}/transcript", {
+          params: { path: { sessionId: session.id }, query: { limit: 8 } },
+        });
+        return (response.data?.data ?? []).map((item) => ({ ...item, sessionName: session.displayName }));
+      } catch {
+        return [];
+      }
+    }));
+    setActivity(transcriptPages.flat().sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt)).slice(0, 12));
+  }, [sessionId, sessions]);
+
+  useEffect(() => {
+    if (!resourcesLoaded) return;
+    void reloadHomeLive();
+    const timer = window.setInterval(() => void reloadHomeLive(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [reloadHomeLive, resourcesLoaded]);
+
   useEffect(() => {
     const onHashChange = () => {
       setRoute(window.location.hash);
@@ -224,7 +265,8 @@ function Workbench() {
             modelsLoading={modelsLoading} modelsError={modelsError} observedAt={observedAt}
             menuButtonRef={menuButtonRef} onMenu={() => setSidebarOpen(true)}
             onNewSession={() => setCreating(true)}
-            onRefresh={() => { void reload(); void reloadModels(); }} />
+            onRefresh={() => { void reload(); void reloadModels(); void reloadHomeLive(); }}
+            health={health} telemetry={telemetry} pendingBySession={pendingBySession} activity={activity} />
         ) : (
           <SessionPage
             key={sessionId}
